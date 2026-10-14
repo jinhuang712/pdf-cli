@@ -3,6 +3,8 @@
 
 Each goal is a check with a number. Unless a row says otherwise, goals are measured on an M3 MacBook with 24 GB, against two sets the project builds: the open test set (60 open-access PDFs: 20 journal papers, 10 textbook chapters, 10 reports, 10 essays or articles, 10 scans) and the question set (200 questions, each with a known answer and the page that holds it).
 
+Every goal is measured in three setups and reported side by side: **Base** (the `pdf` binary with macOS's own PDFKit and Vision, nothing downloaded), **Layout** (Base plus the models from `pdf setup`) and **Full** (Layout plus the local vision model from `pdf setup vlm`). Which setup each target must pass in is decided after milestone M0, once real numbers exist.
+
 | # | Goal | Want | Measure | Method | Measured on | Status |
 |---|---|---|---|---|---|---|
 | G1 | Tokens per question | Cheap | ≤ 20% of the tokens spent reading the PDF directly | Run the question set in Claude Code twice, once with pdf-cli and once with the built-in Read tool, and compare the token counts | Question set | ⬜ Open |
