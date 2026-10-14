@@ -1,4 +1,4 @@
-<!-- what-we-build: approved 2026-10-14 -->
+<!-- what-we-build: drafted 2026-10-15 -->
 # pdf-cli
 
 > A PDF CLI tool that lets you read fast, cheap and accurately.
@@ -18,7 +18,7 @@ The full behavior is in [FEATURES.md](FEATURES.md).
 
 ## Install
 
-Not available yet. The project is in planning, at milestone M0 in [ROADMAP.md](ROADMAP.md). The planned install is one Homebrew command, and the command it installs is `pdf`.
+Not available yet. The spike is done, and the first usable version is milestone M1 in [ROADMAP.md](ROADMAP.md). The planned install is one Homebrew command, and the command it installs is `pdf`.
 
 ## Use
 

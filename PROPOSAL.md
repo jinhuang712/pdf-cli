@@ -1,4 +1,4 @@
-<!-- what-we-build: approved 2026-10-14 -->
+<!-- what-we-build: drafted 2026-10-15 -->
 # pdf-cli — Proposal
 
 > A macOS command-line tool that helps coding agents read PDFs.
@@ -126,10 +126,10 @@ Coding agents such as Claude Code and Codex, and the people who use them to read
 ## Approach
 
 - **Platform:** macOS only. The newest features need macOS 26. The oldest supported version is open.
-- **Language:** Swift, confirmed by a 2-week spike.
-- **Parsing and rendering:** Apple's PDFKit and Core Graphics, with PDFium as a fallback and cross-check.
+- **Language:** Swift, confirmed by the M0 spike.
+- **Parsing and rendering:** Apple's PDFKit and Core Graphics. PDFium cross-checks them in tests.
 - **OCR and document structure:** Apple's Vision framework.
-- **Layout models:** pretrained open models, converted to run on the Neural Engine with Core ML.
+- **Layout:** simple rules on fonts, positions and drawing commands first. Pretrained open models, converted to run on the Neural Engine with Core ML, join only when a goal needs them.
 - **Hard pages:** small vision models through MLX Swift, only when the user turns them on.
 - **Cache and search:** SQLite.
 - **Interface:** a CLI with verbs and flags (`info`, `read`, `search`, `crop`, `dump`). Every result carries its page number, so it leads to the next command.
@@ -138,8 +138,8 @@ Coding agents such as Claude Code and Codex, and the people who use them to read
 
 | Risk | Mitigation |
 |---|---|
-| Our layout handling (reading order, footnotes) falls short of Docling or MinerU. | Run their pretrained models on Core ML, keep a test set of real PDFs, and flag low-quality pages so failures are visible. |
-| Apple's PDFKit and Vision are closed and change between macOS versions. | Keep PDFium as a fallback and cross-check, and rerun the test set on each macOS release. |
+| Our layout handling (reading order, footnotes) falls short of Docling or MinerU. | Add their pretrained models on Core ML when a goal fails, keep a test set of real PDFs, and flag low-quality pages so failures are visible. |
+| Apple's PDFKit and Vision are closed and change between macOS versions. | Cross-check with PDFium in tests, and rerun the test set on each macOS release. |
 | A model fails to convert to Core ML. | Fall back to MLX or ONNX Runtime. |
 | The full engine takes 5–7 months of work. | Phase 1 (cache, search, read, crop and OCR) is useful on its own after 4–6 weeks. |
 | Hidden text in a PDF injects instructions into the agent. | Flag invisible text, and keep it out of the normal output. |

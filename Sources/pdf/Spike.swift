@@ -2,8 +2,9 @@ import ArgumentParser
 import Foundation
 import PDFKit
 
-/// Experiments for milestone M0. Hidden from `pdf --help`, and removed once
-/// the spike's questions are answered (ROADMAP.md → M0).
+/// Experiments for milestone M0. Hidden from `pdf --help`. The scripts in
+/// `scripts/spike/` call these commands to rebuild the spike's reports, so they
+/// stay until milestone M1's real commands replace them.
 struct Spike: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "spike",

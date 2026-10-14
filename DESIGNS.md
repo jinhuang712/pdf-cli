@@ -1,4 +1,4 @@
-<!-- what-we-build: drafted 2026-10-14 -->
+<!-- what-we-build: drafted 2026-10-15 -->
 # Designs
 
 PDF files on the user's Mac and commands from an agent go in. Text with page addresses, PNG crops, search hits and failure reports come out, served from a local cache. In between, worker processes parse each page once, in steps that escalate only as far as the page needs, and store the result in SQLite. Behavior is in [FEATURES.md](FEATURES.md).
@@ -45,7 +45,7 @@ OFF BY DEFAULT: added only when a goal fails without them
    · Layout model on Core ML: labels footnotes and headings in one pass
    · Local vision model (milestone M3): hard pages and formulas
 
-(*) Still open: see Open questions.
+(*) See the decision on fonts that hide spaces.
 ```
 
 The "at risk" check comes from the M0 spike: a font that declares character 32 twice as wide as a normal space makes PDFKit drop the spaces between words.
@@ -56,7 +56,7 @@ The "at risk" check comes from the M0 spike: a font that declares character 32 t
 
 - **Apple's engines first.** PDFKit and Vision do the work by default, and a downloaded model joins only where the Base setup measurably falls short of a goal. Cost: some pages read worse than a model would read them, until a measurement shows the gap. Holds as: every model that `pdf setup` downloads is listed in this document with the goal it improves and its measured gain over Base.
 - **The file's own structure first.** Tags, bookmarks, page labels and the text layer win over inference, and models fill only the gaps. Cost: a badly tagged PDF misleads the parser until a quality check catches it. Holds as: every block records its source (`file`, `layout`, `ocr` or `vlm`), and a model-made block appears only where the file states nothing.
-- **Escalate per page.** Each page goes through the text layer, the layout model, OCR and a vision model, in that order, and stops at the first step that reads it well. Cost: one document mixes methods, so quality varies from page to page. Holds as: every page record names the step that produced it.
+- **Escalate per page.** Each page goes through the text layer, the layout model when it is installed, OCR and a vision model when it is installed, in that order, and stops at the first step that reads it well. Cost: one document mixes methods, so quality varies from page to page. Holds as: every page record names the step that produced it.
 
 ### Failure
 
@@ -105,7 +105,7 @@ A page can read wrong while it looks right, and the agent believes what it is ha
 
 ## Decision: Swift over Rust, Go and Python — 2026-10-14
 
-Swift wins because the tool runs only on macOS, and on macOS every engine the project needs is first-class in Swift. A 2-week spike confirms the choice.
+Swift wins because the tool runs only on macOS, and on macOS every engine the project needs is first-class in Swift. The M0 spike confirmed the choice: PDFKit, Core Graphics, Vision and Core ML all ran from Swift with the Command Line Tools alone, without Xcode.
 
 | Option | For | Against |
 |---|---|---|
@@ -114,7 +114,7 @@ Swift wins because the tool runs only on macOS, and on macOS every engine the pr
 | Go | A simple CLI and a single binary. | Weak PDF and machine-learning libraries. Apple frameworks need cgo. |
 | Python | Every leading parser (Docling, MinerU) and model is written in it. | A PyTorch install weighs gigabytes, and models take seconds to load. |
 
-The spike tests the three riskiest bets:
+The M0 spike tested the three riskiest bets, and the decisions below record its answers:
 
 - The text quality of PDFKit against PDFium on real PDFs.
 - The speed and quality of a layout model converted to Core ML.
@@ -126,19 +126,40 @@ Existing Swift projects show the pieces work: mac-ocr and vision-book-digitizer 
 
 The tool supports macOS and no other platform. The reason lives in [PROPOSAL.md → What we don't want](PROPOSAL.md#what-we-dont-want): Apple's PDF, OCR and Neural Engine frameworks are the project's main advantage.
 
-## Decision: Apple PDFKit, with PDFium as fallback, over a parser of our own — 2026-10-14
+## Decision: Apple PDFKit over PDFium and a parser of our own — 2026-10-14
 
-PDFKit and Core Graphics parse and render. PDFium is the fallback, and it cross-checks PDFKit on the test set.
+PDFKit and Core Graphics parse and render, and PDFKit is the only text source in the binary. PDFium stays out of the binary, and the test scripts use it to cross-check PDFKit. The decision is provisional: it reopens if Apple's engines fail a goal on the open test set.
+
+The M0 spike compared the engines on 10 recent arXiv papers ([spike/M0.2-text.md](spike/M0.2-text.md), [spike/M0.3-reading-order.md](spike/M0.3-reading-order.md)):
+
+- PDFKit read about 9 ms per page, process start included, and PDFium about 2 ms.
+- PDFKit kept two-column text in order best: 50 jumps between the left and right halves of the page on 36 pages, against 66 for PDFium, 112 for poppler and 121 for Apple's document recognizer. A clean page has one jump. The count is indirect, because a full-width figure makes some jumps correct.
+- PDFKit ran words together on 1 of the 10 papers. The next decision records the cause and its repair.
 
 | Option | For | Against |
 |---|---|---|
-| **PDFKit and Core Graphics** | Ship with macOS, and Apple maintains them. Crops look exactly like Preview. | Closed: the project cannot fix their bugs, and their behavior can change between macOS versions. |
-| **PDFium** (fallback) | Chrome's engine, open source under BSD, with years of fixes for broken files. | One more binary to bundle. |
+| **PDFKit and Core Graphics** | Ship with macOS, and Apple maintains them. Crops look exactly like Preview. The best column order in the spike. | Closed: the project cannot fix their bugs, and their behavior can change between macOS versions. Some fonts make it drop spaces. |
+| PDFium | Chrome's engine, open source under BSD, with years of fixes for broken files. Kept every space in the spike. | One more library to bundle and update, outside Apple's engines. |
 | hayro | A pure-Rust PDF renderer under Apache-2.0, in active development. | Young, and Rust in a Swift project. |
 | MuPDF and PyMuPDF | Fast and complete. | AGPL, which a permissive public repo cannot take on. |
 | A parser of our own | Full control. | Years of work to handle broken files as well as PDFium, with no difference a user could see. |
 
-Which engine is the main text source stays open until the spike.
+PDFKit wins because of the principle "Apple's engines first": its one failure in the spike has a known cause, and an Apple-only repair that matched PDFium.
+
+## Decision: Apple OCR word breaks over PDFium for fonts that hide spaces — 2026-10-14
+
+Some fonts declare character 32 wider than a normal space, and PDFKit then drops the spaces between words. The font check marks such a file "at risk" before reading. For an at-risk file, the tool keeps PDFKit's characters and takes only the word breaks from Apple OCR. The decision is provisional, like the one above.
+
+The M0 spike scored each method on the one affected paper, against PDFKit's text of a copy whose fonts were corrected ([spike/M0.2b-spaces.md](spike/M0.2b-spaces.md)):
+
+| Option | Spaces found | Characters matching | Spaces added | Note |
+|---|---|---|---|---|
+| **PDFKit characters + Apple OCR word breaks** | 97.6% | 99.9% | 71 | Apple-only. About 0.63 s per page, paid by at-risk files only. |
+| PDFium | 97.5% | 98.3% | 276 | A non-Apple library to bundle. |
+| Apple OCR alone | 98.9% | 88.4% | 71 | Misreads small marks, such as a superscript 1 as `'`. |
+| PDFKit alone | 71.2% | 99.9% | 0 | Words run together on every page. |
+
+Most added spaces sit inside formulas and number lists. The run-together count flags the spaces still missing (see Silent errors), and where two readings still differ in words, the agent picks one with `pdf pick`. The sample is one paper, the only one of ten with this problem.
 
 ## Decision: Apple Vision over Tesseract and RapidOCR — 2026-10-14
 
@@ -149,6 +170,8 @@ Vision reads scanned pages and garbled pages.
 - On macOS 26, its document recognizer returns paragraphs, tables and lists, along with the text.
 
 Tesseract and RapidOCR would each add an install and a model to ship. On older macOS versions, Vision falls back to plain text recognition, without the document structure.
+
+The document recognizer reads scans and repairs spaces, and PDFKit sets the reading order of born-digital pages. On 36 born-digital two-column pages in the M0 spike, the recognizer mixed the two columns badly on 2 pages and took a median 0.67 s per page ([spike/M0.3-reading-order.md](spike/M0.3-reading-order.md)).
 
 ## Decision: Core ML on the Neural Engine over a Python Docling worker — 2026-10-14
 
@@ -161,7 +184,19 @@ Layout models run as Core ML models on the Neural Engine. This keeps the tool on
 | ONNX Runtime | Runs almost any exported model. | One more runtime to bundle. |
 | Python Docling worker | A proven pipeline, under MIT. | Brings back Python and PyTorch, a gigabyte-scale install and seconds of model loading. |
 
-When a model fails to convert to Core ML, the fallback is MLX first, then ONNX Runtime. Model weights come only from licences that allow use in a public repo, such as Docling's MIT models and PaddlePaddle's Apache-2.0 models. The weights' licences stay to be checked.
+When a model fails to convert to Core ML, the fallback is MLX first, then ONNX Runtime. Model weights come only from licences that allow use in a public repo.
+
+The M0 spike converted Docling's two layout models, heron and egret-medium, both under Apache-2.0 ([spike/M0.4-coreml.md](spike/M0.4-coreml.md)). Full precision matched PyTorch exactly. Mixed precision on all compute units ran in 15–29 ms per page and missed about 1 region in 100. Plain half precision gave wrong results on the CPU and the Neural Engine. Swift compiled and loaded the models without Xcode.
+
+## Decision: Rules on PDFKit's fonts and positions over a default layout model — 2026-10-14
+
+Figures, footnotes, headings, running headers and footnote markers come from simple rules on what PDFKit and Core Graphics report: fonts, sizes, positions and drawing commands. A layout model joins only when a goal fails without it, as the principle "Apple's engines first" says. The decision is provisional, like the text-source decision.
+
+| Option | For | Against |
+|---|---|---|
+| **Rules, no model** | Apple-only, with nothing to download. Found 54 of 54 figures with their captions on 116 spike pages, at about 9 ms per page ([spike/M0.3b-figures-base.md](spike/M0.3b-figures-base.md)). | Tuned on the same papers it was tested on. Rules for footnotes and headings are untested. Scans need OCR's structure instead. |
+| egret-medium in `pdf setup` | Labels footnotes, headings, captions, formulas, lists, headers and footers in one pass, in 15–27 ms per page. About 50 MB. | A download, and its accuracy on our own pages is unmeasured. |
+| heron in `pdf setup` | The larger Docling model, in 23–29 ms per page. | About 100 MB, with the same unmeasured accuracy. On the spike's scan, it and egret disagree. |
 
 ## Decision: Tables as images over rebuilt cells — 2026-10-14
 
@@ -196,13 +231,9 @@ The tool returns text, crops and failure reports, and the calling agent does all
 
 ## Open questions
 
-- PDFKit or PDFium as the main text source. The spike tests both on real PDFs.
-- Which method reads a file marked "at risk" of lost spaces: PDFKit's characters with word breaks from Apple OCR, PDFium, or Apple OCR alone. On the one affected spike paper they found 98%, 98% and 99% of the spaces, and Apple OCR alone differed in 12% of the characters, misread marks included.
-- Whether Apple's document recognizer gives a usable reading order on born-digital pages. The spike tests it.
-- Which layout models convert to Core ML, and whether their weight licences allow it.
 - How to measure reading-order doubt on layouts beyond LaTeX papers, such as Word reports, magazines and textbooks with sidebars. The M0 spike's count of jumps between the left and right halves of a page is a candidate, tested only on two-column LaTeX papers.
 - How the cache handles a macOS update. A key that includes the macOS build parses every page again after each update. A key without it mixes text from two versions of PDFKit.
-- What reads a file that PDFKit cannot open. The answer depends on whether PDFium ships.
+- What reads a file that PDFKit cannot open, now that PDFium stays out of the binary.
 - The embedding model for search by meaning: Apple's built-in embeddings, or a small MLX model.
 - The oldest supported macOS version.
 - How worker processes start and stop: started per command, or kept running while idle.

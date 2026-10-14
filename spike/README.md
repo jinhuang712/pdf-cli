@@ -14,7 +14,9 @@ Measured 2026-10-14 on an M3 MacBook (24 GB, macOS 26.4), on the 11 PDFs in `tes
 
 ## Goal G2 in Base
 
-The full text of each file plus figure finding on page 1, each in a fresh process, took at most 0.36 s per file. That is well under the 2 s of goal G2. Pages that need OCR were not part of this timing.
+The full text of each file plus figure finding on page 1, each in a fresh process, took at most 0.36 s per file. A separate check on 2026-10-15, by a helper agent that did not write the code, ran each file three times and measured at most 0.30 s. That is well under the 2 s of goal G2. Pages that need OCR were not part of this timing.
+
+The decisions that follow from these answers are dated sections in `DESIGNS.md`.
 
 ## Other findings
 
