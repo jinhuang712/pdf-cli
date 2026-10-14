@@ -1,0 +1,23 @@
+# M0 spike — findings
+
+Measured 2026-10-14 on an M3 MacBook (24 GB, macOS 26.4), on the 11 PDFs in `testdata/smoke/` (10 CC BY 4.0 arXiv papers, 9 of them two-column, and one public-domain NACA scan). The detailed reports sit next to this file.
+
+## Answers
+
+| Question (ROADMAP.md → M0) | Answer | Report |
+|---|---|---|
+| PDFKit or PDFium as the main text source? | Both are fast (PDFKit about 12 ms per page with process start, PDFium about 3 ms). PDFKit keeps the columns in order best, but drops every space on 1 of 10 papers, and its character boxes cannot recover them. Apple's recognizer reads that page with correct spaces in 0.8 s. PDFium keeps the spaces and marks line-end hyphens. | `M0.2-text.md`, `M0.3-reading-order.md` |
+| Is Apple's document recognizer's reading order usable on born-digital pages? | No, as the main source: it mixed the two columns badly on 2 of 36 pages and takes about 0.7 s per page. It stays useful for scanned pages and as the fallback that repairs missing spaces. | `M0.3-reading-order.md` |
+| Which layout models convert to Core ML, and may we use them? | Both Docling models convert (heron and egret-medium, Apache-2.0). fp32 matches PyTorch exactly. Mixed precision runs at about 15–29 ms per page and misses 1 region in about 100. Swift compiles and loads them without Xcode. | `M0.4-coreml.md` |
+| Can Base (PDFKit and Core Graphics) find figures without a model? | Yes on this sample: 54 of 54 figures boxed with their captions on 116 hand-checked pages, no false figures, about 9 ms per page. The rules were tuned on the same papers. Scans are not covered. | `M0.3b-figures-base.md` |
+| What does the layout model add? | Labelled regions in one pass: footnotes, section headers, captions, formulas, list items, page headers and footers. On the scan, the two models disagree. | `M0.4-coreml.md` |
+
+## Goal G2 in Base
+
+The full text of each file plus figure finding on page 1, each in a fresh process, took at most 0.36 s per file. That is well under the 2 s of goal G2. Pages that need OCR were not part of this timing.
+
+## Other findings
+
+- `swift build --arch arm64 --arch x86_64` needs Xcode. `scripts/build-universal.sh` builds each architecture separately and joins them with `lipo`.
+- PDFium marks a hyphen at a line break with U+FFFE. poppler joins such words and drops real hyphens, as in "perstep".
+- Footnote markers come out glued to the word in every engine, as in "Challenge1". Telling them apart needs font size or baseline.
