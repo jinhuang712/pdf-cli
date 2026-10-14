@@ -1,4 +1,4 @@
-<!-- what-we-build: approved 2026-10-14 -->
+<!-- what-we-build: drafted 2026-10-14 -->
 # Designs
 
 PDF files on the user's Mac and commands from an agent go in. Text with page addresses, PNG crops, search hits and failure reports come out, served from a local cache. In between, worker processes parse each page once, in steps that escalate only as far as the page needs, and store the result in SQLite. Behavior is in [FEATURES.md](FEATURES.md).
@@ -10,6 +10,7 @@ AGENT: Claude Code, or another LLM that can see images
   Does all the reasoning, including reading page images.
    │                                      ▲
    │ pdf info / read / search / crop      │ text, every block with page + position
+   │ pdf pick                             │ unsure blocks with two readings
    │                                      │ failure blocks, each with a
    │                                      │   ready-to-run `pdf crop` command
    │                                      │ PNG crops, only when asked
@@ -36,6 +37,7 @@ WORKER: a child process with time and memory limits, page by page
    │
    └─ 4. Quality check, then every result is cached
           ok ──────────► agent reads the text
+          unsure ──────► two readings + `pdf pick` (words only)
           doubtful ────► failure block + `pdf crop` command
           or failed      ──► agent looks at the crop itself
 
@@ -59,7 +61,8 @@ The "at risk" check comes from the M0 spike: a font that declares character 32 t
 ### Failure
 
 - **A failed page always holds a failure block.** A page that fails to parse, or reads below the quality bar, gets a failure block in its place: the page, the reason and the quality score. Cost: output on hard documents gets noisy, and agents must handle failure blocks. Holds as: every page record has a status (`ok`, `low-quality` or `failed`) with its reasons, and the output writer turns every page that is not `ok` into a failure block.
-- **Every failure names its way out.** The way out is the agent's own image understanding: each failure block carries the ready-to-run `pdf crop` command for its page or region. Cost: the agent pays image tokens for each failed page it reads. Holds as: the output writer emits no failure block without a crop command.
+- **Every failure names its way out.** The way out is the agent's own image understanding: each failure block carries the ready-to-run `pdf crop` command for the smallest region that holds the doubt, with the lines around it. Cost: the agent pays image tokens for each crop it reads, and a region found too small hides context. Holds as: the output writer emits no failure block without a crop command, and the crop covers the block's own region, or its page when the whole page is in doubt.
+- **The agent judges what language can show.** When two readings of a passage differ in words, such as spacing or a sentence spliced across columns, the block shows both readings, and the agent picks one with `pdf pick`. Readings that differ in digits, table cells or formulas go out as a crop instead. Cost: extra tokens for the words that differ, and a wrong pick lasts until `reparse`. Holds as: `pdf pick` accepts only one of the tool's own readings, picks live in their own table apart from the parsed pages, and every picked span carries a `[picked]` label in the output.
 - **Failure is reported three times.** It appears in place, in the summary line at the top of the output, and in the exit code, so an agent that reads only one of them still sees it. Cost: the same failure shows up in three places. Holds as: the exit code for partial failure differs from the codes for success and total failure, and the summary counts every page that is not `ok`.
 - **Doubt counts as failure.** A garbled text layer, an uncertain reading order or a low OCR confidence gives the page the status `low-quality`, reported like a failure. Cost: more warnings on hard documents. Holds as: each quality check has a threshold, and a page below any threshold gets the status `low-quality`.
 

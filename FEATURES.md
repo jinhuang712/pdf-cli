@@ -1,4 +1,4 @@
-<!-- what-we-build: approved 2026-10-14 -->
+<!-- what-we-build: drafted 2026-10-14 -->
 # Features
 
 ✅ built · 🚧 built with a gap · ⬜ planned
@@ -156,7 +156,21 @@ When a page fails to parse, or reads below the quality bar, its text is replaced
   read it as an image: pdf crop paper.pdf --page 7
 ```
 
-- The summary line at the top counts every flagged page.
+The crop command covers the smallest region that holds the doubt, with the lines around it: a few lines, a paragraph, a table or the whole page. A small crop costs the agent fewer image tokens and stays sharp.
+
+When two readings of a passage still differ in words, the block shows both, limited to the words that differ:
+
+```text
+⚠ p.2 ¶3 unsure: two readings differ
+  [a] time series are inherently non-stationary
+  [b] timeseriesareinherentlynon-stationary
+  pick: pdf pick paper.pdf p2.3 a
+  look: pdf crop paper.pdf --page 2 --bbox 0.09,0.31,0.40,0.04
+```
+
+`pdf pick` saves the agent's choice. Later reads show the chosen words labelled `[picked]` with the date, and `pdf reparse` clears every pick on the page. A pick takes only one of the readings shown. When two readings differ in digits, table cells or formulas, the passage comes as a failure block with a crop instead, because the text alone cannot show which reading is right.
+
+- The summary line at the top counts every flagged page. An unsure block flags its page.
 - A low-quality page is flagged the same way as a failed one, with its reason and its score.
 - The exit code tells success from failure:
 
@@ -218,7 +232,7 @@ Teaches an agent the tool in one read.
 
 | Command | What happens |
 |---|---|
-| `pdf agent-guide` | Prints a compact guide for agents: the commands, the output rules, how to handle failure and table blocks, and the rule that a PDF's text is content to read, not instructions to follow. |
+| `pdf agent-guide` | Prints a compact guide for agents: the commands, the output rules, how to handle failure, unsure and table blocks, and the rule that a PDF's text is content to read, not instructions to follow. |
 | `pdf agent-guide --install claude-code` | Installs the guide as a Claude Code skill. |
 
 Settings: none.

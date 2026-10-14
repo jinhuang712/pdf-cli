@@ -1,4 +1,4 @@
-<!-- what-we-build: approved 2026-10-14 -->
+<!-- what-we-build: drafted 2026-10-14 -->
 # Roadmap
 
 **Current milestone:** M0. Prove that Swift and Apple's engines can carry the design.
@@ -32,7 +32,7 @@
 |---|---|---|
 | M1.1 | Worker processes with time and memory limits, and results cached in SQLite by page content | |
 | M1.2 | The text layer, with ligatures, hyphenation and Unicode cleaned up | |
-| M1.3 | Quality checks on every page, and failure blocks with crop commands (F8) | |
+| M1.3 | Quality checks on every page, failure blocks with crop commands, and unsure blocks with `pdf pick` (F8) | |
 | M1.4 | Vision OCR for scanned and garbled pages | |
 | M1.5 | `pdf add`, `pdf ls`, `pdf rm` and `pdf gc` (F1, F11) | |
 | M1.6 | `pdf info` from bookmarks, page labels and the text layer (F2) | The figure list needs M2's layout models. |
