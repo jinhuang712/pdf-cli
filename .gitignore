@@ -1,0 +1,11 @@
+# Swift
+.build/
+.swiftpm/
+*.xcodeproj/
+DerivedData/
+
+# macOS
+.DS_Store
+
+# Private test PDFs stay local
+/private/
