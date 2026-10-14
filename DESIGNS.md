@@ -1,7 +1,52 @@
-<!-- what-we-build: approved 2026-10-14 -->
+<!-- what-we-build: drafted 2026-10-14 -->
 # Designs
 
 PDF files on the user's Mac and commands from an agent go in. Text with page addresses, PNG crops, search hits and failure reports come out, served from a local cache. In between, worker processes parse each page once, in steps that escalate only as far as the page needs, and store the result in SQLite. Behavior is in [FEATURES.md](FEATURES.md).
+
+The intended flow, with Apple's engines and simple rules doing the parsing, and the agent doing all the reasoning:
+
+```text
+AGENT: Claude Code, or another LLM that can see images
+  Does all the reasoning, including reading page images.
+   │                                      ▲
+   │ pdf info / read / search / crop      │ text, every block with page + position
+   │                                      │ failure blocks, each with a
+   │                                      │   ready-to-run `pdf crop` command
+   │                                      │ PNG crops, only when asked
+   ▼                                      │
+CACHE: SQLite ── already parsed? ──yes──► answer in milliseconds
+   │ no
+   ▼
+WORKER: a child process with time and memory limits, page by page
+   │
+   ├─ 1. Font check ──── Core Graphics reads each font's widths
+   │                     wide character 32 → file marked "at risk"
+   │
+   ├─ 2. Text ────────── PDFKit: characters, their boxes, their fonts
+   │      ├─ at risk ──► Apple OCR reads the page image, and only
+   │      │              its word breaks are kept  (*)
+   │      └─ scan or ──► Apple OCR document recognizer:
+   │         garbled     text, paragraphs, tables, lists
+   │
+   ├─ 3. Structure ───── simple rules, no model
+   │      figures ◄───── drawing commands + "Figure N" captions
+   │      headings, footnotes, running headers, footnote markers
+   │              ◄───── font sizes and positions
+   │      hidden text ─► set aside, shown only with a flag
+   │
+   └─ 4. Quality check, then every result is cached
+          ok ──────────► agent reads the text
+          doubtful ────► failure block + `pdf crop` command
+          or failed      ──► agent looks at the crop itself
+
+OFF BY DEFAULT: added only when a goal fails without them
+   · Layout model on Core ML: labels footnotes and headings in one pass
+   · Local vision model (milestone M3): hard pages and formulas
+
+(*) Still open: see Open questions.
+```
+
+The "at risk" check comes from the M0 spike: a font that declares character 32 twice as wide as a normal space makes PDFKit drop the spaces between words.
 
 ## Principles
 
@@ -127,6 +172,7 @@ The tool returns text, crops and failure reports, and the calling agent does all
 ## Open questions
 
 - PDFKit or PDFium as the main text source. The spike tests both on real PDFs.
+- Which method reads a file marked "at risk" of lost spaces: PDFKit's characters with word breaks from Apple OCR, PDFium, or Apple OCR alone. On the one affected spike paper they found 98%, 98% and 99% of the spaces, and Apple OCR alone differed in 12% of the characters, misread marks included.
 - Whether Apple's document recognizer gives a usable reading order on born-digital pages. The spike tests it.
 - Which layout and table models convert to Core ML, and whether their weight licences allow it.
 - The embedding model for search by meaning: Apple's built-in embeddings, or a small MLX model.
