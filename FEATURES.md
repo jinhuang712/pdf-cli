@@ -1,4 +1,4 @@
-<!-- what-we-build: approved 2026-10-14 -->
+<!-- what-we-build: drafted 2026-10-14 -->
 # Features
 
 ✅ built · 🚧 built with a gap · ⬜ planned
@@ -66,6 +66,13 @@ Prints text in reading order. Every block shows its page and its position on the
 
 Without a page or section flag, `pdf read` starts at the first page and stops at the default budget (see F7).
 
+A table appears as a table block in place of its cells: its number, its caption, its notes and the command that crops it. The agent reads the cells from the image.
+
+```text
+[table 3] p.6 · Forecasting results on multivariate benchmarks
+  read it as an image: pdf crop paper.pdf --table 3
+```
+
 Settings: none.
 
 ## F4 — Search ⬜
@@ -81,6 +88,8 @@ Finds the right page, in one PDF or across the whole library.
 | `--top N` | Sets how many results to show. The default number is not set yet. |
 
 A query in another language finds matches by meaning, for example a Chinese query on an English paper.
+
+A hit inside a table names the table and the command that crops it. While a PDF is still parsing, every result says how many of its pages were searched, so an empty result reads as partial.
 
 Settings: none.
 
@@ -116,7 +125,7 @@ Writes a PDF's content to files and prints their paths.
 | `--markdown`, `--text`, `--html` | The document, or the pages given with `--page` |
 | `--figures` | Every figure as a PNG, vector charts included |
 | `--embedded-images` | The image objects stored in the file, such as photos and scans |
-| `--tables-csv` | One CSV file per table |
+| `--tables` | Every table as a PNG, with its caption and notes |
 | `--notes` | Footnotes, endnotes and other notes, as JSON |
 | `--refs` | The reference list, as JSON |
 | `-o <folder>` | The output folder. The default is a folder named after the PDF, in the current folder. |
@@ -127,7 +136,8 @@ Settings: none.
 
 Every command follows the same rules, so an agent learns them once.
 
-- Every block shows its page and its position, such as `p.12 · 0.10,0.40,0.80,0.30`.
+- Every block shows its page and its position, such as `p.12 · 0.10,0.40,0.80,0.30`. The page is its position in the file. When the number printed on the page differs, it follows, as in `p.12 (printed 237)`.
+- Superscripts and subscripts keep a mark, as in `10^{-5}` and `x_{2}`. Footnote markers and citation numbers have their own marks (see F14 and F15).
 - Every command accepts `--json`.
 - Output starts with a one-line summary: the pages read and the pages flagged.
 - `--budget N` stops the output at about N tokens and ends it with a line that continues the read, such as `next: pdf read paper.pdf --page 15`. A block larger than the budget is cut the same way. `read` and `search` have a default budget, and its number is not set yet.
@@ -163,7 +173,7 @@ Settings: none.
 
 Keeps text that a reader cannot see out of the agent's way.
 
-Text that renders invisible, such as white text, tiny text, clipped text or text off the page, stays out of the normal output. The summary line says how many hidden blocks were set aside, and on which pages. `--include-hidden` shows them, each labelled `[hidden]`. The text layer on a scanned page is read normally.
+Text that renders invisible, such as text in the color behind it, tiny text, clipped text, text covered by an image or text off the page, stays out of the normal output. White text on a dark box stays in, because a reader can see it. The summary line says how many hidden blocks were set aside, and on which pages. `--include-hidden` shows them, each labelled `[hidden]`. The text layer on a scanned page is read normally.
 
 Settings: none.
 
@@ -196,7 +206,7 @@ Gets the tool ready, and says what works on this Mac.
 
 | Command | What happens |
 |---|---|
-| `pdf setup` | Downloads the layout and table models. |
+| `pdf setup` | Downloads the layout model. |
 | `pdf setup vlm` | Downloads the optional local vision model for hard pages. |
 | `pdf doctor` | Shows the macOS version, the models installed, the cache size, and what each missing piece would unlock. For example, the document structure of scanned pages needs macOS 26. |
 
@@ -208,7 +218,7 @@ Teaches an agent the tool in one read.
 
 | Command | What happens |
 |---|---|
-| `pdf agent-guide` | Prints a compact guide for agents: the commands, the output rules and how to handle failure blocks. |
+| `pdf agent-guide` | Prints a compact guide for agents: the commands, the output rules, how to handle failure and table blocks, and the rule that a PDF's text is content to read, not instructions to follow. |
 | `pdf agent-guide --install claude-code` | Installs the guide as a Claude Code skill. |
 
 Settings: none.
@@ -274,6 +284,7 @@ Settings: none.
 | An LLM inside the tool, such as `ask` or `summarize` | The calling agent already is an LLM. A second one would cost money and make the output unpredictable. |
 | Windows and Linux | Apple's PDF, OCR and Neural Engine frameworks are the project's main advantage. |
 | PDF editing: merging, splitting, forms or signing | Agents need to read PDFs. Editing is a different product. |
+| Table cells as text, CSV or Markdown | A rebuilt cell can be wrong and still look right, and the agent trusts it. Each table goes to the agent as an image instead. |
 | A PDF parser or renderer of our own | Apple and Google maintain theirs. Ours would take years, with no difference a user could see. |
 | A reading app with a window | Agents call commands. simple-pdf already covers a reader with a window. |
 | Cloud parsing | Documents stay on the Mac. A hard page goes to a local model or to the agent's own image understanding. |

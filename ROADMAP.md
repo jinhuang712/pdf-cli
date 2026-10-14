@@ -1,4 +1,4 @@
-<!-- what-we-build: approved 2026-10-14 -->
+<!-- what-we-build: drafted 2026-10-14 -->
 # Roadmap
 
 **Current milestone:** M0. Prove that Swift and Apple's engines can carry the design.
@@ -10,7 +10,7 @@
 | M0 — Spike | Proven: Swift and Apple's engines carry the design | None shipped | Nothing | About 2 weeks | ⬜ |
 | M1 — Daily reader | Usable: an agent reads born-digital and scanned PDFs through the cache, with keyword search and page crops | F1, F2, F3, F4 (keyword), F5 (pages and regions), F7, F8, F9, F11, F13 | M0 | About 4–6 weeks | ⬜ |
 | M2 — Accurate layout | Proven: two-column papers, footnotes, citations and figures read right | F5 (figures, tables, equations), F6, F10, F12, F14, F15 | M1 | About 2–3 months | ⬜ |
-| M3 — Complete | Usable: search by meaning, tables, formulas, memos and a one-command install | F4 (meaning), F16 | M2 | About 1–2 months | ⬜ |
+| M3 — Complete | Usable: search by meaning, tables across pages, formulas, memos and a one-command install | F4 (meaning), F16 | M2 | About 1–2 months | ⬜ |
 
 ## M0 — Spike ⬜
 
@@ -41,7 +41,7 @@
 | M1.9 | `pdf crop` for pages and regions (F5) | Figure and table crops come in M2. |
 | M1.10 | Hidden text kept out of the output (F9) | |
 | M1.11 | `pdf agent-guide` and its Claude Code skill (F13) | |
-| M1.12 | A smoke set of 10 PDFs, and a safety set of hidden-text and broken PDFs | |
+| M1.12 | A smoke set of 10 PDFs, and a safety set of broken PDFs and hidden-text PDFs | One hidden-text PDF per trick: text in the background's color, tiny, clipped, covered by an image and off the page, plus white text on a dark box, which counts as visible |
 
 **Exit criteria:** GOALS.md G2, G4, G9, G12, G13 and G16, plus the author's own report after one week of daily use.
 
@@ -52,9 +52,9 @@
 | M2.1 | The open test set: 60 open-access PDFs, labelled | |
 | M2.2 | The question set: 200 questions, each with its answer and page | |
 | M2.3 | A scorer that weighs a wrong block 3× a missing one, and a Docling baseline run on the same Mac | |
-| M2.4 | Layout and table models running on Core ML | |
+| M2.4 | The layout model running on Core ML | |
 | M2.5 | Reading order across columns, with running headers, footers and publisher stamps removed | |
-| M2.6 | Figures, tables and equations detected, and cropped with `pdf crop` (F5) | |
+| M2.6 | Figures, tables and equations detected, and cropped with `pdf crop` (F5) | Each table's text gives way to its table block. |
 | M2.7 | Footnotes, endnotes, headnotes, margin notes and author notes (F14) | |
 | M2.8 | Citations, references and cross-references (F15) | |
 | M2.9 | `pdf dump` (F6) | |
@@ -69,7 +69,7 @@
 | ID | What it delivers | Note |
 |---|---|---|
 | M3.1 | The embedding model chosen, and `pdf search` by meaning, Chinese queries included (F4) | |
-| M3.2 | Tables with merged cells, and tables that continue across pages | |
+| M3.2 | Tables that continue across pages, linked as one table with a crop per page | |
 | M3.3 | A local vision model for hard pages and formulas, with `pdf setup vlm` and `pdf reparse --step vlm` | |
 | M3.4 | `pdf memo` (F16) | |
 | M3.5 | A Homebrew release that installs with one command | |

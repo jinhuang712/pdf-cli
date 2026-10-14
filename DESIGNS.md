@@ -63,6 +63,15 @@ The "at risk" check comes from the M0 spike: a font that declares character 32 t
 - **Failure is reported three times.** It appears in place, in the summary line at the top of the output, and in the exit code, so an agent that reads only one of them still sees it. Cost: the same failure shows up in three places. Holds as: the exit code for partial failure differs from the codes for success and total failure, and the summary counts every page that is not `ok`.
 - **Doubt counts as failure.** A garbled text layer, an uncertain reading order or a low OCR confidence gives the page the status `low-quality`, reported like a failure. Cost: more warnings on hard documents. Holds as: each quality check has a threshold, and a page below any threshold gets the status `low-quality`.
 
+### Silent errors
+
+A page can read wrong while it looks right, and the agent believes what it is handed. Each trap found so far gets its own check.
+
+- **Table regions replace their text.** PDFKit turns a table into a stream of numbers without rows or columns, as the M0 spike showed. The text inside a detected table stays out of the output, and the table goes out as an image (see the decision on tables below). Cost: a table the detector misses still leaks its flat numbers. Holds as: the output writer drops every text block inside a table region and emits one table block in its place, and goal G8 in [GOALS.md](GOALS.md) scores table detection.
+- **Raised and lowered characters are found from their boxes.** Plain text turns 10⁻⁵ into "10−5", as the M0 spike showed. A character set smaller and above or below its line's baseline is a superscript or a subscript. Cost: a font that reports odd boxes gets wrong marks. Holds as: every character set smaller and off the baseline leaves the text layer with a superscript or subscript mark, or as a footnote or citation marker.
+- **One sample page per file is checked against its image.** A broken font table can map shapes to wrong letters, and an old OCR layer in a scan can hold misreads. Both look like real words. Apple OCR reads one sample page, and its words are compared with the text layer's words. Cost: about 0.6 s per file. Holds as: a file whose sample page disagrees beyond the threshold has every page escalate to OCR.
+- **Spaces are checked before and after reading.** A font that declares character 32 wider than a normal space makes PDFKit drop the spaces between words, as the M0 spike found. A Word-made spike paper also loses 1–2 spaces per page, for a reason still unknown. Before reading, the font check marks the file "at risk". After reading, a count of run-together words checks every page. Cost: a few milliseconds per page. Holds as: every page record stores its run-together word count, and a page above the threshold gets the status `low-quality`.
+
 ### Cache
 
 - **Pay once, read many times.** Results are keyed by page content and parser version, and failed pages are cached with their reasons too. Cost: disk space, and a cache that must stay correct. Holds as: no command parses a page whose key is already in the cache, except `reparse`.
@@ -72,7 +81,7 @@ The "at risk" check comes from the M0 spike: a font that declares character 32 t
 ### Output
 
 - **Every claim has an address.** Every block carries its page and its position on the page. Cost: a few tokens per block. Holds as: every block type in the output schema has `page` and `bbox`.
-- **Text first, pixels on request.** Images come only when the agent asks for them. Cost: the agent can miss a visual cue it did not ask about. Holds as: only `crop` and `dump --figures` write image files.
+- **Text first, pixels on request.** Images come only when the agent asks for them. Cost: the agent can miss a visual cue it did not ask about. Holds as: only `crop`, `dump --figures` and `dump --tables` write image files.
 
 ### Performance
 
@@ -82,7 +91,7 @@ The "at risk" check comes from the M0 spike: a font that declares character 32 t
 ### Safety
 
 - **Untrusted files stay in a child process.** Each parse runs in a worker with a time limit and a memory limit. Cost: a process starts for each job. Holds as: only workers open PDF content, the CLI process reads only the cache, and a worker that hits a limit yields a `failed` page instead of a crash.
-- **Invisible text stays out of normal output.** Text that renders invisible (white, tiny, clipped or off the page) is flagged and set aside. Cost: an OCR text layer is invisible by design, so it needs its own rule. Holds as: invisible text over a scanned image counts as a text layer, and every other invisible block reaches the output only with an explicit flag.
+- **Invisible text stays out of normal output.** Text that a reader cannot see is flagged and set aside: text drawn in the color behind it, tiny, clipped, covered by an image or off the page. Cost: visibility depends on what is drawn behind the text, so every text block needs a look at the layers below it, and an OCR text layer is invisible by design, so it needs its own rule. Holds as: invisible text over a scanned image counts as a text layer, white text on a dark box counts as visible, and every other invisible block reaches the output only with an explicit flag.
 - **Parsing stays offline.** Models download only during setup. Cost: a missing model needs a setup step before first use. Holds as: a test parses the open test set under a network monitor and sees zero connections.
 - **PDF actions never run.** JavaScript, launch actions and embedded files stay inert. Cost: none for reading. Holds as: workers call no engine API that runs a document action.
 
@@ -140,7 +149,7 @@ Tesseract and RapidOCR would each add an install and a model to ship. On older m
 
 ## Decision: Core ML on the Neural Engine over a Python Docling worker — 2026-10-14
 
-Layout and table models run as Core ML models on the Neural Engine. This keeps the tool one binary, with no Python.
+Layout models run as Core ML models on the Neural Engine. This keeps the tool one binary, with no Python.
 
 | Option | For | Against |
 |---|---|---|
@@ -150,6 +159,19 @@ Layout and table models run as Core ML models on the Neural Engine. This keeps t
 | Python Docling worker | A proven pipeline, under MIT. | Brings back Python and PyTorch, a gigabyte-scale install and seconds of model loading. |
 
 When a model fails to convert to Core ML, the fallback is MLX first, then ONNX Runtime. Model weights come only from licences that allow use in a public repo, such as Docling's MIT models and PaddlePaddle's Apache-2.0 models. The weights' licences stay to be checked.
+
+## Decision: Tables as images over rebuilt cells — 2026-10-14
+
+A table reaches the agent as a crop, and the agent reads the cells with its own image understanding. The reason lives in [FEATURES.md → Not planned](FEATURES.md#not-planned): a rebuilt cell can be wrong and still look right.
+
+| Option | For | Against |
+|---|---|---|
+| **A crop, read by the agent** | The agent sees the table as printed, merged cells and odd layouts included. Nothing is rebuilt. | Image tokens for every table the agent reads. A dense table needs a sharp crop, and the agent can still misread a digit. |
+| PDFKit text | Free, with the exact digits. | Rows and columns are lost, as the M0 spike showed. |
+| Apple's document recognizer | Ships with macOS 26, and returns cells. | Untested on tables, and a wrong cell looks right. |
+| A table-structure model, such as the one Docling uses | Built for this job. | A download, and a wrong cell still looks right. |
+
+The table's text stays in the keyword index, so a search still finds the page that holds a table.
 
 ## Decision: SQLite over qmd and Tantivy — 2026-10-14
 
@@ -174,7 +196,10 @@ The tool returns text, crops and failure reports, and the calling agent does all
 - PDFKit or PDFium as the main text source. The spike tests both on real PDFs.
 - Which method reads a file marked "at risk" of lost spaces: PDFKit's characters with word breaks from Apple OCR, PDFium, or Apple OCR alone. On the one affected spike paper they found 98%, 98% and 99% of the spaces, and Apple OCR alone differed in 12% of the characters, misread marks included.
 - Whether Apple's document recognizer gives a usable reading order on born-digital pages. The spike tests it.
-- Which layout and table models convert to Core ML, and whether their weight licences allow it.
+- Which layout models convert to Core ML, and whether their weight licences allow it.
+- How to measure reading-order doubt on layouts beyond LaTeX papers, such as Word reports, magazines and textbooks with sidebars. The M0 spike's count of jumps between the left and right halves of a page is a candidate, tested only on two-column LaTeX papers.
+- How the cache handles a macOS update. A key that includes the macOS build parses every page again after each update. A key without it mixes text from two versions of PDFKit.
+- What reads a file that PDFKit cannot open. The answer depends on whether PDFium ships.
 - The embedding model for search by meaning: Apple's built-in embeddings, or a small MLX model.
 - The oldest supported macOS version.
 - How worker processes start and stop: started per command, or kept running while idle.
