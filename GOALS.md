@@ -1,9 +1,9 @@
-<!-- what-we-build: approved 2026-10-14 -->
+<!-- what-we-build: drafted 2026-10-15 -->
 # Goals
 
 Each goal is a check with a number. Unless a row says otherwise, goals are measured on an M3 MacBook with 24 GB, against two sets the project builds: the open test set (60 open-access PDFs: 20 journal papers, 10 textbook chapters, 10 reports, 10 essays or articles, 10 scans) and the question set (200 questions, each with a known answer and the page that holds it). The open test set includes Word-made files, pages with dense tables, and scans that carry an old OCR text layer.
 
-Every goal is measured in three setups and reported side by side: **Base** (the `pdf` binary with macOS's own PDFKit and Vision, nothing downloaded), **Layout** (Base plus the models from `pdf setup`) and **Full** (Layout plus the local vision model from `pdf setup vlm`). Which setup each target must pass in is decided after milestone M0, once real numbers exist.
+Every goal is measured in three setups and reported side by side: **Base** (the `pdf` binary with macOS's own PDFKit and Vision, nothing downloaded), **Layout** (Base plus the models from `pdf setup`) and **Full** (Layout plus the local vision model from `pdf setup vlm`). Every target must pass in Base, following the principle "Apple's engines first" in [DESIGNS.md](DESIGNS.md). A target moves to Layout or Full only when Base misses it and a model closes the gap.
 
 | # | Goal | Want | Measure | Method | Measured on | Status |
 |---|---|---|---|---|---|---|
