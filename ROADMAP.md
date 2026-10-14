@@ -1,4 +1,4 @@
-<!-- what-we-build: drafted 2026-10-14 -->
+<!-- what-we-build: approved 2026-10-14 -->
 # Roadmap
 
 **Current milestone:** M0. Prove that Swift and Apple's engines can carry the design.
