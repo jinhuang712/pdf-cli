@@ -1,4 +1,4 @@
-<!-- what-we-build: drafted 2026-10-14 -->
+<!-- what-we-build: approved 2026-10-14 -->
 # Designs
 
 PDF files on the user's Mac and commands from an agent go in. Text with page addresses, PNG crops, search hits and failure reports come out, served from a local cache. In between, worker processes parse each page once, in steps that escalate only as far as the page needs, and store the result in SQLite. Behavior is in [FEATURES.md](FEATURES.md).
