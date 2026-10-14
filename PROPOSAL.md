@@ -1,4 +1,4 @@
-<!-- what-we-build: drafted 2026-10-15 -->
+<!-- what-we-build: approved 2026-10-15 -->
 # pdf-cli — Proposal
 
 > A macOS command-line tool that helps coding agents read PDFs.
