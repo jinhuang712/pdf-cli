@@ -9,3 +9,6 @@ DerivedData/
 
 # Private test PDFs stay local
 /private/
+
+# Spike output
+/spike/out/
