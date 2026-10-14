@@ -9,7 +9,7 @@ struct Spike: AsyncParsableCommand {
         commandName: "spike",
         abstract: "Experiments for milestone M0. Not part of the product.",
         shouldDisplay: false,
-        subcommands: [SpikeText.self, SpikeDocs.self]
+        subcommands: [SpikeText.self, SpikeDocs.self, SpikeFigures.self]
     )
 }
 
