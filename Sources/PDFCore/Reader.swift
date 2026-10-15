@@ -58,17 +58,21 @@ public final class Reader: Sendable {
         var spawns = 0
         var pause = 0.005
         var runner: pid_t?
-        var retriedLocked = false
         defer { if let runner { _ = Processes.reap(runner) } }
 
         while true {
             guard let stat = FileStat(path: path) else { throw ReadError.notFound(rawPath) }
             var locks = ["path:" + path]
             switch try store.entry(path: path, stat: stat) {
-            case .failed(let reason)? where password != nil && reason.hasPrefix(OpenFailure.locked) && !retriedLocked:
-                // A password may open a file the cache knows as locked: it is indexed again.
-                try store.forgetEntry(path: path)
-                retriedLocked = true
+            case .failed(let reason)? where password != nil && reason.hasPrefix(OpenFailure.locked) && spawns == 0:
+                // A password may open a file the cache knows as locked: it is indexed again, once
+                // no runner without the password still works on it. The verdict of the runner
+                // this read starts, with the password, stands.
+                if try store.isLockAlive("path:" + path) {
+                    Thread.sleep(forTimeInterval: 0.05)
+                } else {
+                    try store.forgetEntry(path: path)
+                }
                 continue
             case .failed(let reason)?:
                 return .fileFailed(reason: reason)

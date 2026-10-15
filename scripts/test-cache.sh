@@ -212,6 +212,12 @@ check "a locked PDF exits 3" "exit 3" "$output"
 check "a wrong password says so" "the password given does not open it" "$(library add $locked --password wrong)"
 check "the right password opens it" "· 1 page · ok" "$(library add $locked --password "open sesame")"
 check "later reads come from the cache" "p.1 ok" "$(PDF_CLI_HOME=$work/library $pdf debug-pages $locked 2>&1)"
+# A page missing from the cache, as after a new parser version, cannot be read without the
+# password. The file fails as locked, and no page caches a failure.
+sqlite3 "$work/library/Caches/cache.sqlite" "DELETE FROM page_result"
+check "a missing page of a locked file fails the file, not the page" "^$locked: failed: locked by a password" \
+    "$(library debug-read $locked)"
+check "the password still opens it after" "· 1 page · ok" "$(echo "open sesame" | library add $locked --password-stdin)"
 
 # Pages nobody waits for parse slowly, at background priority, so runners get a minute to finish.
 for _ in $(seq 60); do

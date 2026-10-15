@@ -16,14 +16,19 @@ struct AddCommand: ParsableCommand {
             help: ArgumentHelp("Parse with up to N workers at once. By default, every parse on the Mac shares half the performance cores.",
                                valueName: "N"))
     var workers: Int?
-    @Option(help: "The password that opens a locked PDF.") var password: String?
+    @Option(help: "The password that opens a locked PDF. Other users of the Mac can see it in this command's line while it runs; --password-stdin keeps it out.")
+    var password: String?
+    @Flag(help: "Read the password from standard input, as in: echo \"$PW\" | pdf add paper.pdf --password-stdin")
+    var passwordStdin = false
 
     func validate() throws {
         if let workers, workers < 1 { throw ValidationError("-j needs 1 or more") }
+        if password != nil && passwordStdin { throw ValidationError("give the password one way: --password or --password-stdin") }
     }
 
     func run() throws {
         var files: [String] = []
+        var seen = Set<String>()
         var missing = 0
         for path in paths {
             let found = Self.pdfs(at: path)
@@ -31,10 +36,11 @@ struct AddCommand: ParsableCommand {
                 print("failed: no PDF found · \(path)")
                 missing += 1
             }
-            for file in found where !files.contains(where: { Reader.resolve($0) == Reader.resolve(file) }) {
-                files.append(file)
-            }
+            for file in found where seen.insert(Reader.resolve(file)).inserted { files.append(file) }
         }
+        let password = passwordStdin
+            ? readLine(strippingNewline: true).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            : self.password
         let store = try Store()
         let reader = Reader(store: store, library: try Library())
         let picks = try Picks()
@@ -70,25 +76,32 @@ struct AddCommand: ParsableCommand {
     }
 
     /// The PDFs a path names: the file itself, every PDF in a folder and its subfolders, or the
-    /// matches of a glob pattern that the shell left unexpanded.
-    static func pdfs(at path: String) -> [String] {
+    /// PDFs among the matches of a glob pattern that the shell left unexpanded. A file named
+    /// outright is tried whatever its name; in a folder or a pattern, only names ending in
+    /// ".pdf" count. A link to a PDF counts; links to folders are not followed, so a loop of
+    /// links cannot trap the walk.
+    static func pdfs(at path: String, named: Bool = true) -> [String] {
         var isFolder: ObjCBool = false
         if FileManager.default.fileExists(atPath: path, isDirectory: &isFolder) {
-            guard isFolder.boolValue else { return [path] }
+            guard isFolder.boolValue else { return named || isPDF(URL(fileURLWithPath: path)) ? [path] : [] }
             let folder = URL(fileURLWithPath: path)
-            guard let walk = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: [.isRegularFileKey],
+            guard let walk = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: nil,
                                                             options: [.skipsHiddenFiles, .skipsPackageDescendants])
             else { return [] }
-            return walk.compactMap { $0 as? URL }
-                .filter { $0.pathExtension.lowercased() == "pdf" && (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true }
-                .map(\.path).sorted()
+            return walk.compactMap { $0 as? URL }.filter(isPDF).map(\.path).sorted()
         }
         guard path.contains(where: { "*?[".contains($0) }) else { return [] }
         var matches = glob_t()
         defer { globfree(&matches) }
         guard glob(path, GLOB_TILDE, nil, &matches) == 0 else { return [] }
         return (0..<Int(matches.gl_pathc)).compactMap { matches.gl_pathv[$0].map { String(cString: $0) } }
-            .flatMap { pdfs(at: $0) }
+            .flatMap { pdfs(at: $0, named: false) }
+    }
+
+    /// A regular file, or a link to one, whose name ends in ".pdf".
+    static func isPDF(_ url: URL) -> Bool {
+        guard url.pathExtension.lowercased() == "pdf" else { return false }
+        return (try? url.resolvingSymlinksInPath().resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
     }
 }
 
@@ -116,7 +129,10 @@ struct ListCommand: ParsableCommand {
     /// What the cache holds for the entry: its flagged pages, how far it is parsed, or why
     /// nothing can be read.
     func status(of entry: LibraryEntry, store: Store, picks: Picks) throws -> String {
-        guard FileStat(path: entry.path) != nil else { return "file missing" }
+        guard let stat = FileStat(path: entry.path) else {
+            return FileStat.isGone(path: entry.path) ? "file missing" : "out of reach, as on a drive not plugged in"
+        }
+        guard try store.entry(path: entry.path, stat: stat) != nil else { return "changed since it was read" }
         let keys = try store.pageKeys(docID: entry.docID)
         guard !keys.isEmpty else { return "not parsed" }
         let results = try store.results(keys: keys)
@@ -189,7 +205,7 @@ struct GCCommand: ParsableCommand {
         let before = store.size
         let removed = try store.collectGarbage()
         let library = try Library()
-        let gone = try library.entries().filter { FileStat(path: $0.path) == nil }.map(\.path)
+        let gone = try library.entries().filter { FileStat.isGone(path: $0.path) }.map(\.path)
         try library.remove(paths: gone)
         let compacted = store.compact()
         let bytes = ByteCountFormatter()
@@ -199,7 +215,7 @@ struct GCCommand: ParsableCommand {
                             count(removed.pages, "page result"), count(gone.count, "library entry", "library entries")
                             + " for files gone"].joined(separator: ", ")
               + " · freed \(bytes.string(fromByteCount: max(0, before - store.size)))")
-        if !compacted { print("the cache is in use, so the space returns after the next pdf gc") }
+        if !compacted { print("a parse is running, so the space returns after the next pdf gc") }
     }
 }
 

@@ -56,6 +56,46 @@ import Testing
         #expect(try store.knows(path: here))
     }
 
+    @Test func anEntryIndexedWithOlderChecksIsReadAgainButKeepsItsPages() throws {
+        let store = try makeStore()
+        let here = FileManager.default.temporaryDirectory.appendingPathComponent("pdf-cli-checks-\(UUID()).pdf").path
+        FileManager.default.createFile(atPath: here, contents: Data("%PDF-".utf8))
+        defer { try? FileManager.default.removeItem(atPath: here) }
+        let stat = try #require(FileStat(path: here))
+        try store.saveIndex(path: here, stat: stat, pageKeys: ["k"])
+        try store.saveResult(key: "k", result("text"))
+        try store.write { db in try db.execute(sql: "UPDATE file_entry SET checks = 0") }
+        #expect(try store.entry(path: here, stat: stat) == nil)
+        #expect(try store.collectGarbage() == Store.Removed())
+        #expect(try store.results(keys: ["k"])["k"] != nil)
+    }
+
+    @Test func compactingGivesTheSpaceBack() throws {
+        let store = try makeStore()
+        let filler = String(repeating: "word ", count: 4_000)
+        try store.saveIndex(path: "/a.pdf", stat: stat, pageKeys: (0..<200).map { "k\($0)" })
+        for index in 0..<200 {
+            try store.saveResult(key: "k\(index)", PageResult(status: .ok, method: "pdfkit", text: filler, reason: "",
+                                                               parseMillis: 1, data: filler))
+        }
+        let full = store.size
+        try store.remove(paths: ["/a.pdf"])
+        #expect(store.compact())
+        #expect(store.size * 4 < full)
+    }
+
+    @Test func pagesTheIndexCouldNotReadAreSavedWithTheirDocument() throws {
+        let store = try makeStore()
+        try store.saveIndex(path: "/a.pdf", stat: stat, pageKeys: ["k1", "unreadable-x-1"],
+                            failures: ["unreadable-x-1": "time limit"])
+        #expect(try store.results(keys: ["unreadable-x-1"])["unreadable-x-1"]?.reason == "time limit")
+    }
+
+    @Test func aFileOnADriveNotPluggedInIsNotGone() {
+        #expect(FileStat.isGone(path: "/private/tmp/pdf-cli-no-such-file-\(UUID()).pdf"))
+        #expect(!FileStat.isGone(path: "/Volumes/No Such Drive \(UUID())/paper.pdf"))
+    }
+
     @Test func twoCopiesShareADocument() throws {
         let store = try makeStore()
         let first = try store.saveIndex(path: "/a.pdf", stat: stat, pageKeys: ["k1", "k2"])

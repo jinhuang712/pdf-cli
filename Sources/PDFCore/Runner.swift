@@ -206,12 +206,13 @@ public final class Runner: @unchecked Sendable {
                 return .failed
             }
             guard let count = pageCount else { return .unavailable }
+            var failures: [String: String] = [:]
             if !failedPages.isEmpty {
                 let digest = fileDigest()
                 for (page, reason) in failedPages {
                     let key = PageKeys.unreadable(fileDigest: digest, page: page)
                     keys[page] = key
-                    try? store.saveResult(key: key, .failed(reason))
+                    failures[key] = reason
                 }
             }
             // A text layer that fails the sample check is not read at all, so its fonts no longer
@@ -228,7 +229,8 @@ public final class Runner: @unchecked Sendable {
             let savedByPDFKit = producer?.contains("Quartz PDFContext") ?? false
             let named = TextCleanup.line(title ?? "")
             guard let id = try? store.saveIndex(path: path, stat: before, pageKeys: ordered, spacesAtRisk: atRisk,
-                                                needsOCR: needsOCR, savedByPDFKit: savedByPDFKit, title: named) else {
+                                                needsOCR: needsOCR, savedByPDFKit: savedByPDFKit, title: named,
+                                                failures: failures) else {
                 return .unavailable
             }
             return .document(id: id, stat: before)
@@ -277,6 +279,7 @@ public final class Runner: @unchecked Sendable {
         var attempts: [Int: Int] = [:]
         var workers: [Supervised] = []
         var changed = false
+        var locked: String?
         var failedSpawns = 0
         let capacity = poolSize
         let readAllByOCR = (try? store.needsOCR(docID: docID)) ?? false
@@ -369,6 +372,12 @@ public final class Runner: @unchecked Sendable {
             for worker in workers where worker.finished && !changed {
                 var unreported = worker.pages.filter { !worker.reported.contains($0) }
                 if let failure = worker.openFailure {
+                    // A locked file was indexed with a password this runner was not given. The
+                    // file failed, not its pages, so no page result is cached.
+                    if failure.hasPrefix(OpenFailure.locked) {
+                        locked = failure
+                        continue
+                    }
                     // The file opened when it was indexed, so a failure now usually means it
                     // moved or changed. `save` checks that before it caches anything.
                     unreported.forEach { save($0, .failed(failure)) }
@@ -403,6 +412,13 @@ public final class Runner: @unchecked Sendable {
                 }
             }
             workers.removeAll { $0.finished }
+            if let locked {
+                // The command learns the file is locked, and `pdf add --password` indexes it again.
+                workers.forEach { stop($0, reason: "the file is locked", kind: .runner) }
+                while workers.contains(where: { !$0.finished }) { step(workers) { _, _ in } }
+                if unchanged() { try? store.saveFailure(path: path, stat: stat, reason: locked) }
+                return .aborted
+            }
         }
 
         if changed {

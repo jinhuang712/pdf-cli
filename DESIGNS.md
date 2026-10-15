@@ -283,9 +283,15 @@ The 10 sample papers hold 3.8 KB of text per page, measured with PDFKit. With po
 
 ## Decision: the library lists files by path, with their document's ID — 2026-10-15
 
-The library list holds one entry per file path, with the file's document and its title. Every command that reads a file adds it, or points it at its new document when the file changed. A file already listed as it is costs one read of the list and no write, so a cached read stays fast. The ID that commands show and accept is the first 8 hex digits of the document's ID, which hashes the page keys, so two copies of one file share an ID.
+The library list holds one entry per file path, with the file's document and its title. Every command that reads a file adds it, or points it at its new document when the file changed. A file already listed as it is costs one read of the list and no write, so a cached read stays fast. The ID that commands show is the first 8 hex digits of the document's ID, which hashes the page keys, so two copies of one file share an ID. `pdf rm` accepts any 4 digits or more from its start.
 
-`pdf rm` forgets the file and drops every document and page result that no other file still uses. Picks stay: they are the agent's work, kept apart from the cache, and a file added again shows them again. `pdf gc` also forgets files that are gone or changed since they were indexed, results of older parser versions, and the locks of runners that are gone. It then rebuilds the database to give the space back, and empties SQLite's write-ahead log after the rebuild, since the rebuild writes through it: without that, a trial freed nothing. A runner saves a document and its file in one transaction, so a parse in progress keeps its rows through a cleanup.
+`pdf rm` forgets the file and drops every document and page result that no other file still uses. Picks stay: they are the agent's work, kept apart from the cache, and a file added again shows them again. `pdf gc` also forgets files that are gone or changed since they were indexed, results of older parser versions, and the locks of runners that are gone. It then rebuilds the database to give the space back, and empties SQLite's write-ahead log after the rebuild, since the rebuild writes through it: without that, a trial freed nothing.
+
+A cleanup never takes what a read still needs:
+- A runner saves a document, its file and the pages its index could not read in one transaction, and `pdf gc` deletes a file's entry only while it still holds the state it read, so a parse in progress keeps its rows.
+- The rebuild holds SQLite's write lock, which would make a runner's writes fail, so it runs only while no runner is alive.
+- A file is gone only when it is missing from a volume that is mounted. A file on an unplugged drive or an offline share keeps its rows and its library entry, and `pdf ls` shows it as out of reach.
+- A cache upgrade marks each file to be indexed again on its next read, instead of forgetting it: forgetting every file let a `pdf gc` right after an upgrade drop every cached page, OCR results included, as the M1.5 review found.
 
 | Option | For | Against |
 |---|---|---|
@@ -294,7 +300,7 @@ The library list holds one entry per file path, with the file's document and its
 
 ## Decision: a password reaches the workers in their environment — 2026-10-15
 
-`pdf add --password` hands the password to the runner it starts, and the runner's workers inherit it, in an environment variable. Any user on the Mac can read another user's command lines with `ps`, and only the same user can read a process's environment. The password is not stored: a later read of the file comes from the cache, and a file that changes needs `pdf add --password` again. A file the cache knows as locked is indexed again when a password comes.
+`pdf add --password` hands the password to the runner it starts, and the runner's workers inherit it, in an environment variable. Any user on the Mac can read another user's command lines with `ps`, and only the same user can read a process's environment: on the M3, `ps` showed root's command lines and none of root's environments. `pdf add --password <pw>` itself still shows the password in its own command line while it runs, so `--password-stdin` reads it from standard input instead. The password is not stored: a later read of the file comes from the cache, and a file that changes needs `pdf add --password` again. A file the cache knows as locked is indexed again when a password comes. A read without the password that needs a page not yet cached fails the file as locked, and caches no failure for the page.
 
 | Option | For | Against |
 |---|---|---|

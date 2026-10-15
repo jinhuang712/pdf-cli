@@ -65,16 +65,26 @@ import Testing
 }
 
 @Suite struct MigrationTests {
-    @Test func upgradingFromVersion1ForgetsFileEntries() throws {
+    @Test func upgradingFromVersion4ReadsFilesAgainAndKeepsTheirPages() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("pdf-cli-migrate-\(UUID())")
-        let stat = FileStat(size: 1, modifiedNanos: 2, inode: 3, device: 4)
+        let path = folder.appendingPathComponent("a.pdf").path
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        FileManager.default.createFile(atPath: path, contents: Data("%PDF-".utf8))
+        let stat = try #require(FileStat(path: path))
         do {
             let store = try Store(directory: folder)
-            try store.saveIndex(path: "/a.pdf", stat: stat, pageKeys: ["k"])
-            try store.write { db in try db.execute(sql: "PRAGMA user_version = 1") }
+            try store.saveIndex(path: path, stat: stat, pageKeys: ["k"])
+            try store.saveResult(key: "k", PageResult(status: .ok, method: "pdfkit", text: "t", reason: "", parseMillis: 1))
+            // A version 4 cache has no record of the checks each entry ran.
+            try store.write { db in
+                try db.execute(sql: "ALTER TABLE file_entry DROP COLUMN checks")
+                try db.execute(sql: "PRAGMA user_version = 4")
+            }
         }
         let upgraded = try Store(directory: folder)
-        #expect(try upgraded.entry(path: "/a.pdf", stat: stat) == nil)
+        #expect(try upgraded.entry(path: path, stat: stat) == nil)
+        #expect(try upgraded.collectGarbage() == Store.Removed())
+        #expect(try upgraded.results(keys: ["k"])["k"] != nil)
     }
 
     @Test func indexingAgainUpdatesTheVerdict() throws {

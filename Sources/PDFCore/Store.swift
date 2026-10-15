@@ -24,6 +24,20 @@ public struct FileStat: Equatable, Sendable {
         self.inode = inode
         self.device = device
     }
+
+    /// Whether a file is gone for good: no such file, on a volume that is mounted. A file on an
+    /// unplugged drive, on an offline share or behind a folder it may not read is only out of
+    /// reach, and a cleanup keeps what it knows of it.
+    public static func isGone(path: String) -> Bool {
+        var info = Darwin.stat()
+        guard stat(path, &info) != 0, errno == ENOENT else { return false }
+        let parts = path.split(separator: "/")
+        if parts.count >= 2, parts[0] == "Volumes" {
+            var mount = Darwin.stat()
+            return stat("/Volumes/\(parts[1])", &mount) == 0
+        }
+        return true
+    }
 }
 
 /// How the cache knows a file: the document it holds, or why it could not be read.
@@ -120,22 +134,27 @@ public final class Store: Sendable {
         // Version 2: the text layer of each page, and the font check of each document.
         // Version 3: the sample check of each document.
         // Version 4: whether PDFKit saved the document.
-        // Version 5: the document's title.
+        // Version 5: the document's title, and the index checks each file entry ran.
         for (table, column, type) in [("page_result", "data", "TEXT NOT NULL DEFAULT ''"),
                                       ("document", "spaces_at_risk", "INTEGER NOT NULL DEFAULT 0"),
                                       ("document", "needs_ocr", "INTEGER NOT NULL DEFAULT 0"),
                                       ("document", "saved_by_pdfkit", "INTEGER NOT NULL DEFAULT 0"),
-                                      ("document", "title", "TEXT NOT NULL DEFAULT ''")]
+                                      ("document", "title", "TEXT NOT NULL DEFAULT ''"),
+                                      ("file_entry", "checks", "INTEGER NOT NULL DEFAULT 0")]
         where try !db.columns(in: table).contains(where: { $0.name == column }) {
             try db.execute(sql: "ALTER TABLE \(table) ADD COLUMN \(column) \(type)")
         }
-        if version >= 1 {
-            // Files indexed before a check existed have no verdict from it. Forgetting their
-            // entries makes the next read index them again, and run every check.
-            try db.execute(sql: "DELETE FROM file_entry")
-        }
+        // Entries indexed before version 5 get checks 0, so the next read indexes their files
+        // again. Earlier versions deleted every entry instead, which let `pdf gc` drop every
+        // document before its file was read again.
         try db.execute(sql: "PRAGMA user_version = \(schemaVersion)")
     }
+
+    /// The checks the index runs on a file: the font check, the sample check, the producer
+    /// and the title. Raise it when they change. A file entry indexed with older checks still
+    /// holds its document, so a cleanup keeps the document's pages, but a read indexes the
+    /// file again and runs every check.
+    static let indexChecks = 5
 
     static func createVersion1(_ db: Database) throws {
         try db.execute(sql: """
@@ -189,13 +208,14 @@ public final class Store: Sendable {
 
     // MARK: Files and documents
 
-    /// The cached entry for a file, if the file has not changed since it was indexed.
+    /// The cached entry for a file, if the file has not changed since it was indexed, with the
+    /// index checks of this version.
     public func entry(path: String, stat: FileStat) throws -> FileEntry? {
         try pool.read { db in
             guard let row = try Row.fetchOne(db, sql: """
                 SELECT doc_id, failure FROM file_entry
-                WHERE path = ? AND size = ? AND modified_ns = ? AND inode = ? AND device = ?
-                """, arguments: [path, stat.size, stat.modifiedNanos, stat.inode, stat.device])
+                WHERE path = ? AND size = ? AND modified_ns = ? AND inode = ? AND device = ? AND checks = ?
+                """, arguments: [path, stat.size, stat.modifiedNanos, stat.inode, stat.device, Store.indexChecks])
             else { return nil }
             if let id: String = row["doc_id"] { return .document(id: id) }
             return .failed(reason: row["failure"] ?? "unknown")
@@ -206,12 +226,16 @@ public final class Store: Sendable {
     /// file, or one file with new highlights, share a document.
     /// `spacesAtRisk` is the font check's verdict for the whole file, `needsOCR` the sample
     /// check's, and `savedByPDFKit` says the file's producer is macOS's PDFKit. `title` is the
-    /// title the file names in its metadata, or empty.
+    /// title the file names in its metadata, or empty. `failures` are the results of pages the
+    /// index could not read, by key: they go in the same transaction as their document, so a
+    /// cleanup in between never drops them.
     @discardableResult
     public func saveIndex(path: String, stat: FileStat, pageKeys: [String], spacesAtRisk: Bool = false,
-                          needsOCR: Bool = false, savedByPDFKit: Bool = false, title: String = "") throws -> String {
+                          needsOCR: Bool = false, savedByPDFKit: Bool = false, title: String = "",
+                          failures: [String: String] = [:]) throws -> String {
         let id = Store.documentID(pageKeys: pageKeys)
         try write { db in
+            for (key, reason) in failures { try Store.insertResult(db, key: key, .failed(reason)) }
             try db.execute(sql: """
                 INSERT INTO document (id, page_count, created_at, spaces_at_risk, needs_ocr, saved_by_pdfkit, title)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -250,10 +274,10 @@ public final class Store: Sendable {
     func saveEntry(_ db: Database, path: String, stat: FileStat, docID: String?, failure: String?) throws {
         try db.execute(sql: """
             INSERT OR REPLACE INTO file_entry
-                (path, size, modified_ns, inode, device, doc_id, failure, indexed_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (path, size, modified_ns, inode, device, doc_id, failure, indexed_at, checks)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, arguments: [path, stat.size, stat.modifiedNanos, stat.inode, stat.device,
-                             docID, failure, Date().timeIntervalSince1970])
+                             docID, failure, Date().timeIntervalSince1970, Store.indexChecks])
     }
 
     static func documentID(pageKeys: [String]) -> String {
@@ -315,15 +339,17 @@ public final class Store: Sendable {
     /// Stores a page's result. A result already cached stays, so a failure never replaces a
     /// page that read well.
     public func saveResult(key: String, _ result: PageResult) throws {
-        try write { db in
-            try db.execute(sql: """
-                INSERT OR IGNORE INTO page_result
-                    (page_key, parser_version, status, method, text, reason, macos_build, parse_ms, parsed_at, data)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, arguments: [key, Env.parserVersion, result.status.rawValue, result.method,
-                                 result.text, result.reason, result.macOSBuild, result.parseMillis,
-                                 Date().timeIntervalSince1970, result.data])
-        }
+        try write { db in try Store.insertResult(db, key: key, result) }
+    }
+
+    static func insertResult(_ db: Database, key: String, _ result: PageResult) throws {
+        try db.execute(sql: """
+            INSERT OR IGNORE INTO page_result
+                (page_key, parser_version, status, method, text, reason, macos_build, parse_ms, parsed_at, data)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, arguments: [key, Env.parserVersion, result.status.rawValue, result.method,
+                             result.text, result.reason, result.macOSBuild, result.parseMillis,
+                             Date().timeIntervalSince1970, result.data])
     }
 
     // MARK: Cleanup
@@ -366,20 +392,26 @@ public final class Store: Sendable {
 
     /// Removes what no read can reach any more: files gone or changed since they were indexed,
     /// the documents and pages only they used, results of older parser versions, and the locks
-    /// of runners that are gone.
+    /// of runners that are gone. A file out of reach, as on an unplugged drive, keeps its rows.
     public func collectGarbage() throws -> Removed {
         let entries = try pool.read { db in
             try Row.fetchAll(db, sql: "SELECT path, size, modified_ns, inode, device FROM file_entry")
         }
-        let stale: [String] = entries.compactMap { row in
+        let stale: [(path: String, stat: FileStat)] = entries.compactMap { row in
+            let path: String = row["path"]
             let cached = FileStat(size: row["size"], modifiedNanos: row["modified_ns"], inode: row["inode"],
                                   device: row["device"])
-            return FileStat(path: row["path"]) == cached ? nil : row["path"]
+            if let now = FileStat(path: path) { return now == cached ? nil : (path, cached) }
+            return FileStat.isGone(path: path) ? (path, cached) : nil
         }
         return try write { db in
             var removed = Removed()
-            for path in stale {
-                try db.execute(sql: "DELETE FROM file_entry WHERE path = ?", arguments: [path])
+            // Only an entry that still holds the stat read above goes: a runner may have indexed
+            // the changed file again since, and its new entry stays.
+            for (path, stat) in stale {
+                try db.execute(sql: """
+                    DELETE FROM file_entry WHERE path = ? AND size = ? AND modified_ns = ? AND inode = ? AND device = ?
+                    """, arguments: [path, stat.size, stat.modifiedNanos, stat.inode, stat.device])
                 removed.files += db.changesCount
             }
             try db.execute(sql: "DELETE FROM page_result WHERE parser_version <> ?", arguments: [Env.parserVersion])
@@ -404,10 +436,16 @@ public final class Store: Sendable {
         removed.pages += db.changesCount
     }
 
-    /// Gives the space of removed rows back to the disk. False when another process holds the
-    /// database too long, as a runner can while it parses. VACUUM writes the rebuilt database
-    /// through the write-ahead log, so the log is emptied again after it.
+    /// Gives the space of removed rows back to the disk. VACUUM holds the write lock while it
+    /// rebuilds the database, which would make a runner's writes and heartbeats fail, so it
+    /// runs only while no runner is alive: false means it did not run. VACUUM writes
+    /// the rebuilt database through the write-ahead log, so the log is emptied again after it.
     public func compact() -> Bool {
+        let busy = (try? pool.read { db in
+            try Row.fetchAll(db, sql: "SELECT pid, heartbeat_at FROM runner_lock")
+                .contains { Store.isAlive(pid: $0["pid"], heartbeat: $0["heartbeat_at"]) }
+        }) ?? true
+        guard !busy else { return false }
         do {
             try pool.writeWithoutTransaction { db in
                 try db.execute(sql: "PRAGMA wal_checkpoint(TRUNCATE)")
