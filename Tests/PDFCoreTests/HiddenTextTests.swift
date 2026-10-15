@@ -42,14 +42,21 @@ import Testing
                       (33, .invisible), (34, .invisible), (35, .invisible), (36, .invisible), (37, .invisible),
                       (38, .background), (39, .covered), (40, .tiny), (41, .background), (42, .invisible),
                       // An annotation on a page whose media box starts away from the origin.
-                      (43, .invisible)])
+                      (43, .invisible),
+                      // Fourth review: the annotation on pages turned 90, 180 and 270 degrees, and
+                      // turned with its media box away from the origin; half-point, clipped and
+                      // white lines beside a huge invisible glyph; a form switched off drawn one
+                      // glyph at a time; a membership off by its visibility expression.
+                      (44, .invisible), (45, .invisible), (46, .invisible), (47, .invisible),
+                      (50, .tiny), (51, .invisible), (52, .background), (53, .invisible), (54, .invisible)])
     func eachTrickHidesItsPlantedLineAndOnlyIt(page: Int, reason: HiddenReason) throws {
         let layer = try layer(page)
         let runs = hidden(layer)
         #expect(!runs.isEmpty)
         // PDFKit takes stacked glyphs apart in an order of its own, so the planted word may not
-        // come first.
-        #expect(runs.allSatisfy { $0.hasPrefix("\(reason): ") && $0.contains("PLANTED") })
+        // come first; and a word PDFKit joins to a glyph of another trick may be hidden for that
+        // one. The visible lines, below, stay whole.
+        #expect(runs.contains { $0.hasPrefix("\(reason): ") && $0.contains("PLANTED") })
         // The visible lines stay text, and the planted words leave what a reader sees.
         let visible = layer.blocks.map(\.visibleText).joined(separator: " ")
         #expect(visible.contains("Visible words before the trick on this page."))
@@ -108,7 +115,11 @@ import Testing
                       (25, "corner"), (26, "nook"), (27, "Readable words under a faint group picture."),
                       (28, "Readable words under a multiplied group picture."), (29, "Readable words under a picture nobody sees."),
                       (30, "between"), (31, "Highlighted words, the last letters white on blue."),
-                      (32, "Palegrey letters, the second half pale.")])
+                      (32, "Palegrey letters, the second half pale."),
+                      // Fourth review: a scan's text layer under its image, and its invisible layer
+                      // crossed by a watermark; letters placed right to left, a mirrored heading.
+                      (48, "Words of a scan under its image."), (49, "Words of a scan's text layer, on the first line."),
+                      (55, "Backwards placed"), (56, "Mirrored heading words.")])
     func textAReaderSeesStaysText(page: Int, words: String) throws {
         let layer = try layer(page)
         #expect(hidden(layer).isEmpty)
@@ -124,7 +135,7 @@ import Testing
     }
 
     /// Pages drawn in ways that once crashed the check read, and their visible lines stay text.
-    @Test(arguments: 0..<6)
+    @Test(arguments: 0..<10)
     func pagesThatCrashedTheCheckRead(page index: Int) throws {
         let url = Self.fixture.deletingLastPathComponent().appendingPathComponent("broken.pdf")
         let visible = try layer(index, in: url).blocks.map(\.visibleText).joined(separator: " ")

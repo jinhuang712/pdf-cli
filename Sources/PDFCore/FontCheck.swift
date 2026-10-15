@@ -160,7 +160,7 @@ public struct FontCheck: Sendable, Equatable {
         var first: CGPDFInteger = 0
         var widths: CGPDFArrayRef?
         var width: CGPDFReal = 0
-        guard CGPDFDictionaryGetInteger(font, "FirstChar", &first), first <= 32,
+        guard CGPDFDictionaryGetInteger(font, "FirstChar", &first), first >= 0, first <= 32,
               CGPDFDictionaryGetArray(font, "Widths", &widths), let widths,
               CGPDFArrayGetNumber(widths, 32 - first, &width), width > 0 else { return nil }
         return Double(width) / 2000

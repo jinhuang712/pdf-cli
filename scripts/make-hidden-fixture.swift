@@ -217,11 +217,23 @@ let square = writer.add("<< /Type /Annot /Subtype /Square /Rect [66 672 466 696]
 // The same on a page whose media box starts at 100, 100: annotations are placed in page space.
 let shiftedSquare = writer.add("<< /Type /Annot /Subtype /Square /Rect [166 772 566 796] /C [1 1 1] /IC [1 1 1] /BS << /W 0 >> "
                                + "/F 4 /AP << /N \(squareLook) 0 R >> >>")
+// A membership dictionary off by its visibility expression alone.
+let expression = writer.add("<< /Type /OCMD /VE [/And \(layer) 0 R] >>")
+/// A line drawn one glyph at a time, the pen moved by a command between them.
+func perGlyph(_ text: String, y: Int, x: Int = 72) -> String {
+    "BT /F1 12 Tf \(x) \(y) Td " + text.map { character in
+        "(\(character)) Tj \(number(width(String(character)))) 0 Td"
+    }.joined(separator: " ") + " ET\n"
+}
+// A form in the layer switched off whose line is drawn one glyph at a time: no string spells a word.
+let offGlyphs = writer.add(stream: "/Type /XObject /Subtype /Form /BBox [0 0 612 792] /OC \(layer) 0 R "
+                           + "/Resources << /Font << /F1 \(helvetica) 0 R >> >>",
+                           perGlyph("PLANTED glyph by glyph in a form switched off.", y: 680))
 let resources = "<< /Font << /F1 \(helvetica) 0 R /F2 \(symbol) 0 R >> "
     + "/XObject << /Im1 \(image) 0 R /White \(white) 0 R /Clear \(clear) 0 R /Solid \(solid) 0 R /Light \(light) 0 R "
-    + "/Keyed \(keyed) 0 R /Group \(group) 0 R /LightGroup \(lightGroup) 0 R /Off \(offForm) 0 R >> "
+    + "/Keyed \(keyed) 0 R /Group \(group) 0 R /LightGroup \(lightGroup) 0 R /Off \(offForm) 0 R /OffGlyphs \(offGlyphs) 0 R >> "
     + "/ExtGState << /Faint \(faint) 0 R /Strong \(strong) 0 R /Multiply \(multiply) 0 R >> "
-    + "/Shading << /Stripes \(stripes) 0 R >> /Properties << /oc1 \(layer) 0 R /md \(membership) 0 R >> >>"
+    + "/Shading << /Stripes \(stripes) 0 R >> /Properties << /oc1 \(layer) 0 R /md \(membership) 0 R /ve \(expression) 0 R >> >>"
 
 // The third review's pages. A picture turned 45 degrees and a round one, drawn after words in
 // the corners of their bounding boxes, outside the pictures themselves.
@@ -275,6 +287,42 @@ pages += [
          content: "1 0 0 1 100 100 cm\n" + visible + line(planted, y: 680), media: "[100 100 712 892]",
          extra: "/Annots [\(shiftedSquare) 0 R]"),
 ]
+// The fourth review's pages. The annotation on pages turned for display: readers place it in the
+// page's own space.
+for turn in [90, 180, 270] {
+    pages.append(Page(name: "covered by a white square annotation, on a page turned \(turn) degrees",
+                      content: visible + line(planted, y: 680), extra: "/Annots [\(square) 0 R] /Rotate \(turn)"))
+}
+let layerLines = ["Words of a scan's text layer, on the first line.", "More words of the layer, on the second line.",
+                  "Words of the layer again, on the third line.", "The last words of the layer, on the fourth line."]
+pages += [
+    Page(name: "covered by a white square annotation, on a page turned 90 degrees whose media box starts at 100, 100",
+         content: "1 0 0 1 100 100 cm\n" + visible + line(planted, y: 680), media: "[100 100 712 892]",
+         extra: "/Annots [\(shiftedSquare) 0 R] /Rotate 90"),
+    // A scan's text layer drawn in the normal mode, under the scan's image, which shows the words.
+    Page(name: "visible: a scan's text layer drawn under its image",
+         content: line("Words of a scan under its image.", y: 680) + "q 612 0 0 792 0 0 cm /Im1 Do Q\n"),
+    // A scan's text layer in the invisible mode, over a white page, crossed by a grey watermark.
+    Page(name: "visible: a scan's invisible text layer crossed by a watermark", content: background
+        + layerLines.enumerated().map { "BT 3 Tr /F1 12 Tf 72 \(680 - 30 * $0.offset) Td (\($0.element)) Tj ET\n" }.joined()
+        + "q 0.7 g BT /F1 48 Tf 0.707 0.707 -0.707 0.707 100 540 Tm (CONFIDENTIAL COPY) Tj ET Q\n"),
+    // One huge glyph in the invisible mode at the end of a line makes PDFKit's box for every word
+    // on the line as tall as the glyph.
+    Page(name: "too small to read: half-point text beside a huge invisible glyph", content: visible
+        + "BT /F1 0.5 Tf 72 680 Td (PLANTED half point text no reader sees at all) Tj 3 Tr /F1 200 Tf (.) Tj ET\n"),
+    Page(name: "clipped, beside a huge invisible glyph", content: visible
+        + "q 0 0 10 10 re W n BT /F1 12 Tf 72 680 Td (PLANTED clipped away outside its clip) Tj 3 Tr /F1 200 Tf (.) Tj ET Q\n"),
+    Page(name: "the color behind it, beside a huge invisible glyph", content: visible
+        + "BT 1 g /F1 12 Tf 72 680 Td (PLANTED white on white ignore the paper) Tj 3 Tr /F1 200 Tf (.) Tj ET 0 g\n"),
+    Page(name: "in a form switched off, drawn one glyph at a time", content: visible + "/OffGlyphs Do\n"),
+    Page(name: "in marked content whose membership is off by its visibility expression", content: visible
+        + "/OC /ve BDC\n" + line(planted, y: 680) + "EMC\n"),
+    // Letters placed right to left by a TJ array moving the pen back, and a heading mirrored.
+    Page(name: "visible: letters placed right to left", content: visible + "BT /F1 12 Tf 400 680 Td ["
+        + "Backwards placed letters".map { "(\($0)) \(Int((2000 * width(String($0)) / 12).rounded()))" }.joined(separator: " ") + "] TJ ET\n"),
+    Page(name: "visible: a heading mirrored by a horizontal scale of -100", content: visible
+        + "BT /F1 14 Tf -100 Tz 400 680 Td (Mirrored heading words.) Tj ET\n"),
+]
 try writer.write(pages, resources: resources, catalog: "/OCProperties << /OCGs [\(layer) 0 R] /D << /OFF [\(layer) 0 R] /Order [\(layer) 0 R] >> >>",
                  to: "hidden.pdf")
 
@@ -288,6 +336,19 @@ let wideMasked = broken.add(stream: "\(gray) /Width 4 /Height 4 /SMask \(wideMas
 let squareMask = broken.add(stream: "\(gray) /Width 3037000500 /Height 3037000500", [UInt8](repeating: 0, count: 16))
 let squareMasked = broken.add(stream: "\(gray) /Width 4 /Height 4 /SMask \(squareMask) 0 R", texture)
 let huge = "100000000000000000000"
+// Fonts whose widths or first code sit near the largest integer, as only a broken or hostile file has.
+func cidFont(_ widths: String) -> Int {
+    let descendant = broken.add("<< /Type /Font /Subtype /CIDFontType2 /BaseFont /Helvetica "
+                                + "/CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /W \(widths) >>")
+    return broken.add("<< /Type /Font /Subtype /Type0 /BaseFont /Helvetica /Encoding /Identity-H /DescendantFonts [\(descendant) 0 R] >>")
+}
+let farWidths = cidFont("[9223372036854775800 [500 500]]")
+let farRange = cidFont("[9223372036854775000 9223372036854775807 500]")
+let boxGlyph = broken.add(stream: "", "500 0 0 0 450 700 d1 0 0 450 700 re f\n")
+let farType3 = broken.add("<< /Type /Font /Subtype /Type3 /FontBBox [0 0 500 700] /FontMatrix [0.001 0 0 0.001 0 0] "
+                          + "/CharProcs << /box \(boxGlyph) 0 R >> /Encoding << /Type /Encoding /Differences [65 /box] >> "
+                          + "/FirstChar -9223372036854775800 /LastChar 65 /Widths [500] >>")
+let farTrueType = broken.add("<< /Type /Font /Subtype /TrueType /BaseFont /Arial /FirstChar -9223372036854775800 /LastChar 65 /Widths [500] >>")
 try broken.write([
     Page(name: "a form that pops more states than it pushed", content: visible + "q /Pop Do Q\n" + line("Words after the form.", y: 680)),
     Page(name: "a soft mask whose size passes the largest integer", content: visible
@@ -299,5 +360,9 @@ try broken.write([
         + "q 10000000000 0 0 10000000000 0 0 cm BT /F1 1 Tf 10000000000 0 0 10000000000 0 0 Tm (Huge word) Tj ET Q\n"),
     Page(name: "a word scaled to 1e19 points", content: visible
         + "q 1000000000 0 0 1000000000 0 0 cm BT /F1 1 Tf 10000000000 0 0 10000000000 0 0 Tm (Huge word) Tj ET Q\n"),
-], resources: "<< /Font << /F1 \(brokenFont) 0 R >> /XObject << /Pop \(popper) 0 R /Im1 \(brokenTexture) 0 R "
-    + "/Wide \(wideMasked) 0 R /Square \(squareMasked) 0 R >> >>", to: "broken.pdf")
+    Page(name: "a CID font whose widths start near the largest integer", content: visible + "BT /W1 12 Tf 72 680 Td <00410042> Tj ET\n"),
+    Page(name: "a CID font whose width range ends at the largest integer", content: visible + "BT /W2 12 Tf 72 680 Td <00410042> Tj ET\n"),
+    Page(name: "a Type 3 font whose first code is far below zero", content: visible + "BT /T3 12 Tf 72 680 Td (AA) Tj ET\n"),
+    Page(name: "a TrueType font whose first code is far below zero", content: visible + "BT /TT 12 Tf 72 680 Td (AA) Tj ET\n"),
+], resources: "<< /Font << /F1 \(brokenFont) 0 R /W1 \(farWidths) 0 R /W2 \(farRange) 0 R /T3 \(farType3) 0 R /TT \(farTrueType) 0 R >> "
+    + "/XObject << /Pop \(popper) 0 R /Im1 \(brokenTexture) 0 R /Wide \(wideMasked) 0 R /Square \(squareMasked) 0 R >> >>", to: "broken.pdf")

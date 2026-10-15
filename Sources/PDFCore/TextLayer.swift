@@ -407,7 +407,23 @@ enum TextLayer {
             for word in words where !word.isEmpty {
                 defer { previous = hiddenStart[word[0]] }
                 let end = word[word.count - 1] + (widths[word[word.count - 1]] ?? 1)
-                guard let rect = visibility.box(of: NSRange(location: word[0], length: end - word[0])) else { continue }
+                guard var rect = visibility.box(of: NSRange(location: word[0], length: end - word[0])) else { continue }
+                // PDFKit's box for a word grows as tall as the tallest glyph on its line, as one
+                // huge glyph's, even one joined to the word, which reaches the lines around it: there
+                // the word's ordinary glyphs tell its height, none over twice their median height, and
+                // each on their usual baseline, as PDFKit places some of a line's boxes on other
+                // lines. Only where the box is over three times as tall as those glyphs, which sit
+                // inside it, and they reach across more than half the word: an ordinary word's box
+                // is about twice as tall as its letters, and PDFKit gives the letters of a slanted
+                // label short boxes in a heap.
+                let sized = word.compactMap { glyphs.boxes[$0] }.filter { $0.height > 0 }
+                let usual = median(sized.map(\.height)), baseline = median(sized.map(\.minY))
+                let glyphSpan = sized.filter { $0.height <= 2 * usual && abs($0.minY - baseline) <= usual }
+                    .reduce(CGRect.null) { $0.union($1) }
+                if !glyphSpan.isNull, rect.height > 3 * glyphSpan.height, glyphSpan.width >= 0.6 * rect.width {
+                    let low = max(rect.minY, glyphSpan.minY), high = min(rect.maxY, glyphSpan.maxY)
+                    if high - low >= 0.8 * glyphSpan.height { rect = CGRect(x: rect.minX, y: low, width: rect.width, height: high - low) }
+                }
                 let size = word.map { glyphs.sizes[$0] }.max() ?? 0
                 let colors = word.map { glyphs.colors.indices.contains($0) ? glyphs.colors[$0] : nil }
                 let spelled = word.map { text.substring(with: NSRange(location: $0, length: widths[$0] ?? 1)) }.joined()
@@ -429,16 +445,18 @@ enum TextLayer {
                 let typical = median(word.map { glyphs.sizes[$0] }.filter { $0 > 0 })
                 let all = word.compactMap { glyphs.boxes[$0] }
                 let boxes = all.filter { $0.width > 0 && $0.height > 0 }
-                var squeezed = false
-                if typical >= 2, all.count >= 2 {
+                // PDFKit gives the letters of a short slanted label slivers of boxes, nearly the
+                // same: there only the drawing commands tell.
+                var squeezed = false, stacked = false
+                if straight, typical >= 2, all.count >= 2 {
                     squeezed = median(all.map { min($0.width, $0.height) }) < 0.1 * typical
                 }
-                if typical >= 2, boxes.count >= 2 {
+                if straight, typical >= 2, boxes.count >= 2 {
                     let steps = zip(boxes, boxes.dropFirst()).map { hypot($1.midX - $0.midX, $1.midY - $0.midY) }
-                    squeezed = squeezed || steps.reduce(0, +) / CGFloat(steps.count) < 0.1 * median(boxes.map { max($0.width, $0.height) })
+                    stacked = steps.reduce(0, +) / CGFloat(steps.count) < 0.1 * median(boxes.map { max($0.width, $0.height) })
                 }
                 let verdict = visibility.check(rect, text: spelled, size: size, color: colors.compactMap { $0 }.first,
-                                               straight: straight, squeezed: squeezed)
+                                               straight: straight, squeezed: squeezed, stacked: stacked)
                 if case .hidden(let reason) = verdict {
                     hiddenStart[word[0]] = reason
                     hiddenEnd.insert(word[word.count - 1])
