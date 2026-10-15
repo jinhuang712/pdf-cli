@@ -1,4 +1,4 @@
-<!-- what-we-build: approved 2026-10-15 -->
+<!-- what-we-build: drafted 2026-10-15 -->
 # Roadmap
 
 **Current milestone:** M1. An agent reads born-digital and scanned PDFs through the cache.
@@ -36,7 +36,7 @@ The spike shipped no features. It answered the riskiest questions.
 ## M1 — Daily reader ⬜
 
 - **Under the hood:** what every feature below stands on
-  - [ ] M1.1 Worker processes with time and memory limits, and results cached in SQLite by page content
+  - [x] M1.1 Worker processes with time and memory limits, and results cached in SQLite by page content
   - [ ] M1.2 The text layer, with ligatures, hyphenation and Unicode cleaned up, the font check, and the space repair for at-risk files
   - [ ] M1.4 Apple OCR for scanned and garbled pages
 - **Failure reports** (F8): every bad page says so

@@ -7,6 +7,10 @@ DerivedData/
 # macOS
 .DS_Store
 
+# Claude Code: its worktrees, and each person's own settings
+/.claude/worktrees/
+/.claude/settings.local.json
+
 # Python
 __pycache__/
 

@@ -1,4 +1,4 @@
-<!-- what-we-build: approved 2026-10-15 -->
+<!-- what-we-build: drafted 2026-10-15 -->
 # Designs
 
 PDF files on the user's Mac and commands from an agent go in. Text with page addresses, PNG crops, search hits and failure reports come out, served from a local cache. In between, worker processes parse each page once, in steps that escalate only as far as the page needs, and store the result in SQLite. Behavior is in [FEATURES.md](FEATURES.md).
@@ -81,7 +81,7 @@ A page can read wrong while it looks right, and the agent believes what it is ha
 ### Cache
 
 - **Pay once, read many times.** Results are keyed by page content and parser version, and failed pages are cached with their reasons too. Cost: disk space, and a cache that must stay correct. Holds as: no command parses a page whose key is already in the cache, except `reparse`.
-- **Annotations leave the cache alone.** The key hashes each page's content, not the file's bytes. Comments, highlights and form values are cached apart, by the file's bytes, so a new highlight re-reads only the annotations. Cost: hashing every page takes time when a file is added. Holds as: adding a highlight in Preview leaves every page key unchanged.
+- **Annotations leave the cache alone.** The key hashes what each page draws, its boxes, content streams and resources, not the file's bytes, so a highlight appended to the file leaves every page key unchanged. Comments, highlights and form values are cached apart, by the file's bytes, so a new highlight re-reads only the annotations. Cost: hashing every page takes time when a file is added, about 1.3 ms per page on a 456-page file. Holds as: a test appends a highlight the way Acrobat saves one, and every page key stays the same. A file saved by PDFKit is the exception (see Open questions).
 - **Same file, same answer.** Models are pinned, decoding never samples, and a vision model's output is cached. Cost: the project gives up the extra accuracy that sampling sometimes buys. Holds as: two parses of the same file with the same version produce byte-identical output.
 
 ### Output
@@ -273,7 +273,9 @@ This follows "Pay once, read many times" and "Same file, same answer". A documen
 
 ## Decision: a worker process per job over a background service — 2026-10-15
 
-Each parse job starts its own worker process, which exits when the job ends. A command that needs only one page returns once that page is ready, and its worker goes on with the rest of the document in the background. The SQLite cache records which pages a worker has claimed, so two commands never parse the same page twice.
+Each parse job starts its own worker process, which exits when the job ends. A short-lived runner process starts the workers for one file: it stops any worker that spends more than 30 s on a page or holds more than 2 GB of memory, retries a page whose worker crashed once, and writes what the workers report to the cache. The runner never opens PDF content itself. A command that needs only one page returns once that page is ready, and the runner goes on with the rest of the document in the background, then exits. The runner holds a lock per file and per document in the SQLite cache, so two commands never parse the same page twice.
+
+Task M1.1 measured this on a 456-page file built from the sample papers: the first page in 0.73 s, the whole file within 4 s, and a cached read in 20–30 ms per command. Three commands at once on the new file started one runner, and each page went to one worker. A planted hang, runaway memory or crash cost one page, and the rest of the file read normally (`scripts/test-cache.sh`).
 
 The principle "Untrusted files stay in a child process" already pays a process start for each job, and the start is cheap enough: the M0 spike read a whole paper's text and page 1's figures in at most 0.36 s per file, each in a fresh process, against the 2 s of goal G2. The decision reopens when a model joins the default and its load time breaks goal G2 or G4.
 
@@ -327,3 +329,5 @@ The tool returns text, crops and failure reports, and the calling agent does all
 - How to measure reading-order doubt on layouts beyond LaTeX papers, such as Word reports, magazines and textbooks with sidebars. The M0 spike's count of jumps between the left and right halves of a page is a candidate, tested only on two-column LaTeX papers.
 - The embedding model for search by meaning: Apple's built-in embeddings, or a small MLX model.
 - The quality thresholds that make a page `low-quality`. They get tuned until goal G11 in [GOALS.md](GOALS.md) passes.
+- How to treat a file saved by PDFKit, as Preview saves a highlight (not verified for Preview itself). Task M1.1 found that a PDFKit save rewrites every page and damages its text: on an arXiv sample, "∗" came back as "→" and the math letter "𝑒" as "!". Such a file gets new page keys and is parsed again, and its new text is worse than the cached text of the original. Goal G9 counts a file "with only new highlights" as unchanged.
+- How to serve the first page of a very long file within goal G2. The runner reads every page's key before it parses any page, at about 1.3 ms per page, so a file of more than about 1,400 pages likely misses G2's 2 s.
