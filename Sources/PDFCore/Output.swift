@@ -40,13 +40,16 @@ public enum Output {
             let number = page.index + 1
             var lines = ["## p.\(number)"]
 
-            // Picks resolve the unsure words of their blocks.
+            // Picks resolve the unsure words of their blocks. Words with no second reading stay
+            // in doubt.
             let unsureByBlock = Dictionary(grouping: quality.unsure, by: \.block)
             var picked: [Int: Pick] = [:]
             for pick in picks[page.key] ?? [] {
-                if let spans = unsureByBlock[pick.block], Picks.readings(of: spans) == pick.readings { picked[pick.block] = pick }
+                let choices = unsureByBlock[pick.block]?.filter(\.pickable) ?? []
+                if !choices.isEmpty, Picks.readings(of: choices) == pick.readings { picked[pick.block] = pick }
             }
-            if quality.status == .unsure && unsureByBlock.keys.allSatisfy({ picked[$0] != nil }) { quality.status = .ok }
+            let resolved = unsureByBlock.allSatisfy { block, spans in spans.allSatisfy(\.pickable) && picked[block] != nil }
+            if quality.status == .unsure && resolved { quality.status = .ok }
             if quality.status != .ok { flagged.append((number, quality.status)) }
 
             if let whole = quality.doubts.first(where: { $0.blocks == nil }) {
@@ -61,7 +64,6 @@ public enum Output {
                     }
                 }
             } else if let layer {
-                holdsText = true
                 for (index, block) in layer.blocks.enumerated() {
                     if let doubt = quality.doubts.first(where: { $0.blocks?.contains(index) == true }) {
                         lines.append(failureBlock(doubt, page: number, address: "p.\(number) ¶\(index + 1)",
@@ -69,15 +71,15 @@ public enum Output {
                         if raw { lines.append("[low-quality] \(block.text)") } else { doubtful += 1 }
                         continue
                     }
+                    holdsText = true
                     let spans = unsureByBlock[index] ?? []
-                    if let pick = picked[index] {
-                        lines.append("\(address(number, index, block.box))\n\(applying(pick, to: block.text, spans: spans))")
-                        continue
+                    let choices = spans.filter(\.pickable), looks = spans.filter { !$0.pickable }
+                    let text = picked[index].map { applying($0, to: block.text, spans: choices) } ?? block.text
+                    lines.append("\(address(number, index, block.box))\n\(text)")
+                    if !choices.isEmpty && picked[index] == nil {
+                        lines.append(unsureBlock(choices, block: block, page: number, index: index, path: path, raw: raw))
                     }
-                    lines.append("\(address(number, index, block.box))\n\(block.text)")
-                    if !spans.isEmpty {
-                        lines.append(unsureBlock(spans, block: block, page: number, index: index, path: path, raw: raw))
-                    }
+                    if !looks.isEmpty { lines.append(lookBlock(looks, block: block, page: number, index: index, path: path)) }
                 }
             }
             if let old = layer?.replacedText {
@@ -137,6 +139,17 @@ public enum Output {
             """
     }
 
+    /// Words that read as words run together, with no reading that splits them: the agent can
+    /// only look at the image.
+    static func lookBlock(_ spans: [Unsure], block: TextBlock, page: Int, index: Int, path: String) -> String {
+        let region = spans.dropFirst().reduce(spans[0].box) { union($0, $1.box) }
+        return """
+            ⚠ p.\(page) ¶\(index + 1) unsure: words run together, and no reading splits them
+              \(spans.map { $0.readings[0] }.joined(separator: " … "))
+              look: pdf crop \(path) --page \(page) --bbox \(format(expanded(region, lines: block.lines)))
+            """
+    }
+
     /// The block's text with the picked reading in place of each unsure word, labelled.
     static func applying(_ pick: Pick, to text: String, spans: [Unsure]) -> String {
         let date = ISO8601DateFormatter.string(from: pick.pickedAt, timeZone: .current, formatOptions: [.withFullDate])
@@ -187,9 +200,13 @@ public enum Output {
         return parts.isEmpty ? "no pages" : parts.joined(separator: ", ")
     }
 
-    /// The path as a shell word, quoted when it needs to be.
+    /// The path as a shell word, quoted when it needs to be. A path that starts with "-" gets
+    /// "./" in front, so no command reads it as an option, and one that starts with "~" is
+    /// quoted, so no shell reads it as a home folder.
     static func quoted(_ path: String) -> String {
-        let plain = path.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || "._/-~+:,@".contains($0)) }
+        if path.hasPrefix("-") { return quoted("./" + path) }
+        let plain = !path.hasPrefix("~")
+            && path.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || "._/-~+:,@".contains($0)) }
         return plain && !path.isEmpty ? path : "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 }

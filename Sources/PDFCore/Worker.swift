@@ -146,7 +146,7 @@ public enum Worker {
                 (layer, method) = await readTextLayer(page, atRisk: repairSpaces || check.pageAtRisk)
             }
             // Words still run together, which OCR could not break either, get a second reading
-            // split into common words.
+            // split into common words, or a span that tells the agent to look at the image.
             if layer.runTogether > 0 {
                 let existing = layer.unsure ?? []
                 let splits = SpaceRepair.splitSpans(layer, besides: existing)
@@ -163,7 +163,8 @@ public enum Worker {
     /// Reads a page from its text layer. A page at risk of lost spaces, or one whose words turn
     /// out to run together, gets OCR's word breaks, and the words that OCR breaks with less
     /// certainty become unsure spans for the agent to pick from. When OCR cannot read the page,
-    /// the layer serves as it is, and its run-together words flag it.
+    /// the layer serves as it is, and its run-together words get their spans from the word
+    /// lists alone (see `SpaceRepair.splitSpans`).
     static func readTextLayer(_ page: PDFPage, atRisk: Bool) async -> (PageText, String) {
         let plain = atRisk ? nil : TextLayer.read(page)
         if let plain, plain.runTogether == 0 { return (plain, "pdfkit") }

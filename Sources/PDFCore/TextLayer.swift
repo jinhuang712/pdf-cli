@@ -51,8 +51,12 @@ public struct Unsure: Codable, Equatable, Sendable {
     /// Where the word starts in the block's text, in UTF-16 units.
     public var offset: Int
     /// The readings: first the text layer's, as the block's text holds it, then the one with
-    /// OCR's word breaks.
+    /// OCR's word breaks or common words. A word that reads as words run together but splits no
+    /// clean way has the first alone, so the agent knows to look at the image.
     public var readings: [String]
+
+    /// The span offers two readings to pick from.
+    public var pickable: Bool { readings.count == 2 }
     /// The line that holds the word.
     public var box: Box
 }

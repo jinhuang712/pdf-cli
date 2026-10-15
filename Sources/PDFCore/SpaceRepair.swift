@@ -140,16 +140,18 @@ enum SpaceRepair {
         for (index, (block, other)) in zip(strict.blocks, relaxed.blocks).enumerated() where block.text != other.text {
             var pieces = other.text.split(separator: " ")[...]
             var offset = 0
+            // The relaxed reading only adds spaces, but its new breaks can change whether a
+            // line-end hyphen joins two halves, so words are matched with hyphens left out.
+            func letters(_ text: some StringProtocol) -> Int { text.filter { $0 != "-" }.count }
             for word in block.text.split(separator: " ", omittingEmptySubsequences: false) {
                 defer { offset += word.utf16.count + 1 }
-                // The relaxed reading only adds spaces, so its pieces join back into this word.
                 var joined = "", parts: [Substring] = []
-                while joined.count < word.count, let piece = pieces.popFirst() {
+                while letters(joined) < letters(word), let piece = pieces.popFirst() {
                     joined += piece
                     parts.append(piece)
                 }
-                guard joined == word else { break }
-                guard parts.count > 1 else { continue }
+                guard joined.filter({ $0 != "-" }) == word.filter({ $0 != "-" }) else { break }
+                guard joined == word, parts.count > 1 else { continue }
                 let trimmed = word.trimmingCharacters(in: .punctuationCharacters)
                 guard !trimmed.isEmpty, let range = word.range(of: trimmed) else { continue }
                 // Where the relaxed reading breaks the word, counted inside the trimmed word.
@@ -177,8 +179,8 @@ enum SpaceRepair {
     /// Whether macOS's word list backs a break before `cut` in `word`:
     /// - between two Latin letters, the letters around it form no word of their own, and the
     ///   letters on each side do, as "overall" and "shift" in "overallshift";
-    /// - between a Latin letter and another letter, such as a maths symbol in "𝑁test", the
-    ///   Latin letters on their side form a word.
+    /// - between a Latin letter and a maths letter, as in "𝑁test" or "Δindicates", the Latin
+    ///   letters on their side form a word.
     ///
     /// The list holds English only, so text in other languages gets no second reading.
     static func supported(_ word: [Character], cut: Int) -> Bool {
@@ -192,14 +194,28 @@ enum SpaceRepair {
         if latin(left) && latin(right) {
             return !wordLike(before + after) && wordLike(before) && wordLike(after)
         }
-        if !left.isLetter || !right.isLetter { return false }
+        guard mathLetter(latin(left) ? right : left) else { return false }
         return wordLike(latin(left) ? before : after)
+    }
+
+    /// A letter from the maths alphabets, Greek or the letterlike symbols, as in 𝑁, Δ or ℓ. An
+    /// accented letter, as in "café", is none of them.
+    static func mathLetter(_ character: Character) -> Bool {
+        guard character.isLetter, let scalar = character.unicodeScalars.first else { return false }
+        switch scalar.value {
+        case 0x0370...0x03FF, 0x2100...0x214F, 0x1D400...0x1D7FF: return true
+        default: return false
+        }
     }
 
     /// Second readings for words that both PDFKit and OCR run together, as in
     /// "singledatasetperconditionandshouldbetreated": each run of Latin letters in such a word
     /// that is no word itself is split into common words (see `segment`). Words that the space
-    /// repair already offers a reading for are left out.
+    /// repair already offers a reading for are left out, and so are names from code and web
+    /// addresses, such as "SpaceRepairRelocateRunTogetherWords", which both readers have right.
+    ///
+    /// A word that reads as English run together but splits no clean way, as when a line-end
+    /// break cut it, gets a span with its one reading, so the agent knows to look at the image.
     static func splitSpans(_ page: PageText, besides existing: [Unsure]) -> [Unsure] {
         var spans: [Unsure] = []
         for (index, block) in page.blocks.enumerated() {
@@ -208,7 +224,7 @@ enum SpaceRepair {
                 defer { offset += word.utf16.count + 1 }
                 guard TextCleanup.runTogetherWords(String(word)) > 0 else { continue }
                 let trimmed = word.trimmingCharacters(in: .punctuationCharacters)
-                guard let range = word.range(of: trimmed) else { continue }
+                guard let range = word.range(of: trimmed), !codeLike(trimmed) else { continue }
                 let start = offset + word[..<range.lowerBound].utf16.count
                 guard !existing.contains(where: { $0.block == index && $0.offset == start }) else { continue }
                 var split = "", run = ""
@@ -229,12 +245,51 @@ enum SpaceRepair {
                     }
                 }
                 flush()
-                guard split != trimmed else { continue }
                 let line = block.lines.first { $0.text.contains(trimmed) }
-                spans.append(Unsure(block: index, offset: start, readings: [trimmed, split], box: line?.box ?? block.box))
+                if split != trimmed {
+                    spans.append(Unsure(block: index, offset: start, readings: [trimmed, split], box: line?.box ?? block.box))
+                } else if englishLike(trimmed) {
+                    spans.append(Unsure(block: index, offset: start, readings: [trimmed], box: line?.box ?? block.box))
+                }
             }
         }
         return spans
+    }
+
+    /// A name from code or a web address: one with "://", an underscore, "@" or a backslash,
+    /// a path with two slashes or more, a dot between small letters, as in "example.com", or
+    /// three capitals or more after small letters, as in "SpaceRepairRelocate".
+    static func codeLike(_ word: String) -> Bool {
+        if word.contains("://") || word.contains("_") || word.contains("@") || word.contains("\\") { return true }
+        if word.filter({ $0 == "/" }).count >= 2 { return true }
+        let characters = Array(word)
+        var capitals = 0
+        for index in characters.indices.dropFirst() {
+            let character = characters[index], previous = characters[index - 1]
+            if character.isUppercase && previous.isLowercase { capitals += 1 }
+            if character == ".", index + 1 < characters.count, previous.isLowercase, characters[index + 1].isLowercase {
+                return true
+            }
+        }
+        return capitals >= 3
+    }
+
+    /// Whether common English words, three letters or longer, cover at least 60% of a word's
+    /// Latin letters, taking the longest at each step: true for
+    /// "Twoprompttemplateswereusedthroughouttheexpe", false for a German compound such as
+    /// "Donaudampfschifffahrtsgesellschaft".
+    static func englishLike(_ word: String) -> Bool {
+        guard let common else { return true }
+        let letters = Array(word.filter { $0.isASCII && $0.isLetter }.lowercased())
+        var covered = 0, index = 0
+        while index < letters.count {
+            let longest = stride(from: min(15, letters.count - index), through: 3, by: -1).first {
+                common.contains(String(letters[index..<index + $0]))
+            }
+            covered += longest ?? 0
+            index += longest ?? 1
+        }
+        return !letters.isEmpty && Double(covered) >= 0.6 * Double(letters.count)
     }
 
     /// Common English words, from the word embedding macOS ships: about 57,000 words. The word

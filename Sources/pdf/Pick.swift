@@ -28,7 +28,7 @@ struct PickCommand: ParsableCommand {
             print("\(path): failed: \(reason)")
             throw ExitCode(3)
         case .pages(let docID, _, let results):
-            let spans = Quality.judge(results[0].result).unsure.filter { $0.block == index }
+            let spans = Quality.judge(results[0].result).unsure.filter { $0.block == index && $0.pickable }
             guard !spans.isEmpty else {
                 print("p.\(page + 1) ¶\(index + 1) has no unsure words to pick from")
                 throw ExitCode(1)

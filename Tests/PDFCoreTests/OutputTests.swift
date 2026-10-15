@@ -112,9 +112,21 @@ import Testing
         #expect(quality.wholePage)
     }
 
+    @Test func wordsWithNoSecondReadingAskTheAgentToLook() throws {
+        var read = layer(["Twoprompttemplateswereused here."])
+        read.unsure = [Unsure(block: 0, offset: 0, readings: ["Twoprompttemplateswereused"], box: box)]
+        let report = Output.render(file: "paper.pdf", pageCount: 1, pages: [try page(0, read)])
+        #expect(report.exitCode == 2)
+        #expect(report.text.contains("⚠ p.1 ¶1 unsure: words run together, and no reading splits them"))
+        #expect(report.text.contains("look: pdf crop paper.pdf --page 1 --bbox "))
+        #expect(!report.text.contains("pdf pick"))
+    }
+
     @Test func pageRangesAndQuoting() {
         #expect(Output.ranges([1, 2, 3, 7, 9, 10]) == "p.1–3, p.7, p.9–10")
         #expect(Output.quoted("/tmp/a.pdf") == "/tmp/a.pdf")
         #expect(Output.quoted("it's here.pdf") == "'it'\\''s here.pdf'")
+        #expect(Output.quoted("~notes.pdf") == "'~notes.pdf'")
+        #expect(Output.quoted("-x.pdf") == "./-x.pdf")
     }
 }

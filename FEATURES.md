@@ -204,7 +204,7 @@ When two readings of a word differ in where its words break, the paragraph keeps
   look: pdf crop paper.pdf --page 2 --bbox 0.11,0.40,0.39,0.06
 ```
 
-Reading [a] is the text layer's. Reading [b] breaks the words where Apple OCR does, or splits letters that both readers run together into common English words, as in "single dataset per condition".
+Reading [a] is the text layer's. Reading [b] breaks the words where Apple OCR does, or splits letters that both readers run together into common English words, as in "single dataset per condition". English words run together that no reading splits, as when a line-end break cut one, get an unsure block with their one reading and a `look:` crop. Names from code and web addresses, such as `SpaceRepairRelocate`, stay as they are.
 
 `pdf pick paper.pdf p2.5 b` saves the agent's choice for page 2, paragraph 5. Later reads show the chosen words in place, labelled `[picked 2026-10-15]`, and `pdf reparse` clears every pick on the page. A pick takes only one of the readings shown, for every unsure word of its paragraph. When two readings differ in digits, table cells or formulas, the passage comes as a failure block with a crop, because the text alone cannot show which reading is right. `--raw` shows both readings.
 
@@ -216,9 +216,10 @@ Reading [a] is the text layer's. Reading [b] breaks the words where Apple OCR do
 | Exit code | Meaning |
 |---|---|
 | 0 | Every requested page read well. |
-| 1 | The command was used wrongly, such as an unknown flag. |
+| 1 | The command could not run, such as on a file that does not exist. |
 | 2 | Some pages failed, are low-quality or hold unsure words. The rest of the output is valid. |
 | 3 | No requested page holds text to show: each one failed or is in doubt as a whole. |
+| 64 | The command was used wrongly, such as with an unknown flag. |
 
 Gap:
 - The blocks reach the agent once `pdf read` is built (M1.7). Until then, the hidden `pdf debug-read` shows them. Their crop commands work once `pdf crop` is built (M1.9), and `pdf reparse` comes later (F10).

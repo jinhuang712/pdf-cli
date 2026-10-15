@@ -117,7 +117,7 @@ import Testing
     }
 
     func split(_ word: String) -> String? {
-        SpaceRepair.splitSpans(page([word]), besides: []).first?.readings[1]
+        SpaceRepair.splitSpans(page([word]), besides: []).first.flatMap { $0.pickable ? $0.readings[1] : nil }
     }
 
     @Test func wordsBothReadersRunTogetherSplitIntoCommonWords() {
@@ -127,9 +127,31 @@ import Testing
         #expect(split("FirstspecialisthandlingTRENDcorrection") == "First specialist handling TREND correction")
     }
 
-    @Test func aLongWordWithNoCleanSplitStays() {
-        #expect(split("Donaudampfschifffahrtsgesellschaft") == nil)
-        #expect(split("Twoprompttemplateswereusedthroughouttheexpe") == nil)
+    @Test func englishRunTogetherWithNoCleanSplitIsMarkedToLookAt() {
+        let spans = SpaceRepair.splitSpans(page(["Twoprompttemplateswereusedthroughouttheexpe riment."]), besides: [])
+        #expect(spans.map(\.readings) == [["Twoprompttemplateswereusedthroughouttheexpe"]])
+        #expect(spans.first?.pickable == false)
+    }
+
+    @Test func aLongWordInAnotherLanguageStaysUnmarked() {
+        #expect(SpaceRepair.splitSpans(page(["Die Donaudampfschifffahrtsgesellschaft fuhr."]), besides: []).isEmpty)
+    }
+
+    @Test func namesFromCodeAndWebAddressesStayUnmarked() {
+        let text = "Call SpaceRepairRelocateRunTogetherWords at https://example.com/averylongpathsegmentwithoutanyspaces"
+            + " or read_the_file_named_averylongnamewithoutanyspaces now"
+        #expect(SpaceRepair.splitSpans(page([text]), besides: []).isEmpty)
+    }
+
+    @Test func anAccentedLetterIsNoMathsLetter() {
+        #expect(SpaceRepair.unsureSpans(strict: page(["un caféchat"]), relaxed: page(["un café chat"])).isEmpty)
+    }
+
+    @Test func aLineEndHyphenJoinedDifferentlyKeepsTheWalkInStep() {
+        // The relaxed reading joined "exam-" and "ple" where the strict one kept the hyphen.
+        let spans = SpaceRepair.unsureSpans(strict: page(["an exam-ple of overallshift here"]),
+                                            relaxed: page(["an example of overall shift here"]))
+        #expect(spans.map(\.readings) == [["overallshift", "overall shift"]])
     }
 
     @Test func spacingInsideFormulasIsNoWordDifference() {
