@@ -192,7 +192,7 @@ check "a small budget stops early" "^next: pdf read $paper --from p1\.[0-9]* --b
 next=$(reading read $paper --page 3 --budget 60 | grep '^next: ' | sed 's/^next: pdf //')
 output=$(reading $next)
 check "the next read cuts a block larger than the budget" "^next: pdf read $paper --page 3 --from p3\.2:[0-9]* --budget 60$" "$output"
-check "it goes on from the block where the last read stopped" "^p.3 ¶2 · " "$output"
+check "it goes on from the block where the last read stopped" "^¶2 " "$output"
 check "a whole read needs --budget all" "read p.1–11" "$(reading read $paper --budget all)"
 check "raised characters keep a mark" "Haoru Tan^{1,†}" "$(reading read $paper --page 1)"
 check "--json gives every block its page and position" '"bbox":\[' "$(reading read $paper --page 2 --json)"

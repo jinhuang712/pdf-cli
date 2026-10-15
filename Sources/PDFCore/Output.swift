@@ -407,9 +407,9 @@ public enum Output {
             let heading = "p.\(block.page)" + (block.printed.map { " (printed \($0))" } ?? "")
             return style == .md ? "## \(heading)" : "=== \(heading) ==="
         case .text:
-            return "\(address(block))\n\(block.text ?? "")"
+            return "\(address(block)) \(block.text ?? "")"
         case .doubtful:
-            return "\(address(block))\n[\(block.status ?? "low-quality")] \(block.text ?? "")"
+            return "\(address(block)) [\(block.status ?? "low-quality")] \(block.text ?? "")"
         case .oldOCR:
             return "[old OCR] \(block.text ?? "")"
         case .failure:
@@ -438,9 +438,12 @@ public enum Output {
         }
     }
 
-    /// The address a text block starts with: its page, its number and its position.
+    /// The address a text block starts with: its number on the page, under the page's heading.
+    /// Its position stays in `--json`: the full position took about 22% of a read's tokens on
+    /// the arXiv samples, and the number alone about 7% (DESIGNS.md → Decision: paragraph
+    /// numbers in text, positions in JSON).
     static func address(_ block: Block) -> String {
-        "p.\(block.page) ¶\(block.block ?? 0) · \(format(block.box))"
+        "¶\(block.block ?? 0)"
     }
 
     /// Where a read goes on from, as `--from` takes it: "p4", "p4.7", or "p4.7:120" for the

@@ -57,18 +57,16 @@ Settings: none.
 
 ## F3 — Read 🚧
 
-Prints text in reading order. Every block shows its page and its position on the page.
+Prints text in reading order. Every block shows its page and its number on the page, and `--json` gives its position too.
 
 ```text
 paper.pdf · 11 pages · read p.1–4 · flagged: none
 
 ## p.1
 
-p.1 ¶1 · 0.29,0.14,0.42,0.02
-Dataset Distillation by Influence Matching
+¶1 Dataset Distillation by Influence Matching
 
-p.1 ¶2 · 0.17,0.18,0.66,0.02
-Haoru Tan^{1,†} Wang Wang^{1,†} Sitong Wu^{2} Xiuzhe Wu^{3}
+¶2 Haoru Tan^{1,†} Wang Wang^{1,†} Sitong Wu^{2} Xiuzhe Wu^{3}
 …
 
 next: pdf read paper.pdf --from p4.27
@@ -181,14 +179,14 @@ Settings: none.
 
 Every command follows the same rules, so an agent learns them once.
 
-- Every block shows its page and its position, such as `p.12 ¶3 · 0.10,0.40,0.80,0.30`. The page is its position in the file. When the number printed on the page differs, the page's heading says so, as in `## p.12 (printed 237)`.
+- Every block shows its page and its number on the page: a heading such as `## p.12` starts each page, and `¶3` starts its third block. `--json` gives each block's position on the page too, such as `0.10,0.40,0.80,0.30`, and every doubt comes with the command that crops it. The page is its position in the file. When the number printed on the page differs, the page's heading says so, as in `## p.12 (printed 237)`.
 - Superscripts and subscripts keep a mark, as in `10^{-5}` and `x_{2}`. Footnote markers and citation numbers have their own marks (see F14 and F15).
 - A word that a hyphen splits across two lines comes back whole when the page or macOS's word list knows it. Otherwise the hyphen stays, as in `self-attention`.
 - Every command accepts `--json`.
 - Output starts with a one-line summary: the pages read, the pages flagged and what normal output set aside.
 - A file that macOS Preview or another app saved through PDFKit carries a warning in its summary line: such a save can damage the text, and an earlier copy may read better.
 - Nothing is dropped without a trace. What normal output sets aside leaves a marker in place, or a count in the summary line, with the flag that shows it: `--raw` for doubtful text, `--include-hidden` for hidden text and `--headers` for running headers, footers and publisher stamps.
-- `--budget N` stops the output at about N tokens, between blocks, and ends it with a line that continues the read, such as `next: pdf read paper.pdf --from p4.27`. A text block larger than the whole budget is cut inside, and the next read goes on from the cut. A failure block, or text shown with `--raw`, larger than the budget goes out whole, so every read moves on. `read` and `search` stop at 5,000 tokens by default, about 4 pages of a paper, and `--budget all` turns the limit off.
+- `--budget N` stops the output at about N tokens, between blocks, and ends it with a line that continues the read, such as `next: pdf read paper.pdf --from p4.27`. A text block larger than the whole budget is cut inside, and the next read goes on from the cut. A failure block, or text shown with `--raw`, larger than the budget goes out whole, so every read moves on. `read` and `search` stop at 5,000 tokens by default, about 5 pages of a paper, and `--budget all` turns the limit off.
 - While a document is still parsing, the summary line says `provisional`, with how many pages are parsed so far, because headings and note numbers can change once the whole document is known.
 
 Gap: only `pdf read` accepts `--json` so far, and `--include-hidden` and `--headers` come with M1.10 and M2.5.

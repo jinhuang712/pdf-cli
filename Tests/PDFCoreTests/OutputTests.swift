@@ -24,7 +24,7 @@ import Testing
         let report = Output.render(file: "paper.pdf", pageCount: 3, pages: [try page(0, layer(["Hello there."]))])
         #expect(report.exitCode == 0)
         #expect(report.text.hasPrefix("paper.pdf · 3 pages · read p.1 · flagged: none"))
-        #expect(report.text.contains("p.1 ¶1 · 0.10,0.20,0.80,0.05\nHello there."))
+        #expect(report.text.contains("## p.1\n\n¶1 Hello there."))
     }
 
     @Test func aFailedPageGetsAFailureBlockWithACrop() throws {
@@ -132,9 +132,10 @@ import Testing
         for index in 0..<3 where added { added = document.add(try page(index, paragraphs(4, words: 40))) }
         let report = document.report()
         #expect(!added)
-        #expect(report.text.hasSuffix("next: pdf read paper.pdf --from p1.3\n"))
-        #expect(report.text.contains("word2 word2"))
-        #expect(!report.text.contains("word3"))
+        // Each paragraph costs about 60 tokens, so three fit in 200 and the fourth waits.
+        #expect(report.text.hasSuffix("next: pdf read paper.pdf --from p1.4\n"))
+        #expect(report.text.contains("word3 word3"))
+        #expect(!report.text.contains("word4"))
         #expect(report.text.contains("read p.1 ·"))
     }
 

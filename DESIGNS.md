@@ -88,7 +88,7 @@ A page can read wrong while it looks right, and the agent believes what it is ha
 
 ### Output
 
-- **Every claim has an address.** Every block carries its page and its position on the page. Cost: a few tokens per block. Holds as: every block type in the output schema has `page` and `bbox`.
+- **Every claim has an address.** Every block carries its page and its number on the page, and its position in `--json` (see the decision on paragraph numbers). Cost: a few tokens per block. Holds as: every block type in the output schema has `page` and `bbox`.
 - **Nothing goes missing without a trace.** Every part of a page reaches normal output as text or as a marker in its place, as the stance in [PHILOSOPHY.md](PHILOSOPHY.md) says: images outside any figure, comments, highlights, form values, link targets, and everything set aside as hidden or doubtful. A marker names what sits there, why it was set aside and the command that shows it. Cost: a few tokens per marker, and each kind of page object needs its own handling. Holds as: on every page of the test sets, each text run, image, annotation and form field that PDFKit reports appears in the output as text or a marker, which goal G17 in [GOALS.md](GOALS.md) counts.
 - **Text first, pixels on request.** Images come only when the agent asks for them. Cost: the agent can miss a visual cue it did not ask about. Holds as: only `crop`, `dump --figures`, `dump --tables` and `dump --embedded-images` write image files.
 
@@ -363,13 +363,24 @@ The pages an agent waits on keep their speed, because OCR leans on the graphics 
 
 Holds as: `scripts/test-cache.sh` reads three new files at once and never sees more than two workers, a page asked for while a background worker holds it brings that worker out of the background state, and a page that hangs only in the background reads at its full-speed try.
 
+## Decision: paragraph numbers in text, positions in JSON — 2026-10-15
+
+In text output, each page starts with a heading such as `## p.2`, and each block starts with its number on the page, as in `¶5`. `--json` gives every block its page, its number and its position, and every doubt in either output carries the command that crops it. An agent cites "p.2 ¶5", and `pdf read --from p2.5` goes back to it.
+
+On the ten arXiv samples, the full address on every block, as in `p.2 ¶5 · 0.12,0.41,0.37,0.19`, took about 22% of a read's tokens by the tool's estimate, which likely counts digits low. The number alone takes about 7%: a page came to about 1,030 tokens instead of 1,230. The user chose the number alone.
+
+| Option | For | Against |
+|---|---|---|
+| **The number in text, the position in JSON** | About 15% fewer tokens on every read. | An agent that wants a block's position reads `--json`. |
+| The full address on every block | Every position in plain sight. | About a fifth of every read spent on numbers an agent rarely uses. |
+
 ## Decision: a 5,000-token default budget over no default — 2026-10-15
 
 `read` and `search` stop at 5,000 tokens unless the agent passes `--budget`. The default keeps the stance "No whole document by default" in [PHILOSOPHY.md](PHILOSOPHY.md) true for an agent that passes no flags. Search has no default result count, so the budget alone decides how many hits fit, about 60 by estimate.
 
 A sample-paper page holds about 950 tokens of text, so 5,000 tokens is about 5 pages, or 20,000 characters. Claude Code shows a command's output in full up to about 30,000 characters and moves the rest to a file, according to third-party reports. Our cut lands between blocks and ends with the command that continues. Claude Code's cut lands anywhere.
 
-Task M1.7 built it. Tokens are estimated as one per four characters of Latin text and one per character of other scripts. A text block goes out together with the doubts that follow it, and the cut falls between such units, with a `next:` line that names the block to go on from, as in `--from p4.27`. Every read moves on: the first unit after a page's heading goes out even when it alone is larger than the budget. A text block is cut inside, after a word, and the next read goes on from that character, as in `--from p3.2:200`; a failure block or text shown with `--raw` goes out whole. Counts and flags in the summary line come only from what went out. Following each `next:` line rebuilt the full read exactly on five sample files at budgets of 55, 120 and 300 tokens. With block addresses, a sample page came to about 1,230 tokens, so the default read showed 4 pages and part of a fifth, in 19,740 characters.
+Task M1.7 built it. Tokens are estimated as one per four characters of Latin text and one per character of other scripts. A text block goes out together with the doubts that follow it, and the cut falls between such units, with a `next:` line that names the block to go on from, as in `--from p4.27`. Every read moves on: the first unit after a page's heading goes out even when it alone is larger than the budget. A text block is cut inside, after a word, and the next read goes on from that character, as in `--from p3.2:200`; a failure block or text shown with `--raw` goes out whole. Counts and flags in the summary line come only from what went out. Following each `next:` line rebuilt the full read exactly on five sample files at budgets of 55, 120 and 300 tokens. With full block addresses, a sample page came to about 1,230 tokens, and with paragraph numbers alone to about 1,030, so the default read shows about 5 pages.
 
 | Option | For | Against |
 |---|---|---|
@@ -481,7 +492,6 @@ The tool returns text, crops and failure reports, and the calling agent does all
 
 - How to measure reading-order doubt on layouts beyond LaTeX papers, such as Word reports, magazines and textbooks with sidebars. The M0 spike's count of jumps between the left and right halves of a page is a candidate, tested only on two-column LaTeX papers.
 - The embedding model for search by meaning: Apple's built-in embeddings, or a small MLX model.
-- How much of each block's address to print. The full address, as in `p.2 ¶5 · 0.12,0.41,0.37,0.19`, took about 22% of a read's tokens on the ten arXiv samples, by the tool's estimate, which likely counts digits low. The paragraph number alone, as in `¶5`, would take about 7%, with positions kept in `--json`.
 - The quality thresholds that make a page `low-quality`. They get tuned until goal G11 in [GOALS.md](GOALS.md) passes. The OCR agreement's 0.85 rests on 33 scans made from three pages.
 - How to find the lines in doubt on a scan whose blocks are too short to judge alone, so the failure block covers less than the whole page.
 - How to check, page by page, a scan's old OCR text layer that passed the sample check. The NACA report's third page reads "TECH LM3ARY" from its old layer, unflagged.
