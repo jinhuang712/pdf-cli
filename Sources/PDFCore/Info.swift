@@ -67,7 +67,9 @@ public struct Info: Encodable, Sendable {
         // A metadata author of a few letters, as "pdf2" on the NACA scan, names a tool, not a person.
         self.authors = facts.author.flatMap { $0.filter(\.isLetter).count >= 4 ? $0 : nil }
         self.year = facts.year
-        let opening = layers.filter { $0.0 < 2 }.compactMap { $0.1?.text }.joined(separator: "\n")
+        // What a reader can see: a DOI or a title planted out of sight is no fact of the file.
+        let opening = layers.filter { $0.0 < 2 }.compactMap { $0.1?.blocks.map(\.visibleText).joined(separator: "\n") }
+            .joined(separator: "\n")
         self.doi = Info.match(#"\b10\.\d{4,9}/[^\s"<>]+"#, in: opening).map { $0.trimmingCharacters(in: CharacterSet(charactersIn: ".,;)]")) }
         self.arXiv = Info.match(#"arXiv:\d{4}\.\d{4,5}(v\d+)?"#, in: opening).map { String($0.dropFirst(6)) }
         self.notes = Info.notes(first)
@@ -119,8 +121,8 @@ public struct Info: Encodable, Sendable {
             return heights.isEmpty ? 0 : heights[heights.count / 2]
         }
         return page.blocks
-            .filter { $0.box.y < 0.45 && $0.box.width > 0.1 && $0.text.count >= 4 && $0.text.count <= 300 }
-            .max { height($0) < height($1) }?.text
+            .filter { $0.box.y < 0.45 && $0.box.width > 0.1 && $0.visibleText.count >= 4 && $0.visibleText.count <= 300 }
+            .max { height($0) < height($1) }?.visibleText
     }
 
     static func match(_ pattern: String, in text: String) -> String? {
@@ -130,7 +132,7 @@ public struct Info: Encodable, Sendable {
     /// Author notes on the first page, such as the corresponding author or equal contribution.
     static func notes(_ page: PageText?) -> [String] {
         let pattern = #"(?i)(corresponding author|equal contribution|contributed equally|these authors)"#
-        return (page?.blocks ?? []).flatMap(\.lines).map(\.text)
+        return (page?.blocks ?? []).filter { $0.hidden == nil }.flatMap(\.lines).map(\.text)
             .filter { $0.range(of: pattern, options: .regularExpression) != nil }
             .prefix(3).map { $0.count > 160 ? String($0.prefix(160)) + "…" : $0 }
     }
@@ -171,8 +173,8 @@ public struct Info: Encodable, Sendable {
         var seenNearEdge: [String: Set<Int>] = [:]
         for page in pages {
             for block in page.result.pageText?.blocks ?? [] where block.lines.count == 1 {
-                seen[exact(block.text), default: []].insert(page.index)
-                if nearEdge(block) { seenNearEdge[plain(block.text), default: []].insert(page.index) }
+                seen[exact(block.visibleText), default: []].insert(page.index)
+                if nearEdge(block) { seenNearEdge[plain(block.visibleText), default: []].insert(page.index) }
             }
         }
         var found: [(section: Section, number: Int?)] = []
@@ -181,9 +183,9 @@ public struct Info: Encodable, Sendable {
             // scan a header starts 6.5% down, and OCR misreads it a new way on each page, so its
             // repeats go unseen. The highest heading on the arXiv samples starts 9.4% down.
             for (index, block) in (page.result.pageText?.blocks ?? []).enumerated()
-            where block.lines.count == 1 && block.text.split(separator: " ").count <= 12
+            where block.lines.count == 1 && block.visibleText.split(separator: " ").count <= 12
                 && block.box.y >= 0.075 && block.box.y + block.box.height <= 0.95 {
-                let text = block.text.trimmingCharacters(in: .whitespaces)
+                let text = block.visibleText.trimmingCharacters(in: .whitespaces)
                 guard (seen[exact(text)]?.count ?? 0) < 3,
                       !nearEdge(block) || (seenNearEdge[plain(text)]?.count ?? 0) < 3 else { continue }
                 if let number = text.range(of: numbered, options: .regularExpression).map({ String(text[$0]) }) {
@@ -253,9 +255,9 @@ public struct Info: Encodable, Sendable {
         let wanted = spellings(item.title)
         // A table row that names the section, as "1 DomainWiseInfer 65.72 64.49", is mostly digits.
         let matches = layer.blocks.enumerated().filter { _, block in
-            let visible = block.text.filter { !$0.isWhitespace }
+            let visible = block.visibleText.filter { !$0.isWhitespace }
             return block.lines.count <= 2 && visible.filter(\.isLetter).count * 2 >= visible.count
-                && !spellings(block.text).isDisjoint(with: wanted)
+                && !spellings(block.visibleText).isDisjoint(with: wanted)
         }
         if let best = matches.min(by: { a, b in
             guard let top = item.top else { return a.offset < b.offset }
@@ -302,7 +304,7 @@ public struct Info: Encodable, Sendable {
                     let number = index + 1
                     if page == section.page, let start = section.block, number < start { continue }
                     if let next, page == next.page, number >= (next.block ?? 1) { continue }
-                    tokens += Output.tokens(block.text)
+                    tokens += Output.tokens(block.visibleText)
                 }
             }
             measured[position].tokens = known ? tokens : nil

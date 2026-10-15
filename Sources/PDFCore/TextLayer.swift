@@ -42,6 +42,18 @@ public struct TextBlock: Codable, Equatable, Sendable {
     /// For a block read by OCR with enough words to judge: the share of its words that a second
     /// OCR reading of the page also finds (see `OCR.agreement(units:check:)`).
     public var agreement: Double? = nil
+    /// Runs of the text a reader cannot see (FEATURES.md → F9).
+    public var hidden: [Hidden]? = nil
+
+    /// The text a reader can see: the block's text without its hidden runs.
+    public var visibleText: String {
+        guard let hidden, !hidden.isEmpty else { return text }
+        var units = Array(text.utf16)
+        for run in hidden.sorted(by: { $0.offset > $1.offset }) where run.offset + run.length <= units.count {
+            units.removeSubrange(run.offset..<run.offset + run.length)
+        }
+        return String(decoding: units, as: UTF16.self).split(separator: " ", omittingEmptySubsequences: true).joined(separator: " ")
+    }
 }
 
 /// A word that two readings of the page spell with the same letters but break differently, as
@@ -91,6 +103,9 @@ public struct PageText: Codable, Equatable, Sendable {
     /// The number printed on the page, from the file's page labels, such as "237" or "iv",
     /// when it differs from the page's position in the file.
     public var label: String? = nil
+    /// Text the page places off the page, as its strings spell it. PDFKit leaves it out of the
+    /// page's text, so it has no block.
+    public var offPage: [String]? = nil
 
     public var text: String { blocks.map(\.text).joined(separator: "\n\n") }
 }
@@ -102,17 +117,21 @@ struct Glyphs {
     let boxes: [CGRect?]
     let sizes: [CGFloat]
     let raises: [CGFloat]
+    /// Each character's text color, from 0 for black to 1 for white, or -1 when unknown.
+    let brightness: [CGFloat]
 
-    init(boxes: [CGRect?], sizes: [CGFloat], raises: [CGFloat]) {
+    init(boxes: [CGRect?], sizes: [CGFloat], raises: [CGFloat], brightness: [CGFloat] = []) {
         self.boxes = boxes
         self.sizes = sizes
         self.raises = raises
+        self.brightness = brightness
     }
 
     init(_ page: PDFPage, _ text: NSString) {
         boxes = Glyphs.boxes(page, text)
         var sizes = [CGFloat](repeating: 0, count: text.length)
         var raises = [CGFloat](repeating: 0, count: text.length)
+        var brightness = [CGFloat](repeating: -1, count: text.length)
         if let attributed = page.attributedString, attributed.length == text.length {
             let whole = NSRange(location: 0, length: attributed.length)
             attributed.enumerateAttribute(.font, in: whole) { value, range, _ in
@@ -123,9 +142,14 @@ struct Glyphs {
                 let raise = CGFloat((value as? NSNumber)?.doubleValue ?? 0)
                 for index in range.location..<NSMaxRange(range) { raises[index] = raise }
             }
+            attributed.enumerateAttribute(.foregroundColor, in: whole) { value, range, _ in
+                guard let gray = (value as? NSColor)?.usingColorSpace(.genericGray) else { return }
+                for index in range.location..<NSMaxRange(range) { brightness[index] = gray.whiteComponent }
+            }
         }
         self.sizes = sizes
         self.raises = raises
+        self.brightness = brightness
     }
 
     /// The boxes of a page's characters. PDFKit's `characterBounds(at:)` counts glyphs, not
@@ -238,7 +262,10 @@ enum TextLayer {
     ///     repair. Empty when the page needs none.
     ///   - glyphs: the page's characters, when a caller reads the page more than once: they
     ///     cost about 20 ms a page.
-    static func read(_ page: PDFPage, spacesBefore: Set<Int> = [], glyphs known: Glyphs? = nil) -> PageText {
+    ///   - visibility: what a reader can see of the page, which marks the text a reader cannot
+    ///     see (FEATURES.md → F9). Nil reads every character as seen.
+    static func read(_ page: PDFPage, spacesBefore: Set<Int> = [], glyphs known: Glyphs? = nil,
+                     visibility: Visibility? = nil) -> PageText {
         let raw = page.string ?? ""
         let text = raw as NSString
         let crop = page.bounds(for: .cropBox)
@@ -249,7 +276,8 @@ enum TextLayer {
         while start <= text.length {
             var end = start
             while end < text.length, !isLineBreak(text.character(at: end)) { end += 1 }
-            if let line = makeLine(text, start..<end, glyphs: glyphs, crop: crop, spacesBefore: spacesBefore) {
+            if let line = makeLine(text, start..<end, glyphs: glyphs, crop: crop, spacesBefore: spacesBefore,
+                                   visibility: visibility) {
                 lines.append(line)
             }
             start = end + 1
@@ -257,8 +285,64 @@ enum TextLayer {
 
         let blocks = group(lines, crop: crop, dehyphenator: Dehyphenator(pageText: raw))
         let joined = blocks.map(\.text).joined(separator: "\n")
-        return PageText(blocks: blocks, words: TextCleanup.wordCount(joined),
-                        runTogether: TextCleanup.runTogetherWords(joined))
+        var layer = PageText(blocks: blocks, words: TextCleanup.wordCount(joined),
+                             runTogether: TextCleanup.runTogetherWords(joined))
+        if let offPage = visibility?.drawing.offPage.filter({ !$0.isEmpty }), !offPage.isEmpty { layer.offPage = offPage }
+        return layer
+    }
+
+    // MARK: Hidden runs
+
+    /// Marks around a run a reader cannot see, while the lines are built: an opening mark per
+    /// reason, and one closing mark. They are Unicode noncharacters, kept for a program's own
+    /// use and never part of a document's text, and come out of the text again as `Hidden` spans
+    /// once the block is joined.
+    static func opening(_ reason: HiddenReason) -> Character { Character(Unicode.Scalar(0xFDD0 + UInt32(reason.rawValue))!) }
+    static let closing = Character(Unicode.Scalar(UInt32(0xFDEF))!)
+
+    static func isMark(_ scalar: Unicode.Scalar) -> Bool { (0xFDD0...0xFDEF).contains(scalar.value) }
+
+    /// A block's text without the marks, and its hidden runs. Runs of one reason that only spaces
+    /// part become one, and a run of fewer than 3 letters or digits, as a maths symbol whose box
+    /// PDFKit places off its ink, counts as seen: it can carry no instruction.
+    static func hiddenRuns(_ marked: String) -> (text: String, hidden: [Hidden]) {
+        guard marked.unicodeScalars.contains(where: isMark) else { return (marked, []) }
+        var text = String.UnicodeScalarView()
+        var length = 0
+        var runs: [Hidden] = []
+        var open: (reason: HiddenReason, start: Int)?
+        for scalar in marked.unicodeScalars {
+            if scalar == closing.unicodeScalars.first! {
+                if let current = open { runs.append(Hidden(offset: current.start, length: length - current.start, reason: current.reason)) }
+                open = nil
+            } else if isMark(scalar), let reason = HiddenReason(rawValue: Int(scalar.value - 0xFDD0)) {
+                open = (reason, length)
+            } else {
+                text.append(scalar)
+                length += scalar.utf16.count
+            }
+        }
+        if let current = open { runs.append(Hidden(offset: current.start, length: length - current.start, reason: current.reason)) }
+        let plain = String(text)
+        let units = Array(plain.utf16)
+        var merged: [Hidden] = []
+        for run in runs where run.length > 0 {
+            if let last = merged.last, last.reason == run.reason,
+               units[(last.offset + last.length)..<run.offset].allSatisfy({ $0 == 0x20 }) {
+                merged[merged.count - 1].length = run.offset + run.length - last.offset
+            } else {
+                merged.append(run)
+            }
+        }
+        let kept = merged.filter { run in
+            String(decoding: units[run.offset..<run.offset + run.length], as: UTF16.self)
+                .filter { $0.isLetter || $0.isNumber }.count >= 3
+        }
+        return (plain, kept)
+    }
+
+    static func withoutMarks(_ text: String) -> String {
+        String(String.UnicodeScalarView(text.unicodeScalars.filter { !isMark($0) }))
     }
 
     static func isLineBreak(_ unit: unichar) -> Bool {
@@ -274,7 +358,7 @@ enum TextLayer {
     /// marks `^{…}` and `_{…}`, as in `10^{-5}` and `x_{2}` (DESIGNS.md → Principles → Silent
     /// errors).
     static func makeLine(_ text: NSString, _ range: Range<Int>, glyphs: Glyphs, crop: CGRect,
-                         spacesBefore: Set<Int>) -> RawLine? {
+                         spacesBefore: Set<Int>, visibility: Visibility? = nil) -> RawLine? {
         var characters: [(index: Int, width: Int, isSpace: Bool)] = []
         var bounds = CGRect.null
         var index = range.lowerBound
@@ -297,6 +381,29 @@ enum TextLayer {
             if !character.isSpace { words[words.count - 1].append(character.index) }
         }
         let marks = glyphs.marks(characters.filter { !$0.isSpace }.map(\.index), words: words.filter { !$0.isEmpty })
+        // Each word a reader cannot see, by its first and last character, with the reason.
+        var hiddenStart: [Int: HiddenReason] = [:]
+        var hiddenEnd = Set<Int>()
+        if let visibility {
+            let widths = Dictionary(characters.map { ($0.index, $0.width) }, uniquingKeysWith: { first, _ in first })
+            // The line's usual glyph height, against which a word set at an angle stands out.
+            let glyphHeight = median(characters.compactMap { glyphs.boxes[$0.index]?.height }.filter { $0 > 0 })
+            for word in words where !word.isEmpty {
+                let end = word[word.count - 1] + (widths[word[word.count - 1]] ?? 1)
+                guard let rect = visibility.box(of: NSRange(location: word[0], length: end - word[0])) else { continue }
+                let size = word.map { glyphs.sizes[$0] }.max() ?? 0
+                let known = word.compactMap { glyphs.brightness.indices.contains($0) && glyphs.brightness[$0] >= 0 ? glyphs.brightness[$0] : nil }
+                let brightness = known.isEmpty ? nil : known.reduce(0, +) / CGFloat(known.count)
+                // Letters that run neither straight across nor straight down, as a chart's label
+                // set at an angle: PDFKit's boxes for them miss their ink, so ink cannot judge them.
+                // Such a word's box is several glyphs tall and wide.
+                let straight = glyphHeight == 0 || min(rect.width, rect.height) <= 2.5 * glyphHeight
+                if let reason = visibility.reason(rect, size: size, brightness: brightness, inkTells: straight) {
+                    hiddenStart[word[0]] = reason
+                    hiddenEnd.insert(word[word.count - 1])
+                }
+            }
+        }
         var piece = ""
         var open: Character?
         for character in characters {
@@ -307,12 +414,22 @@ enum TextLayer {
                 open = nil
                 piece += " "
             }
+            if let reason = hiddenStart[character.index] {
+                if open != nil { piece += "}" }
+                open = nil
+                piece.append(opening(reason))
+            }
             if mark != open {
                 if open != nil { piece += "}" }
                 if let mark { piece += "\(mark){" }
                 open = mark
             }
-            piece += text.substring(with: NSRange(location: character.index, length: character.width))
+            piece += withoutMarks(text.substring(with: NSRange(location: character.index, length: character.width)))
+            if hiddenEnd.contains(character.index) {
+                if open != nil { piece += "}" }
+                open = nil
+                piece.append(closing)
+            }
         }
         if open != nil { piece += "}" }
         let trimmed = piece.trimmingCharacters(in: .whitespaces)
@@ -342,8 +459,11 @@ enum TextLayer {
                 Box(x: Double(rect.minX / pageWidth), y: Double(rect.minY / pageHeight),
                     width: Double(rect.width / pageWidth), height: Double(rect.height / pageHeight))
             }
-            blocks.append(TextBlock(text: join(current, dehyphenator), box: box(area),
-                                    lines: current.map { TextLine(text: $0.text, box: box($0.rect)) }))
+            let (text, hidden) = hiddenRuns(join(current, dehyphenator))
+            var block = TextBlock(text: text, box: box(area),
+                                  lines: current.map { TextLine(text: withoutMarks($0.text), box: box($0.rect)) })
+            if !hidden.isEmpty { block.hidden = hidden }
+            blocks.append(block)
             current = []
             area = .null
         }

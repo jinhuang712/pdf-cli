@@ -169,7 +169,7 @@ public enum Worker {
             var layer: PageText
             let method: String
             if readAllByOCR || OCR.needed(text: page.string ?? "", images: check.images) {
-                let textLayer = TextLayer.read(page)
+                let textLayer = TextLayer.read(page, visibility: Visibility(page: page))
                 if var read = await OCR.pageText(page, check: true), !OCR.lostText(ocr: read, layer: textLayer) {
                     let replaced = (page.string ?? "").split(whereSeparator: \.isNewline)
                         .map { TextCleanup.line(String($0)) }.filter { !$0.isEmpty }.joined(separator: "\n")
@@ -214,17 +214,20 @@ public enum Worker {
     /// lists alone (see `SpaceRepair.splitSpans`).
     static func readTextLayer(_ page: PDFPage, atRisk: Bool) async -> (PageText, String) {
         let glyphs = Glyphs(page, (page.string ?? "") as NSString)
-        let plain = atRisk ? nil : TextLayer.read(page, glyphs: glyphs)
+        // Drawn once, for every reading of the page: the text a reader cannot see.
+        let visibility = Visibility(page: page)
+        let plain = atRisk ? nil : TextLayer.read(page, glyphs: glyphs, visibility: visibility)
         if let plain, plain.runTogether == 0 { return (plain, "pdfkit") }
         guard let breaks = await SpaceRepair.breaks(page) else {
-            var served = plain ?? TextLayer.read(page, glyphs: glyphs)
+            var served = plain ?? TextLayer.read(page, glyphs: glyphs, visibility: visibility)
             // A page whose fonts hide spaces loses them all over, so the page is in doubt.
             if atRisk { served.spacesLost = true }
             return (served, "pdfkit+ocr-failed")
         }
-        var repaired = TextLayer.read(page, spacesBefore: breaks.spaces, glyphs: glyphs)
+        var repaired = TextLayer.read(page, spacesBefore: breaks.spaces, glyphs: glyphs, visibility: visibility)
         if !breaks.unsure.isEmpty {
-            let relaxed = TextLayer.read(page, spacesBefore: breaks.spaces.union(breaks.unsure), glyphs: glyphs)
+            let relaxed = TextLayer.read(page, spacesBefore: breaks.spaces.union(breaks.unsure), glyphs: glyphs,
+                                         visibility: visibility)
             let spans = SpaceRepair.unsureSpans(strict: repaired, relaxed: relaxed)
             if !spans.isEmpty { repaired.unsure = spans }
         }

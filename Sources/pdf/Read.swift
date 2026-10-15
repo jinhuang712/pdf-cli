@@ -34,6 +34,7 @@ struct ReadCommand: ParsableCommand {
     var from: String?
     @Option(help: "The output format: md or text.") var format: Format = .md
     @Flag(help: "Show the text set aside as doubtful, labelled with its reason.") var raw = false
+    @Flag(help: "Show the words of text a reader cannot see, labelled, in place of their markers.") var includeHidden = false
     @Flag(help: "Print JSON.") var json = false
 
     func validate() throws {
@@ -97,12 +98,14 @@ struct ReadCommand: ParsableCommand {
         let keys = try store.pageKeys(docID: docID)
         let limit = Self.tokens(budget)!
         let picks = try Picks().picks(keys: keys)
-        let flags = (raw ? " --raw" : "") + (format == .text ? " --format text" : "") + (budget == "5000" ? "" : " --budget \(budget)")
+        let flags = (raw ? " --raw" : "") + (includeHidden ? " --include-hidden" : "") + (format == .text ? " --format text" : "")
+            + (budget == "5000" ? "" : " --budget \(budget)")
         let quotedPath = Output.quoted(path)
         let order = numbers
         let named = scope
         var document = Output.Document(
-            file: path, pageCount: pageCount, style: format == .md ? .md : .text, raw: raw, picks: picks, budget: limit,
+            file: path, pageCount: pageCount, style: format == .md ? .md : .text, raw: raw, includeHidden: includeHidden,
+            picks: picks, budget: limit,
             continuation: { page, block, offset in
                 let rest = named == "pages" ? " --page " + Self.spec(Array(order.drop { $0 != page })) : named
                 return "pdf read \(quotedPath)\(rest) --from \(Output.address(page: page, block: block, offset: offset))\(flags)"

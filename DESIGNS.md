@@ -484,6 +484,23 @@ Normal output replaces hidden text with a marker at the same spot: its size, how
 | The words in place, with a label | Nothing is even one command away. | Planted instructions reach every agent that reads the page. In Microsoft's 2024 study, wrapping untrusted text in markers only about halved attack success on GPT-3.5-Turbo ([Hines et al.](https://arxiv.org/abs/2403.14720)). |
 | A count in the summary line only | The shortest output. | The agent learns the page, but not where on it or how much. |
 
+## Decision: hidden text found by ink, with the drawing commands for what ink cannot tell — 2026-10-15
+
+PDFKit gives the words of every trick in `testdata/hidden/hidden.pdf`: white on white, half-point type, clipped text, text under an image or a white box, a layer switched off and the invisible render mode. So the text layer cannot tell what a reader sees, and the parse checks each word against the page as drawn.
+
+- **Ink.** Each page is drawn in grey at 2 px a point, and a word whose box holds no pixel that differs from the box's most common shade is hidden: drawn in the color behind it when its text color matches that shade, else left without ink. On the fixture, planted lines had 0% ink and visible lines about 29%. A word's box comes from PDFKit's selection of it: its per-character boxes sat two characters off on a line that changed color mid-way, and tested the next word's ink.
+- **Size.** Type under 2 pt, by its font size and its box both, since some files set text at 1 pt and scale it up.
+- **Drawing commands,** read with CGPDFScanner and the transform at each command: an opaque image drawn after text covers the text under it; text placed off the page, which PDFKit leaves out of the page's text entirely, is spelled from its strings; and images that together cover 80% of the page make it a scan, whose text layer is read as text. The 1951 NACA report draws each page as 33 image strips, before or after its text.
+- **What counts as seen:** a run of fewer than 3 letters or digits, as a maths symbol whose box PDFKit places off its ink, and a word set at an angle, whose boxes miss their ink. On the samples, the first rule cleared 3 false markers, and the second a chart's slanted label.
+
+On the 10 arXiv samples and 4 scans, the one marker left is a sunburst chart's label too thin to see, "vascular lesion", under 2 pt. Detection added about 12 ms to a text page, 50 ms instead of 38, and a full parse of the 456-page file took 20.6 s instead of 18.2.
+
+| Option | For | Against |
+|---|---|---|
+| **Ink, with the drawing commands for what ink cannot tell** | One test covers color, clipping, layers and the invisible mode, as a reader sees the page. | A page drawn once more; a word over a photo always shows ink. |
+| The drawing commands alone | Exact for color, mode and clipping. | Color against what lies behind it needs every shape and image under the text, and each layer rule redone. |
+| Apple OCR on every page | Sees exactly what a reader sees. | About 0.7 s a page, against 12 ms. |
+
 ## Decision: a loud failure for a file PDFKit cannot open — 2026-10-15
 
 When PDFKit cannot open a file, the whole file fails with a reason the agent can act on: not a PDF, locked by a password, or damaged. The tool reads nothing else from it. This follows the PDFKit decision, which keeps PDFium out of the binary, and "Wrong is way worse than missing" in [PHILOSOPHY.md](PHILOSOPHY.md). How often a file fails this way is unmeasured. The safety test set holds broken PDFs, and the decision reopens if daily use or the open test set shows such files are common.

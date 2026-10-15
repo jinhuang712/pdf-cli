@@ -36,6 +36,9 @@ public enum Output {
             case doubtful = "low-quality-text"
             /// The text layer that OCR replaced, shown with `--raw`.
             case oldOCR = "old-ocr"
+            /// Text a reader cannot see that has no block of its own, as text off the page: a
+            /// marker, or its words with `--include-hidden`.
+            case hidden
         }
 
         public var kind: Kind
@@ -85,6 +88,8 @@ public enum Output {
         var doubtful = 0
         /// The unit shows text the agent can read.
         var holdsText = false
+        /// How many runs of text a reader cannot see the unit marks.
+        var hidden = 0
     }
 
     /// What one page contributes to the output.
@@ -99,7 +104,8 @@ public enum Output {
     /// - Parameters:
     ///   - path: the path as a shell word, for the commands the blocks suggest.
     ///   - raw: show the text that normal output sets aside as doubtful, labelled with its reason.
-    static func pageBlocks(_ page: Page, picks: [String: [Pick]], path: String, raw: Bool) -> PageBlocks {
+    static func pageBlocks(_ page: Page, picks: [String: [Pick]], path: String, raw: Bool,
+                           includeHidden: Bool = false) -> PageBlocks {
         let (quality, picked) = judge(page, picks: picks)
         let layer = page.result.pageText
         let number = page.index + 1
@@ -135,11 +141,17 @@ public enum Output {
                     result.units.append(unit)
                     continue
                 }
-                let spans = unsureByBlock[index] ?? []
+                // Unsure words inside text a reader cannot see stay hidden with it.
+                let runs = block.hidden ?? []
+                let spans = (unsureByBlock[index] ?? []).filter { span in
+                    !runs.contains { $0.offset < span.offset + span.readings[0].utf16.count && span.offset < $0.offset + $0.length }
+                }
                 let choices = spans.filter(\.pickable), looks = spans.filter { !$0.pickable }
-                let text = picked[index].map { applying($0, to: block.text, spans: choices) } ?? block.text
+                let text = shown(block.text, pick: picked[index], choices: choices, hidden: runs, includeHidden: includeHidden,
+                                 path: path, page: number)
                 var unit = Unit(blocks: [Block(kind: .text, page: number, block: index + 1, box: block.box, text: text)],
-                                holdsText: true)
+                                holdsText: !block.visibleText.isEmpty)
+                unit.hidden = runs.count
                 if !choices.isEmpty && picked[index] == nil {
                     unit.blocks.append(unsureBlock(choices, block: block, page: number, index: index, path: path))
                     unit.flag = .unsure
@@ -148,6 +160,15 @@ public enum Output {
                     unit.blocks.append(lookBlock(looks, block: block, page: number, index: index, path: path))
                     unit.flag = .unsure
                 }
+                result.units.append(unit)
+            }
+            // Text placed off the page has no block: PDFKit leaves it out of the page's text,
+            // and only the drawing commands spell it.
+            if let offPage = layer.offPage, !offPage.isEmpty {
+                let words = offPage.joined(separator: " ")
+                var unit = Unit(blocks: [Block(kind: .hidden, page: number,
+                                               text: marker(words, reason: .offPage, includeHidden: includeHidden, path: path, page: number))])
+                unit.hidden = 1
                 result.units.append(unit)
             }
         }
@@ -169,6 +190,8 @@ public enum Output {
         let pageCount: Int
         let style: Style
         let raw: Bool
+        /// Show the words of text a reader cannot see, labelled, in place of their markers.
+        let includeHidden: Bool
         let picks: [String: [Pick]]
         /// About how many tokens the output may take. Nil means no limit.
         let budget: Int?
@@ -182,6 +205,8 @@ public enum Output {
         var flagged: [(page: Int, status: PageQuality.Status)] = []
         var doubtful = 0, oldLayers = 0
         var holdsText = false
+        /// Runs of text a reader cannot see, by page, among the units that went out.
+        var hidden: [(page: Int, count: Int)] = []
         /// The command that continues the read, once the budget stopped it.
         public private(set) var next: String?
         /// Why the read stopped before the budget did, if it did.
@@ -192,14 +217,16 @@ public enum Output {
 
         /// - Parameter continuation: the full command that goes on from a page, a block and a
         ///   character in the block's text, such as `pdf read paper.pdf --page 4-9 --from p4.7`.
-        public init(file: String, pageCount: Int, style: Style = .md, raw: Bool = false, picks: [String: [Pick]] = [:],
-                    budget: Int? = nil, continuation: (@Sendable (Int, Int?, Int?) -> String)? = nil) {
+        public init(file: String, pageCount: Int, style: Style = .md, raw: Bool = false, includeHidden: Bool = false,
+                    picks: [String: [Pick]] = [:], budget: Int? = nil,
+                    continuation: (@Sendable (Int, Int?, Int?) -> String)? = nil) {
             let path = quoted(file)
             self.file = file
             self.path = path
             self.pageCount = pageCount
             self.style = style
             self.raw = raw
+            self.includeHidden = includeHidden
             self.picks = picks
             self.budget = budget
             self.continuation = continuation ?? { page, block, offset in
@@ -214,7 +241,7 @@ public enum Output {
         /// alone is larger than the budget, cut inside after a word when it starts with text.
         /// Counts and flags come only from the units that go out.
         public mutating func add(_ page: Page, from block: Int? = nil, offset: Int? = nil) -> Bool {
-            let content = pageBlocks(page, picks: picks, path: path, raw: raw)
+            let content = pageBlocks(page, picks: picks, path: path, raw: raw, includeHidden: includeHidden)
             let number = page.index + 1
             for (position, var unit) in content.units.enumerated() {
                 let first = unit.blocks[0]
@@ -270,6 +297,13 @@ public enum Output {
             }
             doubtful += unit.doubtful
             holdsText = holdsText || unit.holdsText
+            if unit.hidden > 0 {
+                if let last = hidden.last, last.page == page {
+                    hidden[hidden.count - 1].count += unit.hidden
+                } else {
+                    hidden.append((page, unit.hidden))
+                }
+            }
         }
 
         /// Ends the read early, for a reason the summary gives, with the command that goes on.
@@ -293,6 +327,11 @@ public enum Output {
             } else if !aside.isEmpty {
                 summary.append("set aside: " + aside.joined(separator: ", ") + " (show: --raw)")
             }
+            if !hidden.isEmpty {
+                let total = hidden.reduce(0) { $0 + $1.count }
+                summary.append((includeHidden ? "showing hidden text: " : "hidden text: ") + "\(total) place\(total == 1 ? "" : "s") on "
+                               + hidden.map { "p.\($0.page)" }.joined(separator: ", ") + (includeHidden ? "" : " (show: --include-hidden)"))
+            }
             if let parsed, parsed < pageCount {
                 summary.append("provisional: \(parsed) of \(pageCount) pages parsed so far")
             }
@@ -311,12 +350,14 @@ public enum Output {
         public func json(savedByPDFKit: Bool = false, parsed: Int? = nil) throws -> Data {
             struct Flag: Encodable { var page: Int; var status: String }
             struct Aside: Encodable { var doubtfulBlocks: Int; var oldOCRLayers: Int }
+            struct HiddenText: Encodable { var page: Int; var places: Int }
             struct Body: Encodable {
                 var file: String
                 var pageCount: Int
                 var pagesRead: [Int]
                 var flagged: [Flag]
                 var setAside: Aside
+                var hidden: [HiddenText]
                 var provisional: Bool
                 var savedByPDFKit: Bool
                 var blocks: [Block]
@@ -329,6 +370,7 @@ public enum Output {
                 file: file, pageCount: pageCount, pagesRead: pagesRead,
                 flagged: flagged.map { Flag(page: $0.page, status: $0.status.rawValue) },
                 setAside: Aside(doubtfulBlocks: doubtful, oldOCRLayers: oldLayers),
+                hidden: hidden.map { HiddenText(page: $0.page, places: $0.count) },
                 provisional: parsed.map { $0 < pageCount } ?? false, savedByPDFKit: savedByPDFKit, blocks: blocks,
                 stopped: stopped, next: next.map { $0 + " --json" }))
         }
@@ -376,6 +418,40 @@ public enum Output {
 
     // MARK: Blocks
 
+    /// A block's text as it goes out: picked readings in place of unsure words, and a marker in
+    /// place of each run a reader cannot see, or the run's words, labelled, with
+    /// `includeHidden` (DESIGNS.md → Decision: a marker in place of hidden text over its words
+    /// with a label).
+    static func shown(_ text: String, pick: Pick?, choices: [Unsure], hidden: [Hidden], includeHidden: Bool,
+                      path: String, page: Int) -> String {
+        var units = Array(text.utf16)
+        var replacements: [(offset: Int, length: Int, text: String)] = hidden.map { run in
+            let words = String(decoding: units[run.offset..<min(run.offset + run.length, units.count)], as: UTF16.self)
+            return (run.offset, run.length, marker(words, reason: run.reason, includeHidden: includeHidden, path: path, page: page))
+        }
+        if let pick {
+            let date = ISO8601DateFormatter.string(from: pick.pickedAt, timeZone: .current, formatOptions: [.withFullDate])
+            for span in choices {
+                let old = Array(span.readings[0].utf16)
+                guard span.offset + old.count <= units.count, Array(units[span.offset..<span.offset + old.count]) == old else { continue }
+                replacements.append((span.offset, old.count, span.readings[pick.chosen] + " [picked \(date)]"))
+            }
+        }
+        for replacement in replacements.sorted(by: { $0.offset > $1.offset })
+        where replacement.offset + replacement.length <= units.count {
+            units.replaceSubrange(replacement.offset..<replacement.offset + replacement.length, with: Array(replacement.text.utf16))
+        }
+        return String(decoding: units, as: UTF16.self)
+    }
+
+    /// What stands where a reader sees nothing: the run's size, why it is hidden and the command
+    /// that shows it, or, with `includeHidden`, its words, labelled.
+    static func marker(_ words: String, reason: HiddenReason, includeHidden: Bool, path: String, page: Int) -> String {
+        if includeHidden { return "[hidden, \(reason.words): \(words)]" }
+        let count = words.split(whereSeparator: \.isWhitespace).count
+        return "[hidden: \(count) word\(count == 1 ? "" : "s"), \(reason.words) · show: pdf read \(path) --page \(page) --include-hidden]"
+    }
+
     /// The failure block: what is in doubt, why, and how to read it instead.
     static func failureBlock(_ doubt: Doubt, page: Int, block: Int?, region: Box?, path: String, raw: Bool) -> Block {
         var commands = ["crop": "pdf crop \(path) --page \(page)" + (region.map { " --bbox \(format($0))" } ?? "")]
@@ -416,6 +492,8 @@ public enum Output {
             return "\(address(block)) [\(block.status ?? "low-quality")] \(block.text ?? "")"
         case .oldOCR:
             return "[old OCR] \(block.text ?? "")"
+        case .hidden:
+            return block.text ?? ""
         case .failure:
             let place = "p.\(block.page)" + (block.block.map { " ¶\($0)" } ?? "")
             let score = block.score.map { String(format: " (score %.2f)", $0) } ?? ""

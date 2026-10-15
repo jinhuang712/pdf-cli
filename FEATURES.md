@@ -3,7 +3,7 @@
 
 ✅ built · 🚧 built with a gap · ⬜ planned
 
-F1 and F11 are ✅ built, F2, F3, F4, F5, F7 and F8 are 🚧 built with a gap, and every other feature is ⬜ planned. The commands and output samples show the intended behavior.
+F1 and F11 are ✅ built, F2, F3, F4, F5, F7, F8 and F9 are 🚧 built with a gap, and every other feature is ⬜ planned. The commands and output samples show the intended behavior.
 
 ## F1 — Add ✅
 
@@ -226,7 +226,7 @@ Every command follows the same rules, so an agent learns them once.
 - `--budget N` stops the output at about N tokens, between blocks, and ends it with a line that continues the read, such as `next: pdf read paper.pdf --from p4.27`. A text block larger than the whole budget is cut inside, and the next read goes on from the cut. A failure block, or text shown with `--raw`, larger than the budget goes out whole, so every read moves on. `read` and `search` stop at 5,000 tokens by default, about 5 pages of a paper, and `--budget all` turns the limit off.
 - While a document is still parsing, the summary line says `provisional`, with how many pages are parsed so far, because headings and note numbers can change once the whole document is known.
 
-Gap: only `pdf read` accepts `--json` so far, and `--include-hidden` and `--headers` come with M1.10 and M2.5.
+Gap: only `pdf read`, `pdf info`, `pdf search` and `pdf crop` accept `--json` so far, and `--headers` comes with M2.5.
 
 Settings: none.
 
@@ -286,17 +286,22 @@ Gap:
 
 Settings: none.
 
-## F9 — Hidden text ⬜
+## F9 — Hidden text 🚧
 
 Marks where a reader's eye would miss text, and keeps that text's words out of the agent's way until it asks.
 
 Text that renders invisible, such as text in the color behind it, tiny text, clipped text, text covered by an image, text off the page or text in a layer switched off, is replaced by a marker in normal output. The marker sits where the text sat, and gives its size, how it was hidden and the command that shows it:
 
 ```text
-…the results support our claim. [hidden: 38 words, white on white · show: pdf read paper.pdf --page 3 --include-hidden]
+¶3 Visible start of a line, [hidden: 3 words, in the color behind it · show: pdf read paper.pdf --page 1 --include-hidden] visible end.
 ```
 
-White text on a dark box stays in, because a reader can see it. The summary line says how many hidden blocks the output marks, and on which pages. `--include-hidden` shows their words in place, each labelled `[hidden]`. The text layer on a scanned page is read normally.
+White text on a dark box stays in, because a reader can see it. The summary line says how many hidden places the output marks, and on which pages. `--include-hidden` shows their words in place, each labelled with its reason, as in `[hidden, in the color behind it: …]`. The text layer on a scanned page is read normally. A hidden run is words, so a run of fewer than 3 letters or digits stays in. Hidden words stay out of `pdf search`, by keyword and by pattern, and out of the title and sections `pdf info` finds.
+
+Gap:
+- A word set at an angle, as a chart's slanted label, is checked for its size and for an image over it, but not for ink, since PDFKit's boxes for it miss its ink.
+- Text over a photo always counts as seen: the photo's own ink cannot tell whether the text shows.
+- Text that runs off the page part-way keeps the part on the page as text.
 
 Settings: none.
 

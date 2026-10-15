@@ -123,9 +123,11 @@ public enum Search {
         var length = 0
         for (index, layer) in pages {
             for (number, block) in layer.blocks.enumerated() {
+                // What a reader can see, as the keyword index holds.
+                let visible = block.visibleText
                 starts.append((length, index, number + 1))
-                text += block.text + "\n"
-                length += block.text.utf16.count + 1
+                text += visible + "\n"
+                length += visible.utf16.count + 1
             }
         }
         let whole = text as NSString
@@ -194,11 +196,12 @@ extension Store {
         try db.execute(sql: "INSERT OR IGNORE INTO search_page (page_key, parser_version) VALUES (?, ?)",
                        arguments: [key, version])
         guard db.changesCount > 0, let layer = result.pageText else { return }
+        // Only what a reader can see: words planted out of sight are no search hit to quote.
         for (index, block) in layer.blocks.enumerated() {
             try db.execute(sql: "INSERT INTO search_block (page_key, parser_version, block) VALUES (?, ?, ?)",
                            arguments: [key, version, index + 1])
             try db.execute(sql: "INSERT INTO block_text (rowid, text) VALUES (?, ?)",
-                           arguments: [db.lastInsertedRowID, Search.indexable(block.text)])
+                           arguments: [db.lastInsertedRowID, Search.indexable(block.visibleText)])
         }
     }
 
