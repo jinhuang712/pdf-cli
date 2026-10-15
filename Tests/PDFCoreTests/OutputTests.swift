@@ -122,6 +122,65 @@ import Testing
         #expect(!report.text.contains("pdf pick"))
     }
 
+    func paragraphs(_ count: Int, words: Int) -> PageText {
+        layer((1...count).map { number in Array(repeating: "word\(number)", count: words).joined(separator: " ") })
+    }
+
+    @Test func theBudgetStopsBetweenBlocksAndSaysHowToGoOn() throws {
+        var document = Output.Document(file: "paper.pdf", pageCount: 3, budget: 200)
+        var added = true
+        for index in 0..<3 where added { added = document.add(try page(index, paragraphs(4, words: 40))) }
+        let report = document.report()
+        #expect(!added)
+        #expect(report.text.hasSuffix("next: pdf read paper.pdf --from p1.3\n"))
+        #expect(report.text.contains("word2 word2"))
+        #expect(!report.text.contains("word3"))
+        #expect(report.text.contains("read p.1 ·"))
+    }
+
+    @Test func aBlockLargerThanTheBudgetIsCutInsideAndGoesOnFromTheCut() throws {
+        var document = Output.Document(file: "paper.pdf", pageCount: 1, budget: 120)
+        #expect(!document.add(try page(0, paragraphs(1, words: 200))))
+        let next = try #require(document.next)
+        #expect(next.hasPrefix("pdf read paper.pdf --from p1.1:"))
+        let offset = try #require(Int(next.split(separator: ":").last!))
+        var rest = Output.Document(file: "paper.pdf", pageCount: 1, budget: nil)
+        _ = rest.add(try page(0, paragraphs(1, words: 200)), from: 1, offset: offset)
+        let shown = try #require(document.blocks.last?.text), more = try #require(rest.blocks.last?.text)
+        let whole = Array(repeating: "word1", count: 200).joined(separator: " ")
+        #expect(String(shown.dropLast()) + String(more.dropFirst()) == whole)
+    }
+
+    @Test func aReadThatGoesOnSkipsTheBlocksAlreadyShown() throws {
+        var document = Output.Document(file: "paper.pdf", pageCount: 1)
+        _ = document.add(try page(0, paragraphs(4, words: 3)), from: 3)
+        #expect(document.blocks.compactMap(\.block) == [3, 4])
+    }
+
+    @Test func everyBlockInJSONHasAPageAndAPosition() throws {
+        var read = layer(["Fine.", "CTRLperforms well.", "Smudged"])
+        read.unsure = [unsure(1, "CTRLperforms", "CTRL performs", at: 0)]
+        read.blocks[2].agreement = 0.4
+        read.agreement = 0.9
+        read.replacedText = "old"
+        var document = Output.Document(file: "scan.pdf", pageCount: 2, raw: true)
+        _ = document.add(try page(0, read, method: "ocr"))
+        _ = document.add(Output.Page(index: 1, result: .failed("time limit"), key: "k"))
+        let body = try #require(try JSONSerialization.jsonObject(with: document.json()) as? [String: Any])
+        let blocks = try #require(body["blocks"] as? [[String: Any]])
+        #expect(Set(blocks.compactMap { $0["kind"] as? String })
+                == ["page", "text", "unsure", "failure", "low-quality-text", "old-ocr"])
+        for block in blocks {
+            #expect(block["page"] is Int)
+            #expect((block["bbox"] as? [Double])?.count == 4)
+        }
+    }
+
+    @Test func tokensAreCountedRoughly() {
+        #expect(Output.tokens("abcd efgh") == 3)
+        #expect(Output.tokens("数据集") == 3)
+    }
+
     @Test func pageRangesAndQuoting() {
         #expect(Output.ranges([1, 2, 3, 7, 9, 10]) == "p.1–3, p.7, p.9–10")
         #expect(Output.quoted("/tmp/a.pdf") == "/tmp/a.pdf")

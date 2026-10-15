@@ -80,24 +80,24 @@ check "the other pages still read" "p.5 ok" "$output"
 # warning.
 quality() { PDF_CLI_HOME=$work/quality $pdf "$@" 2>&1; echo "exit $?"; }
 spaces=testdata/smoke/arxiv-2609.23257.pdf
-output=$(quality debug-read $spaces --page 2)
-check "a word two readers break differently gets an unsure block" "p.2 ¶5 unsure: two readings differ" "$output"
+output=$(quality read $spaces --page 2)
+check "a word two readers break differently gets an unsure block" "p.2 ¶2 unsure: two readings differ" "$output"
 check "the unsure block shows both readings" "\[b\] CTRL performs" "$output"
 check "an unsure page exits 2" "exit 2" "$output"
 check "a pick needs a block with unsure words" "has no unsure words" "$(quality pick $spaces p2.1 a)"
-check "a pick is saved" "picked b for p.2 ¶5: CTRL performs" "$(quality pick $spaces p2.5 b)"
-check "a later read shows the picked words" "CTRL performs \[picked" "$(quality debug-read $spaces --page 2)"
+check "a pick is saved" "picked b for p.2 ¶2: CTRL performs" "$(quality pick $spaces p2.2 b)"
+check "a later read shows the picked words" "CTRL performs \[picked" "$(quality read $spaces --page 2)"
 
 scan=testdata/smoke/scan-naca-report-1034.pdf
-output=$(quality debug-read $scan --page 1)
+output=$(quality read $scan --page 1)
 check "a scan page whose two OCR readings disagree is low-quality" "p.1 low-quality: two OCR readings of the page disagree" "$output"
 check "its failure block crops the page" "read it as an image: pdf crop $scan --page 1" "$output"
-check "--raw shows its text, labelled" "\[low-quality\] TECH LIBRARY" "$(quality debug-read $scan --page 1 --raw)"
+check "--raw shows its text, labelled" "\[low-quality\] TECH LIBRARY" "$(quality read $scan --page 1 --raw)"
 check "a file that PDFKit made carries the warning" "made or last saved by macOS PDFKit" \
-    "$(quality debug-read testdata/ocr/scan-no-text.pdf --page 1)"
-check "the text layer OCR replaced shows with --raw" "\[old OCR\]" "$(quality debug-read testdata/ocr/scan-wrong-layer.pdf --page 1 --raw)"
+    "$(quality read testdata/ocr/scan-no-text.pdf --page 1)"
+check "the text layer OCR replaced shows with --raw" "\[old OCR\]" "$(quality read testdata/ocr/scan-wrong-layer.pdf --page 1 --raw)"
 check "a read whose every page failed exits 3" "exit 3" \
-    "$(PDF_CLI_HOME=$work/failed PDF_CLI_PAGE_TIME_LIMIT=2 PDF_CLI_TEST_FAULT=hang:3 $pdf debug-read $paper --page 4 2>&1; echo "exit $?")"
+    "$(PDF_CLI_HOME=$work/failed PDF_CLI_PAGE_TIME_LIMIT=2 PDF_CLI_TEST_FAULT=hang:3 $pdf read $paper --page 4 2>&1; echo "exit $?")"
 
 # A file that moves away mid-parse must leave no failure in the cache: its results are keyed
 # by content, so a cached failure would follow every copy of the document.
@@ -183,6 +183,21 @@ check "a page that ran out of time in the background reads at full speed" "p.6 o
 
 check "page 0 is out of range" "page 0 is out of range" "$(run $pdf debug-pages $paper --page 0)"
 
+# pdf read: the budget, the line that goes on, a cut inside a block, JSON, and the marks.
+reading() { PDF_CLI_HOME=$work/reading $pdf "$@" 2>&1; }
+output=$(reading read $paper)
+check "a read without pages starts at page 1" "read p.1–" "$output"
+check "a read stops at the budget and says how to go on" "^next: pdf read $paper --from p[0-9]*\.[0-9]*$" "$output"
+check "a small budget stops early" "^next: pdf read $paper --from p1\.[0-9]* --budget 200$" "$(reading read $paper --budget 200)"
+next=$(reading read $paper --page 3 --budget 60 | grep '^next: ' | sed 's/^next: pdf //')
+output=$(reading $next)
+check "the next read cuts a block larger than the budget" "^next: pdf read $paper --page 3 --from p3\.2:[0-9]* --budget 60$" "$output"
+check "it goes on from the block where the last read stopped" "^p.3 ¶2 · " "$output"
+check "a whole read needs --budget all" "read p.1–11" "$(reading read $paper --budget all)"
+check "raised characters keep a mark" "Haoru Tan^{1,†}" "$(reading read $paper --page 1)"
+check "--json gives every block its page and position" '"bbox":\[' "$(reading read $paper --page 2 --json)"
+check "a page out of range fails" "page 12 is out of range" "$(reading read $paper --page 12)"
+
 # The library: pdf add, ls, rm and gc, and a locked file.
 library() { PDF_CLI_HOME=$work/library $pdf "$@" 2>&1; echo "exit $?"; }
 output=$(library add testdata/ocr)
@@ -216,7 +231,7 @@ check "later reads come from the cache" "p.1 ok" "$(PDF_CLI_HOME=$work/library $
 # password. The file fails as locked, and no page caches a failure.
 sqlite3 "$work/library/Caches/cache.sqlite" "DELETE FROM page_result"
 check "a missing page of a locked file fails the file, not the page" "^$locked: failed: locked by a password" \
-    "$(library debug-read $locked)"
+    "$(library read $locked)"
 check "the password still opens it after" "· 1 page · ok" "$(echo "open sesame" | library add $locked --password-stdin)"
 
 # Pages nobody waits for parse slowly, at background priority, so runners get a minute to finish.

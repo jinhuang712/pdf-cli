@@ -23,80 +23,280 @@ public enum Output {
         public var exitCode: Int32
     }
 
+    public enum Style: String, Sendable {
+        case md, text
+    }
+
+    /// One piece of output: a page's heading, a block of its text, or a block that reports a
+    /// doubt. Every piece carries its page and its position (DESIGNS.md → Principles → Output).
+    public struct Block: Encodable, Equatable, Sendable {
+        public enum Kind: String, Encodable, Sendable {
+            case page, text, failure, unsure, look
+            /// The text of a block in doubt, shown with `--raw`.
+            case doubtful = "low-quality-text"
+            /// The text layer that OCR replaced, shown with `--raw`.
+            case oldOCR = "old-ocr"
+        }
+
+        public var kind: Kind
+        /// Counted from 1.
+        public var page: Int
+        /// Counted from 1. Nil for what belongs to the whole page.
+        public var block: Int?
+        /// x, y, width and height, as fractions of the page from its top-left corner.
+        public var bbox: [Double]
+        public var text: String?
+        /// The number printed on the page, for a page heading, when it differs from the page's
+        /// position in the file.
+        public var printed: String?
+        public var status: String?
+        public var reason: String?
+        public var score: Double?
+        public var readings: [String]?
+        /// Ready-to-run commands: "crop", "raw", "pick" or "look".
+        public var commands: [String: String]?
+
+        init(kind: Kind, page: Int, block: Int? = nil, box: Box = Box(x: 0, y: 0, width: 1, height: 1), text: String? = nil,
+             printed: String? = nil, status: String? = nil, reason: String? = nil, score: Double? = nil,
+             readings: [String]? = nil, commands: [String: String]? = nil) {
+            self.kind = kind
+            self.page = page
+            self.block = block
+            self.bbox = [box.x, box.y, box.width, box.height].map { ($0 * 10_000).rounded() / 10_000 }
+            self.text = text
+            self.printed = printed
+            self.status = status
+            self.reason = reason
+            self.score = score.map { ($0 * 100).rounded() / 100 }
+            self.readings = readings
+            self.commands = commands
+        }
+
+        var box: Box { Box(x: bbox[0], y: bbox[1], width: bbox[2], height: bbox[3]) }
+    }
+
+    /// What one page contributes to the output.
+    struct PageBlocks {
+        /// The page heading, then units of blocks: a text block with the doubts that follow it.
+        /// A budget cuts the output between units.
+        var units: [[Block]]
+        var status: PageQuality.Status
+        var doubtful = 0
+        var oldLayers = 0
+        var holdsText = false
+    }
+
+    /// The blocks of one page, with the agent's picks applied.
     /// - Parameters:
-    ///   - file: the path as the agent typed it, for the commands the output suggests.
+    ///   - path: the path as a shell word, for the commands the blocks suggest.
     ///   - raw: show the text that normal output sets aside as doubtful, labelled with its reason.
-    public static func render(file: String, pageCount: Int, pages: [Page], picks: [String: [Pick]] = [:],
-                              savedByPDFKit: Bool = false, raw: Bool = false) -> Report {
-        let path = quoted(file)
-        var body: [String] = []
+    static func pageBlocks(_ page: Page, picks: [String: [Pick]], path: String, raw: Bool) -> PageBlocks {
+        let (quality, picked) = judge(page, picks: picks)
+        let layer = page.result.pageText
+        let number = page.index + 1
+        var result = PageBlocks(units: [[Block(kind: .page, page: number, printed: layer?.label)]], status: quality.status)
+        let unsureByBlock = Dictionary(grouping: quality.unsure, by: \.block)
+
+        if let whole = quality.doubts.first(where: { $0.blocks == nil }) {
+            var unit = [failureBlock(whole, page: number, block: nil, region: nil, path: path, raw: raw)]
+            if whole.kind == .lowQuality, let layer {
+                if raw {
+                    unit += layer.blocks.enumerated().map { index, block in
+                        Block(kind: .doubtful, page: number, block: index + 1, box: block.box, text: block.text, status: whole.kind.rawValue)
+                    }
+                } else {
+                    result.doubtful += layer.blocks.count
+                }
+            }
+            result.units.append(unit)
+        } else if let layer {
+            for (index, block) in layer.blocks.enumerated() {
+                if let doubt = quality.doubts.first(where: { $0.blocks?.contains(index) == true }) {
+                    var unit = [failureBlock(doubt, page: number, block: index + 1, region: expanded(block.box, lines: block.lines),
+                                             path: path, raw: raw)]
+                    if raw {
+                        unit.append(Block(kind: .doubtful, page: number, block: index + 1, box: block.box, text: block.text,
+                                          status: doubt.kind.rawValue))
+                    } else {
+                        result.doubtful += 1
+                    }
+                    result.units.append(unit)
+                    continue
+                }
+                result.holdsText = true
+                let spans = unsureByBlock[index] ?? []
+                let choices = spans.filter(\.pickable), looks = spans.filter { !$0.pickable }
+                let text = picked[index].map { applying($0, to: block.text, spans: choices) } ?? block.text
+                var unit = [Block(kind: .text, page: number, block: index + 1, box: block.box, text: text)]
+                if !choices.isEmpty && picked[index] == nil {
+                    unit.append(unsureBlock(choices, block: block, page: number, index: index, path: path))
+                }
+                if !looks.isEmpty { unit.append(lookBlock(looks, block: block, page: number, index: index, path: path)) }
+                result.units.append(unit)
+            }
+        }
+        if let old = layer?.replacedText {
+            if raw {
+                // Numbered after the page's last block, so a read that goes on from it skips them.
+                result.units.append([Block(kind: .oldOCR, page: number, block: (layer?.blocks.count ?? 0) + 1, text: old)])
+            } else {
+                result.oldLayers += 1
+            }
+        }
+        return result
+    }
+
+    /// The output of a read, built page by page within a token budget.
+    public struct Document {
+        let file: String
+        let path: String
+        let pageCount: Int
+        let style: Style
+        let raw: Bool
+        let picks: [String: [Pick]]
+        /// About how many tokens the output may take. Nil means no limit.
+        let budget: Int?
+        /// The command that continues the read from a page, a block and an offset in its text.
+        let continuation: @Sendable (Int, Int?, Int?) -> String
+
+        public private(set) var blocks: [Block] = []
+        var rendered: [String] = []
+        var used = 0
+        var pagesRead: [Int] = []
         var flagged: [(page: Int, status: PageQuality.Status)] = []
         var doubtful = 0, oldLayers = 0
         var holdsText = false
+        /// The command that continues the read, once the budget stopped it.
+        public private(set) var next: String?
 
-        for page in pages {
-            let (quality, picked) = judge(page, picks: picks)
-            let layer = page.result.pageText
+        /// - Parameter continuation: the full command that goes on from a page, a block and a
+        ///   character in the block's text, such as `pdf read paper.pdf --page 4-9 --from p4.7`.
+        public init(file: String, pageCount: Int, style: Style = .md, raw: Bool = false, picks: [String: [Pick]] = [:],
+                    budget: Int? = nil, continuation: (@Sendable (Int, Int?, Int?) -> String)? = nil) {
+            let path = quoted(file)
+            self.file = file
+            self.path = path
+            self.pageCount = pageCount
+            self.style = style
+            self.raw = raw
+            self.picks = picks
+            self.budget = budget
+            self.continuation = continuation ?? { page, block, offset in
+                "pdf read \(path) --from " + Output.address(page: page, block: block, offset: offset)
+            }
+        }
+
+        /// Adds a page, from `block` and `offset` within it when a read goes on from there.
+        /// Returns false when the budget stopped the read, which leaves `next` set.
+        public mutating func add(_ page: Page, from block: Int? = nil, offset: Int? = nil) -> Bool {
+            let content = pageBlocks(page, picks: picks, path: path, raw: raw)
             let number = page.index + 1
-            var lines = ["## p.\(number)"]
-            let unsureByBlock = Dictionary(grouping: quality.unsure, by: \.block)
-            if quality.status != .ok { flagged.append((number, quality.status)) }
-
-            if let whole = quality.doubts.first(where: { $0.blocks == nil }) {
-                lines.append(failureBlock(whole, page: number, address: "p.\(number)", region: nil, path: path, raw: raw))
-                if whole.kind == .lowQuality, let layer {
-                    if raw {
-                        lines += layer.blocks.enumerated().map { index, block in
-                            "\(address(number, index, block.box))\n[low-quality] \(block.text)"
-                        }
+            for (position, var unit) in content.units.enumerated() {
+                let first = unit[0]
+                if position > 0, let block, (first.block ?? Int.max) < block { continue }
+                if let offset, let block, first.block == block, first.kind == .text, let text = first.text {
+                    unit[0].text = "…" + String(text.dropFirst(offset))
+                }
+                let cost = unit.reduce(0) { $0 + tokens(render($1, style: style, raw: raw)) }
+                if let budget, used + cost > budget, !(position == 0 && rendered.isEmpty) {
+                    // A text block larger than a whole budget is cut inside; any other unit waits
+                    // for the next read.
+                    if first.kind == .text, cost > budget, let text = unit[0].text, rendered.count <= 1 {
+                        let room = max(budget - used - tokens(render(Block(kind: .text, page: number, block: first.block,
+                                                                           box: first.box, text: ""), style: style, raw: raw)), 50)
+                        let kept = prefix(text, tokens: room)
+                        unit = [unit[0]]
+                        unit[0].text = kept + "…"
+                        append(unit)
+                        let shown = (offset ?? 0) + kept.count - (text.hasPrefix("…") ? 1 : 0)
+                        next = continuation(number, first.block, shown)
                     } else {
-                        doubtful += layer.blocks.count
+                        next = continuation(number, position == 0 ? nil : first.block, nil)
                     }
+                    return false
                 }
-            } else if let layer {
-                for (index, block) in layer.blocks.enumerated() {
-                    if let doubt = quality.doubts.first(where: { $0.blocks?.contains(index) == true }) {
-                        lines.append(failureBlock(doubt, page: number, address: "p.\(number) ¶\(index + 1)",
-                                                  region: expanded(block.box, lines: block.lines), path: path, raw: raw))
-                        if raw { lines.append("[low-quality] \(block.text)") } else { doubtful += 1 }
-                        continue
-                    }
-                    holdsText = true
-                    let spans = unsureByBlock[index] ?? []
-                    let choices = spans.filter(\.pickable), looks = spans.filter { !$0.pickable }
-                    let text = picked[index].map { applying($0, to: block.text, spans: choices) } ?? block.text
-                    lines.append("\(address(number, index, block.box))\n\(text)")
-                    if !choices.isEmpty && picked[index] == nil {
-                        lines.append(unsureBlock(choices, block: block, page: number, index: index, path: path, raw: raw))
-                    }
-                    if !looks.isEmpty { lines.append(lookBlock(looks, block: block, page: number, index: index, path: path)) }
+                append(unit)
+                if position == 0 {
+                    // The page counts as read once its heading is out.
+                    pagesRead.append(number)
+                    if content.status != .ok { flagged.append((number, content.status)) }
+                    doubtful += content.doubtful
+                    oldLayers += content.oldLayers
+                    holdsText = holdsText || content.holdsText
                 }
             }
-            if let old = layer?.replacedText {
-                if raw { lines.append("[old OCR] \(old)") } else { oldLayers += 1 }
+            return true
+        }
+
+        mutating func append(_ unit: [Block]) {
+            for block in unit {
+                blocks.append(block)
+                let text = render(block, style: style, raw: raw)
+                rendered.append(text)
+                used += tokens(text)
             }
-            body.append(lines.joined(separator: "\n\n"))
         }
 
-        var summary = ["\(file) · \(pageCount) page\(pageCount == 1 ? "" : "s") · read \(ranges(pages.map { $0.index + 1 }))"]
-        summary.append(flagged.isEmpty ? "flagged: none"
-                       : "flagged: " + flagged.map { "p.\($0.page) (\($0.status.rawValue))" }.joined(separator: ", "))
-        var aside: [String] = []
-        if doubtful > 0 { aside.append("\(doubtful) doubtful block\(doubtful == 1 ? "" : "s")") }
-        if oldLayers > 0 { aside.append("\(oldLayers) old OCR layer\(oldLayers == 1 ? "" : "s")") }
-        if raw {
-            summary.append("showing the text set aside as doubtful")
-        } else if !aside.isEmpty {
-            summary.append("set aside: " + aside.joined(separator: ", ") + " (show: --raw)")
-        }
-        if savedByPDFKit {
-            summary.append("⚠ made or last saved by macOS PDFKit, as Preview saves: such a save can damage the text, "
-                           + "and an earlier copy may read better")
+        /// The summary line, then the blocks, then the line that continues the read.
+        /// `parsed` is how many of the document's pages are cached: fewer than all makes the
+        /// output provisional.
+        public func report(savedByPDFKit: Bool = false, parsed: Int? = nil) -> Report {
+            var summary = ["\(file) · \(pageCount) page\(pageCount == 1 ? "" : "s") · read \(ranges(pagesRead))"]
+            summary.append(flagged.isEmpty ? "flagged: none"
+                           : "flagged: " + flagged.map { "p.\($0.page) (\($0.status.rawValue))" }.joined(separator: ", "))
+            var aside: [String] = []
+            if doubtful > 0 { aside.append("\(doubtful) doubtful block\(doubtful == 1 ? "" : "s")") }
+            if oldLayers > 0 { aside.append("\(oldLayers) old OCR layer\(oldLayers == 1 ? "" : "s")") }
+            if raw {
+                summary.append("showing the text set aside as doubtful")
+            } else if !aside.isEmpty {
+                summary.append("set aside: " + aside.joined(separator: ", ") + " (show: --raw)")
+            }
+            if let parsed, parsed < pageCount {
+                summary.append("provisional: \(parsed) of \(pageCount) pages parsed so far")
+            }
+            if savedByPDFKit {
+                summary.append("⚠ made or last saved by macOS PDFKit, as Preview saves: such a save can damage the text, "
+                               + "and an earlier copy may read better")
+            }
+            var parts = [summary.joined(separator: " · ")] + rendered
+            if let next { parts.append("next: \(next)") }
+            let exitCode: Int32 = flagged.isEmpty ? 0 : holdsText || pagesRead.isEmpty ? 2 : 3
+            return Report(text: parts.joined(separator: "\n\n") + "\n", exitCode: exitCode)
         }
 
-        let exitCode: Int32 = flagged.isEmpty ? 0 : holdsText || pages.isEmpty ? 2 : 3
-        return Report(text: ([summary.joined(separator: " · ")] + body).joined(separator: "\n\n") + "\n",
-                      exitCode: exitCode)
+        /// The read as JSON: the summary's facts, every block, and the command that continues.
+        public func json(savedByPDFKit: Bool = false, parsed: Int? = nil) throws -> Data {
+            struct Flag: Encodable { var page: Int; var status: String }
+            struct Aside: Encodable { var doubtfulBlocks: Int; var oldOCRLayers: Int }
+            struct Body: Encodable {
+                var file: String
+                var pageCount: Int
+                var pagesRead: [Int]
+                var flagged: [Flag]
+                var setAside: Aside
+                var provisional: Bool
+                var savedByPDFKit: Bool
+                var blocks: [Block]
+                var next: String?
+            }
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.withoutEscapingSlashes, .sortedKeys]
+            return try encoder.encode(Body(
+                file: file, pageCount: pageCount, pagesRead: pagesRead,
+                flagged: flagged.map { Flag(page: $0.page, status: $0.status.rawValue) },
+                setAside: Aside(doubtfulBlocks: doubtful, oldOCRLayers: oldLayers),
+                provisional: parsed.map { $0 < pageCount } ?? false, savedByPDFKit: savedByPDFKit, blocks: blocks,
+                next: next.map { $0 + " --json" }))
+        }
+    }
+
+    /// Every page in full, with no budget: the hidden `pdf debug-read` and the tests use it.
+    public static func render(file: String, pageCount: Int, pages: [Page], picks: [String: [Pick]] = [:],
+                              savedByPDFKit: Bool = false, raw: Bool = false) -> Report {
+        var document = Document(file: file, pageCount: pageCount, raw: raw, picks: picks)
+        for page in pages { _ = document.add(page) }
+        return document.report(savedByPDFKit: savedByPDFKit)
     }
 
     /// A page's verdict with the agent's picks applied, and the picks that apply, by block.
@@ -133,43 +333,81 @@ public enum Output {
 
     // MARK: Blocks
 
-    static func address(_ page: Int, _ index: Int, _ box: Box) -> String {
-        "p.\(page) ¶\(index + 1) · \(format(box))"
-    }
-
     /// The failure block: what is in doubt, why, and how to read it instead.
-    static func failureBlock(_ doubt: Doubt, page: Int, address: String, region: Box?, path: String, raw: Bool) -> String {
-        let score = doubt.score.map { String(format: " (score %.2f)", $0) } ?? ""
-        var lines = ["⚠ \(address) \(doubt.kind.rawValue): \(doubt.reason)\(score)"]
-        let crop = "pdf crop \(path) --page \(page)" + (region.map { " --bbox \(format($0))" } ?? "")
-        lines.append("  read it as an image: \(crop)")
-        if doubt.kind == .lowQuality && !raw { lines.append("  raw: pdf read \(path) --page \(page) --raw") }
-        return lines.joined(separator: "\n")
+    static func failureBlock(_ doubt: Doubt, page: Int, block: Int?, region: Box?, path: String, raw: Bool) -> Block {
+        var commands = ["crop": "pdf crop \(path) --page \(page)" + (region.map { " --bbox \(format($0))" } ?? "")]
+        if doubt.kind == .lowQuality && !raw { commands["raw"] = "pdf read \(path) --page \(page) --raw" }
+        return Block(kind: .failure, page: page, block: block, box: region ?? Box(x: 0, y: 0, width: 1, height: 1),
+                     status: doubt.kind.rawValue, reason: doubt.reason, score: doubt.score, commands: commands)
     }
 
     /// The unsure block, after the paragraph that holds the words.
-    static func unsureBlock(_ spans: [Unsure], block: TextBlock, page: Int, index: Int, path: String, raw: Bool) -> String {
-        let readings = Picks.readings(of: spans)
-        let label = raw ? "[unsure] " : ""
-        let region = spans.dropFirst().reduce(spans[0].box) { union($0, $1.box) }
-        return """
-            ⚠ p.\(page) ¶\(index + 1) unsure: two readings differ
-              \(label)[a] \(readings[0])
-              \(label)[b] \(readings[1])
-              pick: pdf pick \(path) p\(page).\(index + 1) a  (or b)
-              look: pdf crop \(path) --page \(page) --bbox \(format(expanded(region, lines: block.lines)))
-            """
+    static func unsureBlock(_ spans: [Unsure], block: TextBlock, page: Int, index: Int, path: String) -> Block {
+        let region = expanded(spans.dropFirst().reduce(spans[0].box) { union($0, $1.box) }, lines: block.lines)
+        return Block(kind: .unsure, page: page, block: index + 1, box: region, reason: "two readings differ",
+                     readings: Picks.readings(of: spans),
+                     commands: ["pick": "pdf pick \(path) p\(page).\(index + 1) a", "look": "pdf crop \(path) --page \(page) --bbox \(format(region))"])
     }
 
     /// Words that read as words run together, with no reading that splits them: the agent can
     /// only look at the image.
-    static func lookBlock(_ spans: [Unsure], block: TextBlock, page: Int, index: Int, path: String) -> String {
-        let region = spans.dropFirst().reduce(spans[0].box) { union($0, $1.box) }
-        return """
-            ⚠ p.\(page) ¶\(index + 1) unsure: words run together, and no reading splits them
-              \(spans.map { $0.readings[0] }.joined(separator: " … "))
-              look: pdf crop \(path) --page \(page) --bbox \(format(expanded(region, lines: block.lines)))
-            """
+    static func lookBlock(_ spans: [Unsure], block: TextBlock, page: Int, index: Int, path: String) -> Block {
+        let region = expanded(spans.dropFirst().reduce(spans[0].box) { union($0, $1.box) }, lines: block.lines)
+        return Block(kind: .look, page: page, block: index + 1, box: region,
+                     text: spans.map { $0.readings[0] }.joined(separator: " … "),
+                     reason: "words run together, and no reading splits them",
+                     commands: ["look": "pdf crop \(path) --page \(page) --bbox \(format(region))"])
+    }
+
+    /// A block as text. Each block's address is written by `address`, in one place, so the
+    /// format can change without touching the rest.
+    static func render(_ block: Block, style: Style, raw: Bool) -> String {
+        let commands = block.commands ?? [:]
+        switch block.kind {
+        case .page:
+            let heading = "p.\(block.page)" + (block.printed.map { " (printed \($0))" } ?? "")
+            return style == .md ? "## \(heading)" : "=== \(heading) ==="
+        case .text:
+            return "\(address(block))\n\(block.text ?? "")"
+        case .doubtful:
+            return "\(address(block))\n[\(block.status ?? "low-quality")] \(block.text ?? "")"
+        case .oldOCR:
+            return "[old OCR] \(block.text ?? "")"
+        case .failure:
+            let place = "p.\(block.page)" + (block.block.map { " ¶\($0)" } ?? "")
+            let score = block.score.map { String(format: " (score %.2f)", $0) } ?? ""
+            var lines = ["⚠ \(place) \(block.status ?? "failed"): \(block.reason ?? "")\(score)"]
+            if let crop = commands["crop"] { lines.append("  read it as an image: \(crop)") }
+            if let raw = commands["raw"] { lines.append("  raw: \(raw)") }
+            return lines.joined(separator: "\n")
+        case .unsure:
+            let label = raw ? "[unsure] " : ""
+            let readings = block.readings ?? ["", ""]
+            return """
+                ⚠ p.\(block.page) ¶\(block.block ?? 0) unsure: two readings differ
+                  \(label)[a] \(readings[0])
+                  \(label)[b] \(readings.count > 1 ? readings[1] : "")
+                  pick: \(commands["pick"] ?? "")  (or b)
+                  look: \(commands["look"] ?? "")
+                """
+        case .look:
+            return """
+                ⚠ p.\(block.page) ¶\(block.block ?? 0) unsure: \(block.reason ?? "")
+                  \(block.text ?? "")
+                  look: \(commands["look"] ?? "")
+                """
+        }
+    }
+
+    /// The address a text block starts with: its page, its number and its position.
+    static func address(_ block: Block) -> String {
+        "p.\(block.page) ¶\(block.block ?? 0) · \(format(block.box))"
+    }
+
+    /// Where a read goes on from, as `--from` takes it: "p4", "p4.7", or "p4.7:120" for the
+    /// 120th character of block 7.
+    public static func address(page: Int, block: Int?, offset: Int?) -> String {
+        "p\(page)" + (block.map { ".\($0)" } ?? "") + (offset.map { ":\($0)" } ?? "")
     }
 
     /// The block's text with the picked reading in place of each unsure word, labelled.
@@ -184,6 +422,31 @@ public enum Output {
             units.replaceSubrange(span.offset..<span.offset + old.count, with: new)
         }
         return String(decoding: units, as: UTF16.self)
+    }
+
+    // MARK: Budget
+
+    /// About how many tokens a text costs: one per four characters of Latin text, and one per
+    /// character of other scripts, which tokenizers split finer.
+    public static func tokens(_ text: String) -> Int {
+        var ascii = 0, other = 0
+        for scalar in text.unicodeScalars {
+            if scalar.isASCII { ascii += 1 } else { other += 1 }
+        }
+        return (ascii + 3) / 4 + other
+    }
+
+    /// The start of a text that fits in about `tokens` tokens, cut after a word.
+    static func prefix(_ text: String, tokens limit: Int) -> String {
+        var cost = 0, cut = text.startIndex, index = text.startIndex
+        while index < text.endIndex {
+            let character = text[index]
+            cost += character.unicodeScalars.reduce(0) { $0 + ($1.isASCII ? 1 : 4) }
+            if cost > limit * 4 { break }
+            index = text.index(after: index)
+            if character == " " { cut = index }
+        }
+        return index == text.endIndex ? text : String(text[..<(cut == text.startIndex ? index : cut)])
     }
 
     // MARK: Formatting
@@ -225,7 +488,7 @@ public enum Output {
     /// The path as a shell word, quoted when it needs to be. A path that starts with "-" gets
     /// "./" in front, so no command reads it as an option, and one that starts with "~" is
     /// quoted, so no shell reads it as a home folder.
-    static func quoted(_ path: String) -> String {
+    public static func quoted(_ path: String) -> String {
         if path.hasPrefix("-") { return quoted("./" + path) }
         let plain = !path.hasPrefix("~")
             && path.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || "._/-~+:,@".contains($0)) }

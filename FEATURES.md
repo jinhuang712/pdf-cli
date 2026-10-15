@@ -3,7 +3,7 @@
 
 ✅ built · 🚧 built with a gap · ⬜ planned
 
-F1 and F11 are ✅ built, F8 is 🚧 built with a gap, and every other feature is ⬜ planned. The commands and output samples show the intended behavior.
+F1 and F11 are ✅ built, F3, F7 and F8 are 🚧 built with a gap, and every other feature is ⬜ planned. The commands and output samples show the intended behavior.
 
 ## F1 — Add ✅
 
@@ -55,21 +55,41 @@ Figures and tables
 
 Settings: none.
 
-## F3 — Read ⬜
+## F3 — Read 🚧
 
 Prints text in reading order. Every block shows its page and its position on the page.
 
+```text
+paper.pdf · 11 pages · read p.1–4 · flagged: none
+
+## p.1
+
+p.1 ¶1 · 0.29,0.14,0.42,0.02
+Dataset Distillation by Influence Matching
+
+p.1 ¶2 · 0.17,0.18,0.66,0.02
+Haoru Tan^{1,†} Wang Wang^{1,†} Sitong Wu^{2} Xiuzhe Wu^{3}
+…
+
+next: pdf read paper.pdf --from p4.27
+```
+
 | Flag | What it reads |
 |---|---|
-| `--page 3-5` | Pages by their position in the file |
+| `--page 3-5` | Pages by their position in the file, such as `3`, `3-5` or `3,7-9`. The flag can repeat. |
 | `--printed-page 237` | A page by the number printed on it, such as "237" or "iv" |
 | `--section "Method"` or `--section 2.1` | A section by its title or its number. The flag can repeat. |
-| `--full` | The whole document |
+| `--full` | The whole document, within the budget |
+| `--from p4.27` | Goes on from where a read stopped, as its `next:` line says: a page, a block in it, and a character in the block after a colon, as in `p4.27:200` |
 | `--format md\|text\|html` | The output format. The default is `md`. |
 | `--styles` | Marks bold, italic and heading levels in the text |
 | `--raw` | Shows the text that normal output set aside as doubtful, in place, each part labelled with its reason: `[low-quality]`, `[unsure]`, `[table text: rows and columns lost]`, `[figure text]` or `[old OCR]` |
 
-Without a page or section flag, `pdf read` starts at the first page and stops at the default budget (see F7).
+Without a page or section flag, `pdf read` starts at the first page and stops at the default budget (see F7). A page asked for is parsed first, and a read that the budget stops early waits only for the pages it shows.
+
+Gap:
+- `--printed-page` and `--section` come with `pdf info`'s page labels and sections (M1.6), `--styles` and `--format html` later.
+- Tables, figures and equations read as plain text until M2.6, and images and annotations get no marker until M1.13 and M1.14.
 
 Apple OCR reads a scanned page, a page whose text layer is stray marks or broken characters, and every page of a file whose text layer disagrees with its own image. Its blocks carry addresses like any other, and the text layer it replaced shows with `--raw`, labelled `[old OCR]`.
 
@@ -157,19 +177,21 @@ Writes a PDF's content to files and prints their paths.
 
 Settings: none.
 
-## F7 — Output basics ⬜
+## F7 — Output basics 🚧
 
 Every command follows the same rules, so an agent learns them once.
 
-- Every block shows its page and its position, such as `p.12 · 0.10,0.40,0.80,0.30`. The page is its position in the file. When the number printed on the page differs, it follows, as in `p.12 (printed 237)`.
+- Every block shows its page and its position, such as `p.12 ¶3 · 0.10,0.40,0.80,0.30`. The page is its position in the file. When the number printed on the page differs, the page's heading says so, as in `## p.12 (printed 237)`.
 - Superscripts and subscripts keep a mark, as in `10^{-5}` and `x_{2}`. Footnote markers and citation numbers have their own marks (see F14 and F15).
 - A word that a hyphen splits across two lines comes back whole when the page or macOS's word list knows it. Otherwise the hyphen stays, as in `self-attention`.
 - Every command accepts `--json`.
 - Output starts with a one-line summary: the pages read, the pages flagged and what normal output set aside.
 - A file that macOS Preview or another app saved through PDFKit carries a warning in its summary line: such a save can damage the text, and an earlier copy may read better.
 - Nothing is dropped without a trace. What normal output sets aside leaves a marker in place, or a count in the summary line, with the flag that shows it: `--raw` for doubtful text, `--include-hidden` for hidden text and `--headers` for running headers, footers and publisher stamps.
-- `--budget N` stops the output at about N tokens and ends it with a line that continues the read, such as `next: pdf read paper.pdf --page 15`. A block larger than the budget is cut the same way. `read` and `search` stop at 5,000 tokens by default, about 5 pages of a paper, and `--budget all` turns the limit off.
-- While a document is still parsing, output is marked `provisional`, because headings and note numbers can change once the whole document is known.
+- `--budget N` stops the output at about N tokens, between blocks, and ends it with a line that continues the read, such as `next: pdf read paper.pdf --from p4.27`. A block larger than the whole budget is cut inside, and the next read goes on from the cut. `read` and `search` stop at 5,000 tokens by default, about 4 pages of a paper, and `--budget all` turns the limit off.
+- While a document is still parsing, the summary line says `provisional`, with how many pages are parsed so far, because headings and note numbers can change once the whole document is known.
+
+Gap: only `pdf read` accepts `--json` so far, and `--include-hidden` and `--headers` come with M1.10 and M2.5.
 
 Settings: none.
 

@@ -147,6 +147,7 @@ public enum Worker {
             } else {
                 (layer, method) = await readTextLayer(page, atRisk: repairSpaces || check.pageAtRisk)
             }
+            if let label = page.label, !label.isEmpty, label != String(index + 1) { layer.label = label }
             // Words still run together, which OCR could not break either, get a second reading
             // split into common words, or a span that tells the agent to look at the image.
             if layer.runTogether > 0 {

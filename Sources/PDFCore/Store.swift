@@ -316,6 +316,21 @@ public final class Store: Sendable {
 
     // MARK: Page results
 
+    /// Which of these keys have a cached result, without loading the results.
+    public func cachedKeys(_ keys: [String]) throws -> Set<String> {
+        let unique = Array(Set(keys))
+        return try pool.read { db in
+            var found = Set<String>()
+            for chunk in stride(from: 0, to: unique.count, by: 500).map({ Array(unique[$0..<min($0 + 500, unique.count)]) }) {
+                let marks = Array(repeating: "?", count: chunk.count).joined(separator: ",")
+                found.formUnion(try String.fetchAll(db, sql: """
+                    SELECT page_key FROM page_result WHERE parser_version = ? AND page_key IN (\(marks))
+                    """, arguments: StatementArguments([Env.parserVersion] + chunk)!))
+            }
+            return found
+        }
+    }
+
     public func results(keys: [String]) throws -> [String: PageResult] {
         guard !keys.isEmpty else { return [:] }
         return try pool.read { db in

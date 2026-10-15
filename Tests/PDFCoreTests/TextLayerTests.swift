@@ -212,6 +212,32 @@ import Testing
         }
     }
 
+    @Test func aTitleWithALigatureKeepsItsBoxOnItsLine() throws {
+        // "Dataset Distillation by Influence Matching": the "fl" ligature made PDFKit give the
+        // last letter the box of the next line's first letter, so the title's box took two lines.
+        let url = repoRoot.appendingPathComponent("testdata/smoke/arxiv-2607.16859.pdf")
+        let layer = TextLayer.read(try #require(PDFDocument(url: url)?.page(at: 0)))
+        let title = try #require(layer.blocks.first)
+        #expect(title.text == "Dataset Distillation by Influence Matching")
+        #expect(title.box.height < 0.03)
+    }
+
+    @Test func smallerRaisedOrLoweredCharactersGetMarks() {
+        // "x2 y3 Z": the 2 is smaller and lowered, the 3 smaller and raised, and the Z at the
+        // main size but a little raised, as PDFKit reports some table cells.
+        let sizes: [CGFloat] = [10, 7, 10, 10, 7, 10, 10]
+        let raises: [CGFloat] = [0, -1.5, 0, 0, 3.5, 0, 1.0]
+        let glyphs = Glyphs(boxes: Array(repeating: nil, count: 7), sizes: sizes, raises: raises)
+        let marks = glyphs.marks([0, 1, 3, 4, 6])
+        #expect(marks == [1: "_", 4: "^"])
+    }
+
+    @Test func marksWrapTheirCharactersInTheLine() throws {
+        let url = repoRoot.appendingPathComponent("testdata/smoke/arxiv-2607.16859.pdf")
+        let text = TextLayer.read(try #require(PDFDocument(url: url)?.page(at: 0))).text
+        #expect(text.contains("Haoru Tan^{1,†} Wang Wang^{1,†}"))
+    }
+
     @Test func blockTextHasNoLineEndHyphensFromSplitWords() throws {
         let document = try #require(PDFDocument(url: samplePaper))
         let text = TextLayer.read(try #require(document.page(at: 1))).text

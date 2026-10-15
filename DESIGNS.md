@@ -76,7 +76,7 @@ The "at risk" check comes from the M0 spike: a font that declares character 32 t
 A page can read wrong while it looks right, and the agent believes what it is handed. Each trap found so far gets its own check.
 
 - **Table regions replace their text.** PDFKit turns a table into a stream of numbers without rows or columns, as the M0 spike showed. The text inside a detected table stays out of normal output, and the table goes out as an image (see the decision on tables below). `--raw` shows the text in place, labelled as flat text that lost its rows and columns. The words inside a figure, such as a chart's axis labels, follow the same rule. Cost: a table the detector misses still leaks its flat numbers. Holds as: the output writer moves every text block inside a table or figure region behind `--raw` and emits one table or figure block in its place, and goal G8 in [GOALS.md](GOALS.md) scores table detection.
-- **Raised and lowered characters are found from their boxes.** Plain text turns 10⁻⁵ into "10−5", as the M0 spike showed. A character set smaller and above or below its line's baseline is a superscript or a subscript. Cost: a font that reports odd boxes gets wrong marks. Holds as: every character set smaller and off the baseline leaves the text layer with a superscript or subscript mark, or as a footnote or citation marker.
+- **Raised and lowered characters keep a mark.** Plain text turns 10⁻⁵ into "10−5", as the M0 spike showed. PDFKit reports each run of text with its font size and how far its baseline is raised. A character set smaller than its line's main text, and raised or lowered against it, is a superscript or a subscript, as in `10^{-5}`, `LLM_{tea}` and `Haoru Tan^{1,†}`. Main-size text that PDFKit reports a little raised, as in some table cells, keeps no mark. Cost: a font that reports odd sizes gets wrong marks. Holds as: every character set smaller and off the line's baseline leaves the text layer with a superscript or subscript mark, or as a footnote or citation marker.
 - **One sample page per file is checked against its image.** A broken font table can map shapes to wrong letters, and an old OCR layer in a scan can hold misreads. Both look like real words. Apple OCR reads a band around the densest paragraph of the first page among the first ten with at least 300 letters, and the check counts the share of OCR's words, four letters or longer, that the text layer spells the same, with spaces left out so a layer that lost its spaces still matches. A share under 0.7 fails. On the eleven samples it was 0.90–0.99, the scan's old OCR layer 0.94 included, and a layer with every letter shifted by one scored 0.00. Cost: 0.35–0.6 s per new file, in a worker of its own beside the index. Holds as: a file whose sample fails has every page read by OCR and cached apart, and its old text layer stays behind `--raw`, labelled `[old OCR]`.
 - **Spaces are checked before and after reading.** A font that declares character 32 wider than a normal space makes PDFKit drop the spaces between words, as the M0 spike found. A Word-made spike paper also loses 1–2 spaces per page, for a reason still unknown. Before reading, the font check measures each word gap in a page's text operations against half its font's declared width for character 32, counting only body fonts, the fonts that hold at least a quarter of the page's gaps: a maths font can declare a wide character 32 harmlessly. A file with at least 5% risky gaps, and at least 20, is "at risk", and so is a page with at least 10%, and at least 10, for a file that mixes papers. On the eleven samples, the paper that loses its spaces had 29%, and the ten others had none on any page. After reading, a count of run-together words, letter runs longer than 25, checks every page, and a page with any gets the space repair too: the Word-made paper had 1–2 on four pages. A word still in doubt after the repair gets a second reading (see the decision on second readings). Cost: about 0.3 ms per page for the check, and 0.7 s of OCR for each page with run-together words. Holds as: every page record stores its run-together word count, and every page with run-together words goes through the space repair.
 
@@ -369,11 +369,26 @@ Holds as: `scripts/test-cache.sh` reads three new files at once and never sees m
 
 A sample-paper page holds about 950 tokens of text, so 5,000 tokens is about 5 pages, or 20,000 characters. Claude Code shows a command's output in full up to about 30,000 characters and moves the rest to a file, according to third-party reports. Our cut lands between blocks and ends with the command that continues. Claude Code's cut lands anywhere.
 
+Task M1.7 built it. Tokens are estimated as one per four characters of Latin text and one per character of other scripts. The cut falls between a text block and the doubts that follow it, and the `next:` line names the block to go on from, as in `--from p4.27`. A block larger than the whole budget is cut inside, after a word, and the next read goes on from that character, as in `--from p3.2:200`. With block addresses, a sample page came to about 1,230 tokens, so the default read showed 4 pages and part of a fifth, in 19,740 characters.
+
 | Option | For | Against |
 |---|---|---|
 | **5,000 tokens** | A typical paper section in one call, inside Claude Code's 30,000 characters. | A long section takes two calls. |
 | 2,000 tokens | Cheaper per call. | More calls for the same section. |
 | No default | The agent always gets everything it asked for. | A flagless read of a 300-page book sends about 285,000 tokens, and Claude Code cuts it mid-sentence. |
+
+## Decision: each character's glyph box matched to its selection — 2026-10-15
+
+PDFKit's `characterBounds(at:)` counts glyphs, not characters. After a ligature such as "fl", one glyph for two characters, it returns the box of the character after the one asked for, and the shift carries on down the page. On an arXiv title, "Dataset Distillation by Influence Matching", the last letter got the box of the next line's first letter, so the title's box spanned two lines. Task M1.7 found it while building the superscript marks.
+
+A selection of one character lands in the right place across the line, but spans the line's full height, so it cannot show a raised character. Each character now takes the glyph box that sits where its selection does, and the shift carries on to the next character. Lines got their true height, and blocks group into whole paragraphs: the ten arXiv samples went from 43.6 blocks per page to 26.9. Matching costs about 5 ms per page.
+
+| Option | For | Against |
+|---|---|---|
+| **Glyph boxes matched to selections** | True heights and true places. | Two PDFKit calls per character. |
+| `characterBounds` alone | One call. | Wrong boxes after every ligature. |
+| Selections alone | Right places. | Every character takes the line's height. |
+| Glyph positions read from the content stream | Exact. | A text engine of our own, which the PDFKit decision keeps out. |
 
 ## Decision: a marker in place of hidden text over its words with a label — 2026-10-15
 
@@ -464,6 +479,7 @@ The tool returns text, crops and failure reports, and the calling agent does all
 
 - How to measure reading-order doubt on layouts beyond LaTeX papers, such as Word reports, magazines and textbooks with sidebars. The M0 spike's count of jumps between the left and right halves of a page is a candidate, tested only on two-column LaTeX papers.
 - The embedding model for search by meaning: Apple's built-in embeddings, or a small MLX model.
+- How much of each block's address to print. The full address, as in `p.2 ¶5 · 0.12,0.41,0.37,0.19`, took about 22% of a read's tokens on the ten arXiv samples, by the tool's estimate, which likely counts digits low. The paragraph number alone, as in `¶5`, would take about 7%, with positions kept in `--json`.
 - The quality thresholds that make a page `low-quality`. They get tuned until goal G11 in [GOALS.md](GOALS.md) passes. The OCR agreement's 0.85 rests on 33 scans made from three pages.
 - How to find the lines in doubt on a scan whose blocks are too short to judge alone, so the failure block covers less than the whole page.
 - How to check, page by page, a scan's old OCR text layer that passed the sample check. The NACA report's third page reads "TECH LM3ARY" from its old layer, unflagged.

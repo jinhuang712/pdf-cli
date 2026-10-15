@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import Foundation
 import PDFKit
@@ -87,8 +88,96 @@ public struct PageText: Codable, Equatable, Sendable {
     /// The page's fonts hide the spaces between words, and OCR could not read the page to
     /// restore them.
     public var spacesLost: Bool? = nil
+    /// The number printed on the page, from the file's page labels, such as "237" or "iv",
+    /// when it differs from the page's position in the file.
+    public var label: String? = nil
 
     public var text: String { blocks.map(\.text).joined(separator: "\n\n") }
+}
+
+/// What PDFKit knows of each character on a page: its box, its font size, and how far its
+/// baseline is raised.
+struct Glyphs {
+    /// Each character's box in page space, by UTF-16 offset, or nil for a space.
+    let boxes: [CGRect?]
+    let sizes: [CGFloat]
+    let raises: [CGFloat]
+
+    init(boxes: [CGRect?], sizes: [CGFloat], raises: [CGFloat]) {
+        self.boxes = boxes
+        self.sizes = sizes
+        self.raises = raises
+    }
+
+    init(_ page: PDFPage, _ text: NSString) {
+        boxes = Glyphs.boxes(page, text)
+        var sizes = [CGFloat](repeating: 0, count: text.length)
+        var raises = [CGFloat](repeating: 0, count: text.length)
+        if let attributed = page.attributedString, attributed.length == text.length {
+            let whole = NSRange(location: 0, length: attributed.length)
+            attributed.enumerateAttribute(.font, in: whole) { value, range, _ in
+                let size = (value as? NSFont)?.pointSize ?? 0
+                for index in range.location..<NSMaxRange(range) { sizes[index] = size }
+            }
+            attributed.enumerateAttribute(NSAttributedString.Key("CTBaselineOffset"), in: whole) { value, range, _ in
+                let raise = CGFloat((value as? NSNumber)?.doubleValue ?? 0)
+                for index in range.location..<NSMaxRange(range) { raises[index] = raise }
+            }
+        }
+        self.sizes = sizes
+        self.raises = raises
+    }
+
+    /// The boxes of a page's characters. PDFKit's `characterBounds(at:)` counts glyphs, not
+    /// characters, so after a ligature such as "fl", one glyph for two characters, it returns
+    /// the box of the next character: on an arXiv title, the last letter of a line got the box
+    /// of the next line's first. A selection of one character lands in the right place across
+    /// the line, but spans the line's full height, so each character takes the glyph box that
+    /// sits where its selection does, and the offset carries on to the next character.
+    static func boxes(_ page: PDFPage, _ text: NSString) -> [CGRect?] {
+        var boxes = [CGRect?](repeating: nil, count: text.length)
+        var shift = 0
+        var index = 0
+        while index < text.length {
+            let unit = text.character(at: index)
+            let paired = UTF16.isLeadSurrogate(unit) && index + 1 < text.length
+                && UTF16.isTrailSurrogate(text.character(at: index + 1))
+            let width = paired ? 2 : 1
+            defer { index += width }
+            guard !TextLayer.isSpace(unit),
+                  let selected = page.selection(for: NSRange(location: index, length: width))?.bounds(for: page),
+                  !selected.isEmpty else { continue }
+            var found: CGRect?
+            for candidate in [index - shift, index - shift - 1, index - shift + 1, index - shift - 2, index - shift + 2]
+            where candidate >= 0 && candidate < text.length {
+                let box = page.characterBounds(at: candidate)
+                if abs(box.midX - selected.midX) <= max(1, selected.width / 2) && abs(box.midY - selected.midY) <= selected.height {
+                    found = box
+                    shift = index - candidate
+                    break
+                }
+            }
+            boxes[index] = found ?? selected
+        }
+        return boxes
+    }
+
+    /// The marks for a line's characters: "^" for one set smaller and raised against the line's
+    /// main text, "_" for one set smaller and lowered. A run of the main size that PDFKit
+    /// reports a little raised, as in a table cell, keeps no mark.
+    func marks(_ indices: [Int]) -> [Int: Character] {
+        var counts: [CGFloat: Int] = [:]
+        for index in indices where sizes[index] > 0 { counts[(sizes[index] * 2).rounded() / 2, default: 0] += 1 }
+        guard let main = counts.max(by: { ($0.value, $0.key) < ($1.value, $1.key) })?.key else { return [:] }
+        let base = indices.filter { abs(sizes[$0] - main) <= 0.05 * main }.map { raises[$0] }.sorted()
+        let baseline = base.isEmpty ? 0 : base[base.count / 2]
+        var marks: [Int: Character] = [:]
+        for index in indices where sizes[index] > 0 && sizes[index] <= 0.85 * main {
+            let lift = raises[index] - baseline
+            if lift >= 0.1 * main { marks[index] = "^" } else if lift <= -0.04 * main { marks[index] = "_" }
+        }
+        return marks
+    }
 }
 
 /// Builds a page's text layer from PDFKit: lines with their positions, grouped into blocks.
@@ -108,13 +197,14 @@ enum TextLayer {
         let raw = page.string ?? ""
         let text = raw as NSString
         let crop = page.bounds(for: .cropBox)
+        let glyphs = Glyphs(page, text)
         var lines: [RawLine] = []
 
         var start = 0
         while start <= text.length {
             var end = start
             while end < text.length, !isLineBreak(text.character(at: end)) { end += 1 }
-            if let line = makeLine(page, text, start..<end, crop: crop, spacesBefore: spacesBefore) {
+            if let line = makeLine(text, start..<end, glyphs: glyphs, crop: crop, spacesBefore: spacesBefore) {
                 lines.append(line)
             }
             start = end + 1
@@ -134,10 +224,13 @@ enum TextLayer {
         unit == 0x20 || unit == 0x09 || unit == 0xA0 || isLineBreak(unit)
     }
 
-    /// One line of the page string, with its rectangle from the bounds of its characters.
-    static func makeLine(_ page: PDFPage, _ text: NSString, _ range: Range<Int>, crop: CGRect,
+    /// One line of the page string, with its rectangle from the boxes of its characters.
+    /// Characters set smaller and raised or lowered, against the line's main text, get the
+    /// marks `^{…}` and `_{…}`, as in `10^{-5}` and `x_{2}` (DESIGNS.md → Principles → Silent
+    /// errors).
+    static func makeLine(_ text: NSString, _ range: Range<Int>, glyphs: Glyphs, crop: CGRect,
                          spacesBefore: Set<Int>) -> RawLine? {
-        var piece = ""
+        var characters: [(index: Int, width: Int, isSpace: Bool)] = []
         var bounds = CGRect.null
         var index = range.lowerBound
         while index < range.upperBound {
@@ -145,14 +238,31 @@ enum TextLayer {
             let paired = UTF16.isLeadSurrogate(unit) && index + 1 < range.upperBound
                 && UTF16.isTrailSurrogate(text.character(at: index + 1))
             let width = paired ? 2 : 1
-            if spacesBefore.contains(index) { piece += " " }
-            piece += text.substring(with: NSRange(location: index, length: width))
-            if !isSpace(unit) {
-                let rect = page.characterBounds(at: index)
-                if rect.width > 0 || rect.height > 0 { bounds = bounds.union(rect) }
+            characters.append((index, width, isSpace(unit)))
+            if !isSpace(unit), let rect = glyphs.boxes[index], rect.width > 0 || rect.height > 0 {
+                bounds = bounds.union(rect)
             }
             index += width
         }
+        let marks = glyphs.marks(characters.filter { !$0.isSpace }.map(\.index))
+        var piece = ""
+        var open: Character?
+        for character in characters {
+            let mark = character.isSpace ? nil : marks[character.index]
+            if spacesBefore.contains(character.index) {
+                // A space the repair puts back ends a mark, as a space in the text does.
+                if open != nil { piece += "}" }
+                open = nil
+                piece += " "
+            }
+            if mark != open {
+                if open != nil { piece += "}" }
+                if let mark { piece += "\(mark){" }
+                open = mark
+            }
+            piece += text.substring(with: NSRange(location: character.index, length: character.width))
+        }
+        if open != nil { piece += "}" }
         let trimmed = piece.trimmingCharacters(in: .whitespaces)
         let softBreak = trimmed.hasSuffix("\u{00AD}")
         var cleaned = TextCleanup.line(piece)
