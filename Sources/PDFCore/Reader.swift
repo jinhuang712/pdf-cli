@@ -83,7 +83,10 @@ public final class Reader: Sendable {
             if !alive, lastSpawn.map({ Date().timeIntervalSince($0) > 2 }) ?? true {
                 guard spawns < 3 else { throw ReadError.runnerFailed }
                 if let runner { _ = Processes.reap(runner) }
-                runner = try Processes.spawn(Env.executablePath, ["__runner", path],
+                // The runner learns the pages this command waits on at once: a request saved
+                // only after the index could reach it after its first batch had started.
+                let pages = wanted.map { $0.map(String.init).joined(separator: ",") } ?? "all"
+                runner = try Processes.spawn(Env.executablePath, ["__runner", path, "--pages", pages],
                                              detached: true, captureOutput: false).pid
                 spawns += 1
                 lastSpawn = Date()

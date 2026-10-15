@@ -55,10 +55,14 @@ struct RunnerCommand: ParsableCommand {
     )
 
     @Argument var path: String
+    @Option(help: "The pages, counted from 0, that the command waits on, or \"all\".") var pages = ""
 
     func run() throws {
         let store = try Store()
-        throw ExitCode(Runner(path: path, store: store).run())
+        let waited: Runner.Waited = pages == "all"
+            ? .all
+            : .pages(pages.split(separator: ",").compactMap { Int($0) })
+        throw ExitCode(Runner(path: path, store: store, waited: waited).run())
     }
 }
 
@@ -78,8 +82,10 @@ struct WorkerCommand: AsyncParsableCommand {
     @Option(transform: { $0.split(separator: ",").compactMap { Int($0) } }) var pages: [Int] = []
     @Flag var repairSpaces = false
     @Flag var readAllByOCR = false
+    @Flag var background = false
 
     func run() async throws {
+        if background { Worker.startInBackground() }
         switch mode {
         case .index:
             throw ExitCode(Worker.index(path: path, from: from))

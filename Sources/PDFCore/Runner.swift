@@ -25,9 +25,18 @@ public final class Runner: @unchecked Sendable {
     private var lostLock = false
     private var nextWorkerID = 0
 
-    public init(path: String, store: Store) {
+    /// The pages that the command which started the runner waits on.
+    public enum Waited: Sendable {
+        case all
+        case pages([Int])
+    }
+
+    let waited: Waited
+
+    public init(path: String, store: Store, waited: Waited = .pages([])) {
         self.path = path
         self.store = store
+        self.waited = waited
     }
 
     public func run() -> Int32 {
@@ -45,6 +54,11 @@ public final class Runner: @unchecked Sendable {
             // Another runner already parses the same document from another copy of the file.
             guard (try? store.acquireLock(docLock)) == true else { return 0 }
             hold(docLock)
+            let count = (try? store.pageKeys(docID: docID).count) ?? 0
+            switch waited {
+            case .all: try? store.request(docID: docID, pages: Array(0..<count))
+            case .pages(let pages): try? store.request(docID: docID, pages: pages.filter { (0..<count).contains($0) })
+            }
             switch parse(docID: docID, stat: stat) {
             case .done:
                 try? store.clearRequests(docID: docID)
@@ -93,8 +107,14 @@ public final class Runner: @unchecked Sendable {
             var retried: Set<Int> = []
             var start = 0
             var stops = 0
-            // The sample check runs in a worker of its own, beside the index.
-            let sampler = startWorker(["sample", path], pages: [])
+            // The index takes its slot first: the first page needs the keys most.
+            var indexSlot = waitForSlot(foreground: true)
+            guard indexSlot != nil else { return .unavailable }
+            // The sample check runs in a worker of its own, beside the index, when the pool has a
+            // second slot free. Otherwise it runs once the index is done.
+            var sampler = WorkerPool.acquire(foreground: true).flatMap {
+                startWorker(["sample", path], pages: [], slot: $0, foreground: true)
+            }
             let handle = { (_: Supervised, event: WorkerEvent) in
                 switch event.kind {
                 case .opened: pageCount = event.pageCount
@@ -108,10 +128,14 @@ public final class Runner: @unchecked Sendable {
                 }
             }
             while fileFailure == nil {
-                guard let worker = startWorker(["index", path, "--from", String(start)], pages: []) else {
+                // An index worker that stopped gave its slot back, so the next one waits for a slot.
+                guard let slot = indexSlot ?? waitForSlot(foreground: true),
+                      let worker = startWorker(["index", path, "--from", String(start)], pages: [], slot: slot,
+                                               foreground: true) else {
                     if let sampler { stop(sampler, reason: "the index could not start", kind: .runner) }
                     return .unavailable
                 }
+                indexSlot = nil
                 while !worker.finished { step([worker] + [sampler].compactMap { $0 }, handle: handle) }
                 if fileFailure != nil || worker.endedCleanly { break }
                 guard let count = pageCount else {
@@ -141,6 +165,7 @@ public final class Runner: @unchecked Sendable {
                 if start >= count { break }
             }
             var unchecked = false
+            if fileFailure == nil && sampler == nil { sampler = startSample() }
             if let sampler {
                 // A file that cannot be read needs no verdict on its text layer.
                 if fileFailure != nil { stop(sampler, reason: "the file cannot be read", kind: .runner) }
@@ -149,14 +174,19 @@ public final class Runner: @unchecked Sendable {
                 // second try. If that fails too, the text layer stays unchecked, and OCR reads
                 // every page: an unverified layer is not trusted.
                 if fileFailure == nil, agreement == nil, !sampler.endedCleanly {
-                    if let again = startWorker(["sample", path], pages: []) {
+                    if let again = startSample() {
                         while !again.finished { step([again], handle: handle) }
                         unchecked = agreement == nil && !again.endedCleanly
                     } else {
                         unchecked = true
                     }
                 }
+            } else if fileFailure == nil {
+                // The check could not start at all, so the text layer stays unverified too.
+                unchecked = true
             }
+            // Another runner took the file over while this one waited, and it saves the index.
+            guard !mutex.locked({ lostLock }) else { return .unavailable }
             guard FileStat(path: path) == before else { continue }
             if let fileFailure {
                 try? store.saveFailure(path: path, stat: before, reason: fileFailure)
@@ -262,18 +292,28 @@ public final class Runner: @unchecked Sendable {
                 return .aborted
             }
 
+            let requested = requestedPages(docID: docID, keys: keys, firstIndex: firstIndex)
+            promote(workers, requested: requested)
+            var waitingForSlot = false
             while workers.count < capacity, !(pending.isEmpty && alone.isEmpty) {
-                let batch = alone.isEmpty
-                    ? nextBatch(&pending, docID: docID, keys: keys, firstIndex: firstIndex, size: batchSize)
-                    : [alone.removeFirst()]
-                let list = batch.map(String.init).joined(separator: ",")
-                guard let worker = startWorker(["parse", path, "--pages", list] + parseArguments, pages: batch) else {
+                let fromAlone = !alone.isEmpty
+                let batch = fromAlone
+                    ? (pages: [alone.removeFirst()], foreground: false)
+                    : nextBatch(&pending, requested: requested, size: batchSize)
+                let foreground = batch.foreground || (fromAlone && requested.contains(batch.pages[0]))
+                func putBack() {
+                    if fromAlone { alone.insert(batch.pages[0], at: 0) } else { pending.insert(contentsOf: batch.pages, at: 0) }
+                }
+                guard let slot = WorkerPool.acquire(foreground: foreground) else {
+                    putBack()
+                    waitingForSlot = true
+                    break
+                }
+                let list = batch.pages.map(String.init).joined(separator: ",")
+                guard let worker = startWorker(["parse", path, "--pages", list] + parseArguments, pages: batch.pages,
+                                               slot: slot, foreground: foreground) else {
                     // A full process table or a binary being replaced passes. Nothing is cached.
-                    if batch.count == 1 && triedAlone.contains(batch[0]) {
-                        alone.insert(batch[0], at: 0)
-                    } else {
-                        pending.insert(contentsOf: batch, at: 0)
-                    }
+                    putBack()
                     failedSpawns += 1
                     break
                 }
@@ -282,7 +322,8 @@ public final class Runner: @unchecked Sendable {
             }
             if workers.isEmpty {
                 if failedSpawns >= 3 { return .aborted }
-                Thread.sleep(forTimeInterval: 0.2)
+                // Other parses hold every slot this work may use: a slot frees within a batch.
+                Thread.sleep(forTimeInterval: waitingForSlot ? 0.02 : 0.2)
                 continue
             }
 
@@ -348,20 +389,26 @@ public final class Runner: @unchecked Sendable {
         return .done
     }
 
-    /// The next pages for a worker: pages a command asked for, else the next pages in order.
-    func nextBatch(_ pending: inout [Int], docID: String, keys: [String], firstIndex: [String: Int],
-                   size: Int = Runner.batchSize) -> [Int] {
-        let requested = ((try? store.requestedPages(docID: docID)) ?? [])
+    /// The pages commands asked for, each as the first page with its key.
+    func requestedPages(docID: String, keys: [String], firstIndex: [String: Int]) -> [Int] {
+        ((try? store.requestedPages(docID: docID)) ?? [])
             .compactMap { keys.indices.contains($0) ? firstIndex[keys[$0]] : nil }
+    }
+
+    /// The next pages for a worker: pages a command asked for, else the next pages in order.
+    /// `foreground` says a command waits on the batch.
+    func nextBatch(_ pending: inout [Int], requested: [Int],
+                   size: Int = Runner.batchSize) -> (pages: [Int], foreground: Bool) {
         let waiting = Set(pending)
         var batch: [Int] = []
         for page in requested where waiting.contains(page) && !batch.contains(page) && batch.count < size {
             batch.append(page)
         }
+        let foreground = !batch.isEmpty
         if batch.isEmpty { batch = Array(pending.prefix(size)) }
         let taken = Set(batch)
         pending.removeAll { taken.contains($0) }
-        return batch
+        return (batch, foreground)
     }
 
     // MARK: Workers
@@ -386,6 +433,10 @@ public final class Runner: @unchecked Sendable {
         var stoppedPage: Int?
         var outputEnded = false
         var exitStatus: Int32?
+        /// The pool slot the worker runs in. It goes back to the pool when the worker exits.
+        var slot: WorkerPool.Slot?
+        /// The worker runs in macOS's background state, for pages nobody waits on yet.
+        var inBackground = false
 
         init(id: Int, pid: pid_t, pages: [Int]) {
             self.id = id
@@ -404,11 +455,20 @@ public final class Runner: @unchecked Sendable {
         }
     }
 
-    func startWorker(_ arguments: [String], pages: [Int]) -> Supervised? {
-        guard let (pid, output) = try? Processes.spawn(Env.executablePath, ["__worker"] + arguments,
-                                                        detached: false, captureOutput: true),
-              let output else { return nil }
-        Env.log("runner \(getpid()) started worker \(pid): \(arguments.joined(separator: " "))")
+    /// Starts a worker in `slot`. Work a command waits on runs at the priority of work the user
+    /// started. Pages nobody waits for run in macOS's background state, on the efficiency
+    /// cores, so the user's own work stays responsive, until a command asks for one of them.
+    func startWorker(_ arguments: [String], pages: [Int], slot: WorkerPool.Slot, foreground: Bool) -> Supervised? {
+        guard let (pid, output) = try? Processes.spawn(Env.executablePath,
+                                                        ["__worker"] + arguments + (foreground ? [] : ["--background"]),
+                                                        detached: false, captureOutput: true,
+                                                        qos: QOS_CLASS_USER_INITIATED),
+              let output else {
+            slot.release()
+            return nil
+        }
+        Env.log("runner \(getpid()) started worker \(pid) in slot \(slot.number) "
+                + "(\(foreground ? "foreground" : "background")): \(arguments.joined(separator: " "))")
         let id = mutex.locked { () -> Int in
             nextWorkerID += 1
             return nextWorkerID
@@ -421,7 +481,38 @@ public final class Runner: @unchecked Sendable {
             self?.post(id, nil)
         })
         reader.start()
-        return Supervised(id: id, pid: pid, pages: pages)
+        let worker = Supervised(id: id, pid: pid, pages: pages)
+        worker.slot = slot
+        worker.inBackground = !foreground
+        return worker
+    }
+
+    /// Brings a background worker to full speed when a command waits on a page it holds. The
+    /// worker sets up its signal handler before it reports anything, so the signal waits for the
+    /// worker's first event.
+    func promote(_ workers: [Supervised], requested: [Int]) {
+        let waited = Set(requested)
+        for worker in workers where worker.inBackground && worker.sawEvent && worker.exitStatus == nil {
+            guard worker.pages.contains(where: { waited.contains($0) && !worker.reported.contains($0) }) else { continue }
+            kill(worker.pid, SIGUSR1)
+            worker.inBackground = false
+            Env.log("runner \(getpid()) promoted worker \(worker.pid)")
+        }
+    }
+
+    /// Waits until the pool has a slot for this work. Returns nil when another runner took the
+    /// file over in the meantime.
+    func waitForSlot(foreground: Bool) -> WorkerPool.Slot? {
+        while !mutex.locked({ lostLock }) {
+            if let slot = WorkerPool.acquire(foreground: foreground) { return slot }
+            Thread.sleep(forTimeInterval: 0.02)
+        }
+        return nil
+    }
+
+    /// Starts the sample check once the pool has a slot for it.
+    func startSample() -> Supervised? {
+        waitForSlot(foreground: true).flatMap { startWorker(["sample", path], pages: [], slot: $0, foreground: true) }
     }
 
     /// Runs until every worker in `workers` has finished.
@@ -476,6 +567,7 @@ public final class Runner: @unchecked Sendable {
         }
         for worker in workers where worker.exitStatus == nil {
             worker.exitStatus = Processes.reap(worker.pid)
+            if worker.exitStatus != nil { worker.slot?.release() }
         }
     }
 

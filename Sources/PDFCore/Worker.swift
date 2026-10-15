@@ -149,6 +149,23 @@ public enum Worker {
         return 0
     }
 
+    /// Puts the worker in macOS's background state, which runs it at the lowest priority on the
+    /// efficiency cores, until the runner sends SIGUSR1: a command now waits on one of its pages.
+    /// Only a process can move itself into that state or out of it.
+    public static func startInBackground() {
+        signal(SIGUSR1, SIG_IGN)
+        let source = DispatchSource.makeSignalSource(signal: SIGUSR1, queue: .global())
+        source.setEventHandler {
+            setpriority(PRIO_DARWIN_PROCESS, 0, 0)
+            Env.log("worker \(getpid()) left the background")
+        }
+        source.resume()
+        promotion = source
+        setpriority(PRIO_DARWIN_PROCESS, 0, PRIO_DARWIN_BG)
+    }
+
+    nonisolated(unsafe) static var promotion: DispatchSourceSignal?
+
     /// Exits when the runner dies. No one would enforce this worker's limits any more, and a
     /// worker stuck inside a page would never write again, so it would never learn otherwise.
     static func watchParent() {

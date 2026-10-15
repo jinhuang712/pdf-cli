@@ -1,4 +1,4 @@
-<!-- what-we-build: approved 2026-10-15 -->
+<!-- what-we-build: drafted 2026-10-15 -->
 # Designs
 
 PDF files on the user's Mac and commands from an agent go in. Text with page addresses, PNG crops, search hits and failure reports come out, served from a local cache. In between, worker processes parse each page once, in steps that escalate only as far as the page needs, and store the result in SQLite. Behavior is in [FEATURES.md](FEATURES.md).
@@ -92,8 +92,8 @@ A page can read wrong while it looks right, and the agent believes what it is ha
 
 ### Performance
 
-- **First answer over full parse.** The requested page is parsed first, and the rest of the document follows in the background. Cost: a page parsed alone lacks the whole document's context, such as heading levels and footnote numbering. Holds as: output from a partly parsed document is marked provisional, and the mark clears once the full parse ends.
-- **Parallel by process.** Parsing runs in separate worker processes. Cost: each worker holds its own memory and loaded models. Holds as: no PDF engine call runs on two threads of one process.
+- **First answer over full parse.** The requested page is parsed first, and the rest of the document follows in the background, at low priority. Cost: a page parsed alone lacks the whole document's context, such as heading levels and footnote numbering. Holds as: output from a partly parsed document is marked provisional, and the mark clears once the full parse ends.
+- **Parallel by process.** Parsing runs in separate worker processes, and every parse on the Mac shares one pool of worker slots (see the decision on the pool below). Cost: each worker holds its own memory and loaded models. Holds as: no PDF engine call runs on two threads of one process, and no more workers run at once than the pool holds.
 
 ### Safety
 
@@ -303,6 +303,35 @@ The principle "Untrusted files stay in a child process" already pays a process s
 |---|---|---|
 | **A worker per job** | Nothing runs while the tool is idle. Nothing to install or upgrade beside the binary. A crash ends one job. | Every job pays a process start, and every worker loads its models again. |
 | A background service that stays running | Loaded models and warm engines stay in memory. | A launchd service to install, upgrade and restart, and memory held while idle. |
+
+## Decision: a shared pool of worker slots, with pages nobody waits for in the background — 2026-10-15
+
+Every parse on the Mac shares one pool of worker slots: half the performance cores, and at least 2. That is 2 on the M3 with 4 performance cores. Before, each runner started one worker per performance core for its own file, so an agent reading three new files ran up to twelve workers, and the author's Mac lagged while task M1.3's measurements ran.
+
+- A slot is an exclusive `flock` on a file in the cache folder. The kernel frees the lock when its holder exits, so a crashed runner never keeps a slot.
+- Slot 0 is kept for work a command waits on: the pages it asked for, and a new file's index and sample check. The command hands its pages to the runner it starts, so the runner's first batch already knows them.
+- Pages nobody asked for take the other slots, and their workers put themselves in macOS's background state, which runs them at the lowest priority. A CPU loop ran 2.4 times slower in that state, as on the efficiency cores, where [Eclectic Light's measurements](https://eclecticlight.co/2025/05/09/what-is-quality-of-service-and-how-does-it-matter/) find background work kept.
+- When a command asks for a page that a background worker holds, the runner signals the worker, and the worker leaves the background state. macOS lets only a process move itself into that state or out of it.
+
+Measured with the release build on the M3:
+
+| File | Page 1, unseen | Page 2 right after | The rest, in the background | Every page, waited on |
+|---|---|---|---|---|
+| A paper, 11 pages | 0.78 s | 0.08 s | 1.4 s | |
+| The paper that needs the space repair, 18 pages | 1.40 s | 0.52 s | 49 s | 8.2 s, against 6.9 s with four workers before |
+| The NACA scan, 30 pages | 1.08 s | 0.94 s | 6.9 s | |
+| The 456-page file | 0.79 s | 0.06 s | 43 s | 7.6 s |
+
+The pages an agent waits on keep their speed, because OCR leans on the graphics and neural chips more than on the cores. The cost falls on pages nobody waits for: a file that needs OCR finishes in the background about seven times slower.
+
+| Option | For | Against |
+|---|---|---|
+| **A shared pool of `flock` slots, with background workers that a request promotes** | Caps the whole Mac, however many files an agent reads at once. The page the agent waits on runs at full speed. Nothing to install. | A runner checks for a free slot every 20 ms, and a file that needs OCR finishes in the background about seven times slower. |
+| One worker per performance core in each runner | The fastest full parse. | Three files at once run twelve workers, and the Mac lags. |
+| A counting semaphore | One call takes a slot. | A process that crashes while holding a slot never gives it back. |
+| A queue in a background service | Exact fairness between files. | A service to install and run, which the decision on worker processes above rejects. |
+
+Holds as: `scripts/test-cache.sh` reads three new files at once and never sees more than two workers, and a page asked for while a background worker holds it brings that worker out of the background state.
 
 ## Decision: a 5,000-token default budget over no default — 2026-10-15
 

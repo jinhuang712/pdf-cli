@@ -1,4 +1,4 @@
-<!-- what-we-build: approved 2026-10-15 -->
+<!-- what-we-build: drafted 2026-10-15 -->
 # Features
 
 ✅ built · 🚧 built with a gap · ⬜ planned
@@ -12,7 +12,7 @@ Adds PDFs to the library once, so every later command reads from the cache.
 | Command | What happens |
 |---|---|
 | `pdf add <paths…>` | Parses each PDF and caches it. Accepts files, folders and globs. Prints each PDF's ID, title, page count and status. |
-| `pdf add <paths…> -j N` | Parses with N workers in parallel. By default, the tool runs one worker per performance core. |
+| `pdf add <paths…> -j N` | Parses with up to N workers in parallel. By default, every parse on the Mac shares a pool of half the performance cores, at least 2, and pages nobody waits for parse at the lowest priority, so the Mac stays responsive. |
 | `pdf add <path> --password <pw>` | Opens a password-protected PDF. |
 
 Any other command adds a PDF it has not seen before, on first use, and parses the requested page first. Adding an unchanged file again does nothing, and so does adding a file whose only change is highlights appended to it. A file that macOS Preview or another app saved through PDFKit counts as a new file (see F7).

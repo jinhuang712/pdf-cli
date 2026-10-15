@@ -98,7 +98,45 @@ sent=$(grep ' parse ' "$work/log.txt" | sed 's/.*--pages //' | tr ',' '\n' | sor
 check "three commands at once share one runner" "^1$" "$runners"
 check "no page goes to two workers" "^0$" "$sent"
 
-sleep 1
+# Three new files at once share one pool of two worker slots, and the pages nobody waits for
+# parse at background priority.
+home=$work/pool
+files='arxiv-2608.16011|arxiv-2608.22898|arxiv-2609.22884'
+commands=()
+for name in arxiv-2608.16011 arxiv-2608.22898 arxiv-2609.22884; do
+    PDF_CLI_HOME=$home PDF_CLI_WORKERS=2 PDF_CLI_LOG=$work/pool-log.txt \
+        $pdf debug-pages testdata/smoke/$name.pdf --page 1 >"$work/pool-$name.txt" 2>&1 &
+    commands+=($!)
+done
+most=0
+# Watch until every command, runner and worker of the three files has exited. Runners and
+# workers name the file on their command line; no other check reads these three files.
+while kill -0 "${commands[@]}" 2>/dev/null || pgrep -f "pdf __.*($files)" >/dev/null; do
+    count=$(pgrep -f "pdf __worker .*($files)" | wc -l | tr -d ' ')
+    [ "$count" -gt "$most" ] && most=$count
+    sleep 0.02
+done
+wait
+for name in arxiv-2608.16011 arxiv-2608.22898 arxiv-2609.22884; do
+    check "$name reads its first page while two other files parse" "p.1 ok" "$(cat "$work/pool-$name.txt")"
+done
+check "three new files at once never run more than the pool's two workers" "^[12]$" "$most"
+check "pages nobody waits for parse in the background" "(background): parse" "$(cat "$work/pool-log.txt")"
+
+# A command that asks for a page a background worker holds brings that worker to full speed. The
+# paper's pages go through OCR, so the background worker is still on page 2 when page 3 is asked for.
+slow=testdata/smoke/arxiv-2609.23257.pdf
+promote() { PDF_CLI_HOME=$work/promote PDF_CLI_WORKERS=2 PDF_CLI_LOG=$work/promote-log.txt $pdf debug-pages $slow "$@" 2>&1; }
+promote --page 1 >/dev/null
+check "a page a background worker holds still reads" "p.3 ok" "$(promote --page 3)"
+check "asking for it brings the worker to full speed" "left the background" "$(cat "$work/promote-log.txt")"
+check "a full read brings the rest to full speed too" "18 read" "$(promote)"
+
+# Pages nobody waits for parse slowly, at background priority, so runners get a minute to finish.
+for _ in $(seq 60); do
+    pgrep -f 'pdf __' >/dev/null || break
+    sleep 1
+done
 check "no worker or runner is left running" "^none$" "$(pgrep -f 'pdf __' || echo none)"
 
 if [ $failures -gt 0 ]; then

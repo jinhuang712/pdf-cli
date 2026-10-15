@@ -10,9 +10,10 @@ struct SpawnError: Error, CustomStringConvertible {
 enum Processes {
     /// Starts `executable`. A detached process gets its own session, so it keeps running after
     /// the command that started it returns. With `captureOutput`, the child's standard output
-    /// comes back as a readable file descriptor. The child inherits no other open files.
-    static func spawn(_ executable: String, _ arguments: [String],
-                      detached: Bool, captureOutput: Bool) throws -> (pid: pid_t, output: Int32?) {
+    /// comes back as a readable file descriptor. The child inherits no other open files. With
+    /// `qos`, the child runs at that quality of service.
+    static func spawn(_ executable: String, _ arguments: [String], detached: Bool, captureOutput: Bool,
+                      qos: qos_class_t? = nil) throws -> (pid: pid_t, output: Int32?) {
         var pipeEnds: [Int32] = [-1, -1]
         if captureOutput {
             guard pipe(&pipeEnds) == 0 else { throw SpawnError(code: errno) }
@@ -41,6 +42,7 @@ enum Processes {
         var mask = sigset_t()
         sigemptyset(&mask)
         posix_spawnattr_setsigmask(&attributes, &mask)
+        if let qos { posix_spawnattr_set_qos_class_np(&attributes, qos) }
 
         let argv: [UnsafeMutablePointer<CChar>?] = ([executable] + arguments).map { strdup($0) } + [nil]
         let environment: [UnsafeMutablePointer<CChar>?] =

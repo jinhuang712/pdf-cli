@@ -43,10 +43,12 @@ public enum Env {
         return megabytes << 20
     }
 
-    /// How many workers parse one document at once: one per performance core.
+    /// How many workers run at once on this Mac, across every parse: half the performance
+    /// cores, and at least 2, so the user's own work stays responsive (see `WorkerPool`).
     public static var workerCount: Int {
         if let count = variables["PDF_CLI_WORKERS"].flatMap(Int.init), count > 0 { return count }
-        return sysctlInt("hw.perflevel0.physicalcpu") ?? sysctlInt("hw.physicalcpu") ?? 2
+        let cores = sysctlInt("hw.perflevel0.physicalcpu") ?? sysctlInt("hw.physicalcpu") ?? 4
+        return max(2, cores / 2)
     }
 
     /// The macOS build that parsed a page, such as "25E246". Each page records it.
