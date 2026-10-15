@@ -107,11 +107,22 @@ struct Dehyphenator {
         hash(word).map { dictionary.contains($0) } ?? false
     }
 
-    /// Words the page itself spells without a hyphen.
+    /// Words the page itself spells without a hyphen, and words it spells with one inside a
+    /// line, such as "data-set".
     let pageWords: Set<String>
+    let hyphenatedWords: Set<String>
 
     init(pageText: String) {
-        pageWords = Set(pageText.split(whereSeparator: { !$0.isLetter }).map { $0.lowercased() })
+        var words = Set<String>()
+        var hyphenated = Set<String>()
+        for token in pageText.split(whereSeparator: { !$0.isLetter && $0 != "-" }) {
+            let parts = token.split(separator: "-", omittingEmptySubsequences: false)
+            for part in parts where !part.isEmpty { words.insert(part.lowercased()) }
+            // A hyphen between letters: "data-set", not "data-" at a line's end.
+            if parts.count > 1, !parts.contains(where: \.isEmpty) { hyphenated.insert(token.lowercased()) }
+        }
+        pageWords = words
+        hyphenatedWords = hyphenated
     }
 
     /// True when "left-" at a line's end and "right" at the next line's start form one word.
@@ -121,7 +132,7 @@ struct Dehyphenator {
         let rightWord = right.prefix { $0.isLetter }
         let joined = (String(leftWord) + rightWord).lowercased()
         if pageWords.contains(joined) { return true }
-        if pageWords.contains(String(leftWord).lowercased() + "-" + rightWord.lowercased()) { return false }
+        if hyphenatedWords.contains(String(leftWord).lowercased() + "-" + rightWord.lowercased()) { return false }
         return Dehyphenator.known(joined)
     }
 

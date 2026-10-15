@@ -48,11 +48,14 @@ enum SpaceRepair {
         return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
     }
 
-    /// Renders the crop box on white, at `dpi` dots per inch.
+    /// Renders the crop box on white, at `dpi` dots per inch, upright: PDFKit applies the
+    /// page's rotation, so a page turned a quarter needs a canvas turned too.
     static func render(_ page: PDFPage, dpi: Double) -> CGImage? {
         let bounds = page.bounds(for: .cropBox)
         let scale = dpi / 72
-        let width = Int((bounds.width * scale).rounded()), height = Int((bounds.height * scale).rounded())
+        let turned = (page.rotation / 90) % 2 != 0
+        let size = turned ? CGSize(width: bounds.height, height: bounds.width) : bounds.size
+        let width = Int((size.width * scale).rounded()), height = Int((size.height * scale).rounded())
         guard width > 0, height > 0, width * height <= 60_000_000,
               let space = CGColorSpace(name: CGColorSpace.sRGB),
               let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,

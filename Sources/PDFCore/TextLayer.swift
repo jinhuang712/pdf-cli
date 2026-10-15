@@ -101,7 +101,9 @@ enum TextLayer {
         var index = range.lowerBound
         while index < range.upperBound {
             let unit = text.character(at: index)
-            let width = UTF16.isLeadSurrogate(unit) && index + 1 < range.upperBound ? 2 : 1
+            let paired = UTF16.isLeadSurrogate(unit) && index + 1 < range.upperBound
+                && UTF16.isTrailSurrogate(text.character(at: index + 1))
+            let width = paired ? 2 : 1
             if spacesBefore.contains(index) { piece += " " }
             piece += text.substring(with: NSRange(location: index, length: width))
             if !isSpace(unit) {
@@ -128,11 +130,14 @@ enum TextLayer {
         var current: [RawLine] = []
         var area = CGRect.null
 
+        // A crop box with no area gives boxes in points rather than lose the text.
+        let pageWidth = max(crop.width, 1), pageHeight = max(crop.height, 1)
+
         func flush() {
-            guard !current.isEmpty, crop.width > 0, crop.height > 0 else { return }
+            guard !current.isEmpty else { return }
             let box = { (rect: CGRect) in
-                Box(x: Double(rect.minX / crop.width), y: Double(rect.minY / crop.height),
-                    width: Double(rect.width / crop.width), height: Double(rect.height / crop.height))
+                Box(x: Double(rect.minX / pageWidth), y: Double(rect.minY / pageHeight),
+                    width: Double(rect.width / pageWidth), height: Double(rect.height / pageHeight))
             }
             blocks.append(TextBlock(text: join(current, dehyphenator), box: box(area),
                                     lines: current.map { TextLine(text: $0.text, box: box($0.rect)) }))
@@ -174,12 +179,13 @@ enum TextLayer {
                 text = line.text
                 continue
             }
-            if let last = text.last, "-\u{2010}".contains(last) {
-                let left = text.dropLast()
+            let left = text.dropLast()
+            if let last = text.last, "-\u{2010}".contains(last), left.last?.isLetter == true {
                 text = softBreak || dehyphenator.joins(left[...], line.text[...])
                     ? String(left) + line.text
                     : text + line.text
             } else {
+                // A line that ends in a dash on its own, as in "from 3 to -", ends a word.
                 text += " " + line.text
             }
         }

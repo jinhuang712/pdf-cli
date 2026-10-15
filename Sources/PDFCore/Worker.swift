@@ -155,6 +155,13 @@ enum PageKeys {
     static func unreadable(fileDigest: String, page: Int) -> String {
         "unreadable-\(fileDigest.prefix(16))-\(page)"
     }
+
+    /// The key of a page in a file that the font check put at risk. Its result comes from the
+    /// space repair, so it is cached apart from the same page read in a file that is not at
+    /// risk: a cached page never depends on which file was read first.
+    static func repaired(_ key: String) -> String {
+        key == missing || key.hasPrefix("unreadable-") ? key : key + "+spaces"
+    }
 }
 
 /// Why a file could not be opened, in words the agent can act on

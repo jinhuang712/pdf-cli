@@ -148,9 +148,12 @@ public final class Runner: @unchecked Sendable {
                     try? store.saveResult(key: key, .failed(reason))
                 }
             }
-            let ordered = (0..<count).map { keys[$0] ?? PageKeys.missing }
             let atRisk = FontCheck.atRisk(gaps: checks.values.reduce(0) { $0 + $1.gaps },
                                           risky: checks.values.reduce(0) { $0 + $1.risky })
+            let ordered = (0..<count).map { page -> String in
+                let key = keys[page] ?? PageKeys.missing
+                return atRisk ? PageKeys.repaired(key) : key
+            }
             guard let id = try? store.saveIndex(path: path, stat: before, pageKeys: ordered, spacesAtRisk: atRisk) else {
                 return .unavailable
             }

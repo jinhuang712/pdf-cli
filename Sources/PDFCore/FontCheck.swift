@@ -35,8 +35,21 @@ public struct FontCheck: Sendable, Equatable {
         var font: UnsafeRawPointer?
         var halfSpace: [UnsafeRawPointer: Double?] = [:]
         var byFont: [UnsafeRawPointer: (gaps: Int, risky: Int)] = [:]
+        /// What each form adds, so a form drawn many times is read once.
+        var forms: [UnsafeRawPointer: [UnsafeRawPointer: (gaps: Int, risky: Int)]] = [:]
+        /// Text and form operations counted, against `operationLimit`.
         var operations = 0
+
+        func add(_ counts: [UnsafeRawPointer: (gaps: Int, risky: Int)]) {
+            for (font, entry) in counts {
+                let current = byFont[font] ?? (0, 0)
+                byFont[font] = (current.gaps + entry.gaps, current.risky + entry.risky)
+            }
+        }
     }
+
+    /// Bounds the check's work on a hostile page. A real page has a few thousand operations.
+    static let operationLimit = 200_000
 
     /// Created once and only read afterwards, so sharing it across threads is safe.
     nonisolated(unsafe) static let table: CGPDFOperatorTableRef = {
@@ -63,8 +76,10 @@ public struct FontCheck: Sendable, Equatable {
         }
         CGPDFOperatorTableSetCallback(table, "TJ") { scanner, info in
             let scan = Unmanaged<Scan>.fromOpaque(info!).takeUnretainedValue()
+            scan.operations += 1
             var array: CGPDFArrayRef?
-            guard CGPDFScannerPopArray(scanner, &array), let array, let font = scan.font else { return }
+            guard scan.operations <= operationLimit, CGPDFScannerPopArray(scanner, &array), let array,
+                  let font = scan.font else { return }
             let half = scan.halfSpace[font] ?? nil
             var entry = scan.byFont[font] ?? (0, 0)
             for index in 0..<CGPDFArrayGetCount(array) {
@@ -77,13 +92,19 @@ public struct FontCheck: Sendable, Equatable {
         }
         CGPDFOperatorTableSetCallback(table, "Do") { scanner, info in
             let scan = Unmanaged<Scan>.fromOpaque(info!).takeUnretainedValue()
+            scan.operations += 1
             var name: UnsafePointer<CChar>?
             let stream = CGPDFScannerGetContentStream(scanner)
-            guard scan.depth < 4, CGPDFScannerPopName(scanner, &name), let name,
-                  let object = CGPDFContentStreamGetResource(stream, "XObject", name) else { return }
+            guard scan.operations <= operationLimit, scan.depth < 4, CGPDFScannerPopName(scanner, &name),
+                  let name, let object = CGPDFContentStreamGetResource(stream, "XObject", name) else { return }
             var form: CGPDFStreamRef?
             guard CGPDFObjectGetValue(object, .stream, &form), let form,
                   let dictionary = CGPDFStreamGetDictionary(form) else { return }
+            let identity = UnsafeRawPointer(form.rawValue)
+            if let counts = scan.forms[identity] {
+                scan.add(counts)
+                return
+            }
             var subtype: UnsafePointer<CChar>?
             guard CGPDFDictionaryGetName(dictionary, "Subtype", &subtype), let subtype,
                   String(cString: subtype) == "Form" else { return }
@@ -92,9 +113,19 @@ public struct FontCheck: Sendable, Equatable {
             guard CGPDFDictionaryGetDictionary(dictionary, "Resources", &resources), let resources else { return }
             let inner = CGPDFContentStreamCreateWithStream(form, resources, stream)
             defer { CGPDFContentStreamRelease(inner) }
+            // A form runs inside its own graphics state: the font it sets ends with it.
+            let before = scan.byFont
+            let font = scan.font
             scan.depth += 1
             FontCheck.run(inner, scan)
             scan.depth -= 1
+            scan.font = font
+            var added: [UnsafeRawPointer: (gaps: Int, risky: Int)] = [:]
+            for (key, after) in scan.byFont {
+                let earlier = before[key] ?? (0, 0)
+                if after.gaps > earlier.gaps { added[key] = (after.gaps - earlier.gaps, after.risky - earlier.risky) }
+            }
+            scan.forms[identity] = added
         }
         return table
     }()

@@ -124,6 +124,11 @@ public final class Store: Sendable {
         if try !db.columns(in: "document").contains(where: { $0.name == "spaces_at_risk" }) {
             try db.execute(sql: "ALTER TABLE document ADD COLUMN spaces_at_risk INTEGER NOT NULL DEFAULT 0")
         }
+        if version == 1 {
+            // Files indexed before the font check existed have no verdict. Forgetting their
+            // entries makes the next read index them again, and run the check.
+            try db.execute(sql: "DELETE FROM file_entry")
+        }
         try db.execute(sql: "PRAGMA user_version = \(schemaVersion)")
     }
 
@@ -200,7 +205,8 @@ public final class Store: Sendable {
         let id = Store.documentID(pageKeys: pageKeys)
         try write { db in
             try db.execute(sql: """
-                INSERT OR IGNORE INTO document (id, page_count, created_at, spaces_at_risk) VALUES (?, ?, ?, ?)
+                INSERT INTO document (id, page_count, created_at, spaces_at_risk) VALUES (?, ?, ?, ?)
+                ON CONFLICT (id) DO UPDATE SET spaces_at_risk = excluded.spaces_at_risk
                 """, arguments: [id, pageKeys.count, Date().timeIntervalSince1970, spacesAtRisk])
             for (index, key) in pageKeys.enumerated() {
                 try db.execute(sql: """
