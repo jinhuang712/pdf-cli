@@ -76,7 +76,7 @@ struct ReadCommand: ParsableCommand {
             let (found, end) = try Self.section(section, path: path, docID: docID, pageCount: pageCount, store: store,
                                                 reader: reader)
             let last = end.map { $0.block <= 1 ? max($0.page - 1, found.page) : $0.page } ?? pageCount
-            wanted = Array(found.page...last)
+            wanted = Array(found.page...max(last, found.page))
             until = end
             if start == nil { start = (page: found.page, block: found.block, offset: nil) }
             scope = " --section " + Output.quoted(section)
@@ -186,7 +186,10 @@ struct ReadCommand: ParsableCommand {
             sections = try look().sections
             found = Info.find(query, in: sections) ?? found
         }
-        return (found, Info.next(after: found, in: sections).map { ($0.page, $0.block ?? 1) })
+        // A next section on a page that failed has no block, so its whole page is read: the
+        // failure block shows there, and nothing of this section is cut off unseen.
+        guard let position = sections.firstIndex(of: found) else { return (found, nil) }
+        return (found, Info.stop(position, in: sections).map { stop in stop.block.map { (stop.page, $0) } ?? (stop.page + 1, 1) })
     }
 
     /// A budget in tokens: nil inside for no limit, nil outside for a value that is neither.

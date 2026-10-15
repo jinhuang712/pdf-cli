@@ -27,7 +27,7 @@ Gives a cheap first look at a PDF, so the agent can decide what to read.
 ```sh
 $ pdf info paper.pdf
 Residual Dropout for Robust Vision Models · Lee, Park, Chen · 2025 · doi:10.xxxx/…
-30 pages · 2 columns · text layer on all pages · ~19k tokens
+30 pages · 2 columns · text layer on 30 pages · ~19k tokens
 headnote: none · footnotes: 12 · references: 48 · flagged pages: p.7 (low-quality)
 
 Section          pages    tokens
@@ -49,11 +49,13 @@ Figures and tables
 - Every figure and table, with its page and caption.
 - The counts of headnotes, footnotes and references.
 - The counts of comments, highlights and filled-in form fields.
-- Every file attached to the PDF and every script in it, with its name and size, or the event that would start the script. None of them runs.
+- Every file attached to the PDF and every script in it, with its name and size, or the event that would start the script: the first 100 of each, and a count of the rest. None of them runs.
 - The running headers, footers and publisher stamps, each once.
 - Every page that is flagged, with its status.
 
-The outline comes from the file's bookmarks, or, in a file with none, from the headings in its text, such as "2.1 Method" or "References". The output says which. `pdf info` answers once the file is indexed and its first page parsed: on a file not seen before, the sizes, the flags and the headings cover the pages parsed so far, and the output says how many those are. `--json` gives every section, at every level.
+The outline comes from the file's bookmarks, or, in a file with none, from the headings in its text, such as "2.1 Method" or "References". The output says which. `pdf info` answers once the file is indexed and its first page parsed: on a file not seen before, the sizes, the flags and the headings cover the pages parsed so far, and the output says how many those are. A section whose end lies on a page not parsed yet shows its size as `…`. `--json` gives every section, at every level.
+
+When a file's comments, form fields, attachments and scripts cannot be read, as when a hostile file makes the reading run out of time, `pdf info` says they are unknown and why, and the pages read all the same.
 
 Gap:
 - The figures and tables come with M2.6, and the running headers, footers and publisher stamps with M2.5.

@@ -18,6 +18,8 @@ struct WorkerEvent: Codable, Equatable {
         /// The sample check's result, from an index job: how far the text layer of `page`
         /// agrees with OCR.
         case sample
+        /// The file's facts, from a facts job.
+        case facts
     }
 
     var kind: Kind
@@ -39,7 +41,7 @@ struct WorkerEvent: Codable, Equatable {
     /// From an index job: the file's producer, such as "pdfTeX-1.40.25", and its title.
     var producer: String?
     var title: String?
-    /// From an index job: the document's facts with its opening, and each page's with its key.
+    /// From a facts job.
     var facts: FileFacts?
 }
 
@@ -67,8 +69,7 @@ public enum Worker {
             guard let dictionary = document.info, CGPDFDictionaryGetString(dictionary, key, &value), let value else { return nil }
             return CGPDFStringCopyTextString(value) as String?
         }
-        emit(WorkerEvent(kind: .opened, pageCount: count, producer: info("Producer"), title: info("Title"),
-                         facts: start == 0 ? FactReader.document(document, url: url) : nil))
+        emit(WorkerEvent(kind: .opened, pageCount: count, producer: info("Producer"), title: info("Title")))
         var keyer = PageKeyer()
         for index in max(start, 0)..<max(count, start) {
             emit(WorkerEvent(kind: .start, page: index))
@@ -78,9 +79,23 @@ public enum Worker {
                 continue
             }
             let check = FontCheck(page: page)
-            emit(WorkerEvent(kind: .key, page: index, key: keyer.key(for: page), gaps: check.gaps, risky: check.risky,
-                             facts: FactReader.page(page, index: index)))
+            emit(WorkerEvent(kind: .key, page: index, key: keyer.key(for: page), gaps: check.gaps, risky: check.risky))
         }
+        return 0
+    }
+
+    /// Reports the file's facts. The runner runs it in a worker of its own, so facts that take
+    /// too long or crash the reader cost the facts alone, never a page.
+    public static func facts(path: String) -> Int32 {
+        watchParent()
+        plantedFault(at: 0, phase: "facts-")
+        let url = URL(fileURLWithPath: path)
+        guard let document = CGPDFDocument(url as CFURL) else { return 0 }
+        if document.isEncrypted && !document.isUnlocked {
+            _ = document.unlockWithPassword("") || document.unlockWithPassword(Env.password)
+        }
+        guard document.isUnlocked else { return 0 }
+        emit(WorkerEvent(kind: .facts, facts: FactReader.read(document, url: url)))
         return 0
     }
 
@@ -235,7 +250,7 @@ public enum Worker {
     static func plantedFault(at index: Int, phase: String) {
         guard let fault = Env.testFault, fault.page == index, fault.kind.hasPrefix(phase) else { return }
         let kind = fault.kind.dropFirst(phase.count)
-        if phase.isEmpty && (fault.kind.hasPrefix("index-") || fault.kind.hasPrefix("sample-")) { return }
+        if phase.isEmpty && ["index-", "sample-", "facts-"].contains(where: fault.kind.hasPrefix) { return }
         switch kind {
         case "hang":
             while true { sleep(60) }

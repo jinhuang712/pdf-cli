@@ -9,7 +9,8 @@ public struct Section: Codable, Equatable, Sendable {
     public var page: Int
     /// The block the section starts at, counted from 1, when its page is parsed.
     public var block: Int?
-    /// The last page the section reaches, counted from 1.
+    /// The last page the section reaches, counted from 1, once the page where the next section
+    /// starts is parsed.
     public var lastPage: Int?
     /// About how many tokens the section's text takes, when all its pages are parsed.
     public var tokens: Int?
@@ -28,16 +29,25 @@ public struct Info: Encodable, Sendable {
     public var pagesParsed: Int
     public var columns: Int?
     public var pagesReadByOCR: Int
+    /// Pages read from the file's own text layer.
+    public var pagesFromTextLayer: Int
     public var tokens: Int
     /// "bookmarks" or "headings".
     public var sectionsFrom: String?
     public var sections: [Section]
-    public var comments: Int
-    public var highlights: Int
-    public var formFields: Int
-    public var filledFields: Int
+    /// The counts, attachments and scripts below are nil or empty when the file's facts are
+    /// unknown, and `factsUnknown` then says why.
+    public var comments: Int?
+    public var highlights: Int?
+    public var formFields: Int?
+    public var filledFields: Int?
     public var attachments: [FileFacts.Attachment]
+    public var moreAttachments: Int
     public var scripts: [FileFacts.Script]
+    public var moreScripts: Int
+    public var factsUnknown: String?
+    /// True when the file holds more objects than one read visits, so the counts cover part of it.
+    public var factsPartial: Bool
     public var flagged: [String]
     public var savedByPDFKit: Bool
 
@@ -46,7 +56,9 @@ public struct Info: Encodable, Sendable {
     ///   - metadataTitle: the title the file's metadata names, or empty.
     public init(file: String, pageCount: Int, pages: [Output.Page], facts: FileFacts?, metadataTitle: String,
                 picks: [String: [Pick]] = [:], savedByPDFKit: Bool = false) {
-        let facts = facts ?? FileFacts()
+        self.factsUnknown = facts == nil ? "the cache holds no facts for this version of the file" : facts?.failure
+        let known = facts?.failure == nil ? facts : nil
+        let facts = known ?? FileFacts()
         let layers = pages.map { ($0.index, $0.result.pageText) }
         let first = layers.first { $0.0 == 0 }?.1
         self.file = file
@@ -63,6 +75,7 @@ public struct Info: Encodable, Sendable {
         self.pagesParsed = pages.count
         self.columns = Info.columns(layers.compactMap { $0.1 })
         self.pagesReadByOCR = pages.filter { $0.result.method == "ocr" }.count
+        self.pagesFromTextLayer = pages.filter { $0.result.status == .ok && $0.result.method != "ocr" }.count
         self.tokens = pages.reduce(0) { $0 + Output.tokens($1.result.text) }
         let complete = pages.count == pageCount
         if !facts.outline.isEmpty {
@@ -73,12 +86,15 @@ public struct Info: Encodable, Sendable {
             sectionsFrom = found.isEmpty ? nil : "headings"
             sections = Info.measure(found, pages: pages, pageCount: pageCount, complete: complete)
         }
-        self.comments = facts.comments
-        self.highlights = facts.highlights
-        self.formFields = facts.formFields
-        self.filledFields = facts.filledFields
+        self.comments = known?.comments
+        self.highlights = known?.highlights
+        self.formFields = known?.formFields
+        self.filledFields = known?.filledFields
         self.attachments = facts.attachments
+        self.moreAttachments = facts.moreAttachments
         self.scripts = facts.scripts
+        self.moreScripts = facts.moreScripts
+        self.factsPartial = facts.partial
         self.flagged = pages.compactMap { page in
             let status = Output.judge(page, picks: picks).quality.status
             return status == .ok ? nil : "p.\(page.index + 1) (\(status.rawValue))"
@@ -146,9 +162,18 @@ public struct Info: Encodable, Sendable {
         let numbered = #"^(\d{1,2}(\.\d{1,2}){0,3})\.?\s+\p{Lu}"#
         let named = #"(?i)^(abstract|introduction|related work|background|methods?|methodology|experiments?|results|discussion|conclusions?|limitations|acknowledge?ments?|references|bibliography|appendix(\s+[A-Z])?)$"#
         func plain(_ text: String) -> String { text.lowercased().filter(\.isLetter) }
+        func exact(_ text: String) -> String { text.lowercased().split(whereSeparator: \.isWhitespace).joined(separator: " ") }
+        func nearEdge(_ block: TextBlock) -> Bool { block.box.y < 0.12 || block.box.y + block.box.height > 0.9 }
+        // A running header repeats word for word, or, when it carries the page number, letter
+        // for letter near the page's edge. A chapter's heading in the body, as "1 Introduction"
+        // under the running header "Introduction 5", stays.
         var seen: [String: Set<Int>] = [:]
+        var seenNearEdge: [String: Set<Int>] = [:]
         for page in pages {
-            for block in page.result.pageText?.blocks ?? [] where block.lines.count == 1 { seen[plain(block.text), default: []].insert(page.index) }
+            for block in page.result.pageText?.blocks ?? [] where block.lines.count == 1 {
+                seen[exact(block.text), default: []].insert(page.index)
+                if nearEdge(block) { seenNearEdge[plain(block.text), default: []].insert(page.index) }
+            }
         }
         var found: [(section: Section, number: Int?)] = []
         for page in pages {
@@ -159,7 +184,8 @@ public struct Info: Encodable, Sendable {
             where block.lines.count == 1 && block.text.split(separator: " ").count <= 12
                 && block.box.y >= 0.075 && block.box.y + block.box.height <= 0.95 {
                 let text = block.text.trimmingCharacters(in: .whitespaces)
-                guard (seen[plain(text)]?.count ?? 0) < 3 else { continue }
+                guard (seen[exact(text)]?.count ?? 0) < 3,
+                      !nearEdge(block) || (seenNearEdge[plain(text)]?.count ?? 0) < 3 else { continue }
                 if let number = text.range(of: numbered, options: .regularExpression).map({ String(text[$0]) }) {
                     let label = String(number.split(separator: " ")[0])
                     let title = text.dropFirst(label.count)
@@ -193,27 +219,44 @@ public struct Info: Encodable, Sendable {
         return found.enumerated().filter { $0.element.number == nil || keep.contains($0.offset) }.map(\.element.section)
     }
 
-    /// The bookmarks as sections, each placed at its block when its page is parsed.
+    /// The bookmarks as sections, each placed at its block when its page is parsed, in page
+    /// order: an outline can list a later page first. On one page the outline's own order
+    /// stands, since the text's reading order can put a right column's heading before the left
+    /// column's.
     static func sections(outline: [FileFacts.Section], pages: [Output.Page], pageCount: Int, complete: Bool) -> [Section] {
         let byIndex = Dictionary(pages.map { ($0.index, $0) }, uniquingKeysWith: { first, _ in first })
-        let placed = outline.filter { $0.page >= 0 && $0.page < pageCount }.map { item -> Section in
+        let placed = outline.filter { $0.page >= 0 && $0.page < pageCount }.enumerated().map { position, item in
             let block = byIndex[item.page]?.result.pageText.map { place(item, in: $0) }
-            return Section(title: item.title, level: item.level, page: item.page + 1, block: block)
+            return (section: Section(title: item.title, level: item.level, page: item.page + 1, block: block), position: position)
         }
-        return measure(placed, pages: pages, pageCount: pageCount, complete: complete)
+        let ordered = placed.sorted { ($0.section.page, $0.position) < ($1.section.page, $1.position) }
+        return measure(ordered.map(\.section), pages: pages, pageCount: pageCount, complete: complete)
     }
 
     /// The block a bookmark points at, counted from 1: a short block that spells the bookmark's
-    /// title, as "5.2. Image Classification" for "Image Classification"; else the block that
-    /// starts nearest below the bookmark's point in its column. On a page of two columns, the
-    /// height alone points into the wrong column.
+    /// title, with or without a number before it, as "5.2. Image Classification" for "Image
+    /// Classification", the one nearest the bookmark's point when several do; else the block
+    /// that starts nearest below the bookmark's point in its column. On a page of two columns,
+    /// the height alone points into the wrong column.
     static func place(_ item: FileFacts.Section, in layer: PageText) -> Int {
         func plain(_ text: String) -> String { text.lowercased().filter(\.isLetter) }
-        let wanted = plain(item.title)
-        if !wanted.isEmpty, let index = layer.blocks.firstIndex(where: { block in
-            block.lines.count <= 2 && plain(block.text).hasSuffix(wanted) && plain(block.text).count <= wanted.count + 12
+        func spellings(_ text: String) -> Set<String> {
+            let label = #"^\s*(?:(?:[Cc]hapter|CHAPTER|[Ss]ection|SECTION|[Pp]art|PART|[Aa]ppendix|APPENDIX)\s+)?(?:\d+|[IVXLC]+|[A-Z])(?:\.\d+)*[.:)]?\s+"#
+            return Set([plain(text), plain(text.replacingOccurrences(of: label, with: "", options: .regularExpression))])
+                .subtracting([""])
+        }
+        let wanted = spellings(item.title)
+        // A table row that names the section, as "1 DomainWiseInfer 65.72 64.49", is mostly digits.
+        let matches = layer.blocks.enumerated().filter { _, block in
+            let visible = block.text.filter { !$0.isWhitespace }
+            return block.lines.count <= 2 && visible.filter(\.isLetter).count * 2 >= visible.count
+                && !spellings(block.text).isDisjoint(with: wanted)
+        }
+        if let best = matches.min(by: { a, b in
+            guard let top = item.top else { return a.offset < b.offset }
+            return abs(a.element.box.y - top) < abs(b.element.box.y - top)
         }) {
-            return index + 1
+            return best.offset + 1
         }
         let top = item.top ?? 0
         let candidates = layer.blocks.enumerated().filter { $0.element.box.y >= top - 0.03 }
@@ -226,13 +269,15 @@ public struct Info: Encodable, Sendable {
     }
 
     /// Gives each section its last page and, when every page it covers is parsed, its size. A
-    /// section reaches to the next one at its level or above.
+    /// section reaches to the next one at its level or above. Until the page where that one
+    /// starts is parsed, neither is known.
     static func measure(_ sections: [Section], pages: [Output.Page], pageCount: Int, complete: Bool) -> [Section] {
         let byIndex = Dictionary(pages.map { ($0.index, $0) }, uniquingKeysWith: { first, _ in first })
         var measured = sections
         for (position, section) in sections.enumerated() {
-            let next = sections[(position + 1)...].first { $0.level <= section.level }
-            let endPage = next.map { ($0.block ?? 1) <= 1 ? max($0.page - 1, section.page) : $0.page } ?? pageCount
+            let next = stop(position, in: sections).map { (page: $0.page, block: $0.block) }
+            if let next, next.block == nil { continue }
+            let endPage = next.map { $0.block! <= 1 ? max($0.page - 1, section.page) : $0.page } ?? pageCount
             measured[position].lastPage = endPage
             var tokens = 0
             var known = true
@@ -269,10 +314,23 @@ public struct Info: Encodable, Sendable {
         return nil
     }
 
-    /// The section after which `section` ends: the next one at its level or above.
+    /// The section at which `section` ends: the next one at its level or above.
     public static func next(after section: Section, in sections: [Section]) -> Section? {
         guard let position = sections.firstIndex(of: section) else { return nil }
         return sections[(position + 1)...].first { $0.level <= section.level }
+    }
+
+    /// Where the section at `position` stops: where the next one at its level or above starts,
+    /// or nil at the end of the file. When the text's reading order puts that one above it on
+    /// their page, it stops at the end of its page, so it never ends before it starts. The
+    /// block is nil while the next section's page is not parsed.
+    public static func stop(_ position: Int, in sections: [Section]) -> (page: Int, block: Int?)? {
+        let section = sections[position]
+        guard let next = sections[(position + 1)...].first(where: { $0.level <= section.level }) else { return nil }
+        if next.page == section.page, let start = section.block, let block = next.block, block <= start {
+            return (section.page + 1, 1)
+        }
+        return (next.page, next.block)
     }
 
     // MARK: Text
@@ -287,25 +345,34 @@ public struct Info: Encodable, Sendable {
 
         var layout = ["\(pageCount) page\(pageCount == 1 ? "" : "s")"]
         if let columns { layout.append(columns == 2 ? "2 columns" : "1 column") }
-        layout.append(pagesReadByOCR == 0 ? "text layer on every page parsed" : "\(pagesReadByOCR) pages read by OCR")
+        layout.append("text layer on \(pagesFromTextLayer) page\(pagesFromTextLayer == 1 ? "" : "s")"
+                      + (pagesReadByOCR > 0 ? ", OCR on \(pagesReadByOCR)" : ""))
         layout.append("~\(Info.thousands(tokens)) tokens" + (pagesParsed < pageCount ? " in the pages parsed so far" : ""))
         lines.append(layout.joined(separator: " · "))
         if !notes.isEmpty { lines.append("notes: " + notes.joined(separator: " · ")) }
 
-        var counts = ["comments: \(comments)", "highlights: \(highlights)",
+        var counts: [String] = []
+        if let comments, let highlights, let formFields, let filledFields {
+            counts = ["comments: \(comments)", "highlights: \(highlights)",
                       "form fields: \(formFields)" + (formFields > 0 ? " (\(filledFields) filled)" : "")]
+            if factsPartial { counts.append("counted in part of the file, which holds more objects than one read visits") }
+        }
         counts.append("flagged pages: " + (flagged.isEmpty ? "none" : flagged.prefix(12).joined(separator: ", ")
             + (flagged.count > 12 ? ", and \(flagged.count - 12) more" : "")))
         lines.append(counts.joined(separator: " · "))
-        let files = attachments.map { file in
-            file.name + " (" + [file.size.map { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) },
-                                file.page.map { "p.\($0 + 1)" }].compactMap { $0 }.joined(separator: ", ") + ")"
+        if let factsUnknown {
+            lines.append("comments, highlights, form fields, attachments and scripts: unknown, \(factsUnknown)")
+        } else {
+            let files = attachments.map { file in
+                file.name + " (" + [file.size.map { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) },
+                                    file.page.map { "p.\($0 + 1)" }].compactMap { $0 }.joined(separator: ", ") + ")"
+            } + (moreAttachments > 0 ? ["and \(moreAttachments) more"] : [])
+            lines.append("attachments: " + (files.isEmpty ? "none" : files.joined(separator: ", ") + " · never opened"))
+            let actions = scripts.map { script in
+                "\(script.kind) on \(script.trigger)" + (script.page.map { " (p.\($0 + 1))" } ?? "") + ", \(script.detail)"
+            } + (moreScripts > 0 ? ["and \(moreScripts) more"] : [])
+            lines.append("scripts: " + (actions.isEmpty ? "none" : actions.joined(separator: "; ") + " · never run"))
         }
-        lines.append("attachments: " + (files.isEmpty ? "none" : files.joined(separator: ", ") + " · never opened"))
-        let actions = scripts.map { script in
-            "\(script.kind) on \(script.trigger)" + (script.page.map { " (p.\($0 + 1))" } ?? "") + ", \(script.detail)"
-        }
-        lines.append("scripts: " + (actions.isEmpty ? "none" : actions.joined(separator: "; ") + " · never run"))
         if savedByPDFKit {
             lines.append("⚠ made or last saved by macOS PDFKit, as Preview saves: such a save can damage the text, and an earlier copy may read better")
         }
@@ -317,13 +384,13 @@ public struct Info: Encodable, Sendable {
         if !shown.isEmpty {
             let titles = shown.map { String(repeating: "  ", count: $0.level - 1) + $0.title }
             let width = min(max(titles.map(\.count).max() ?? 0, 7), 60)
-            var table = ["Section".padding(toLength: width + 2, withPad: " ", startingAt: 0) + "pages      tokens"
+            var table = ["Section".padding(toLength: width + 3, withPad: " ", startingAt: 0) + "pages      tokens"
                          + (sectionsFrom == "headings" ? "   (from headings in the text)" : "   (from the file's bookmarks)")]
             for (section, title) in zip(shown, titles) {
                 let pages = section.lastPage.map { $0 > section.page ? "p.\(section.page)–\($0)" : "p.\(section.page)" }
-                    ?? "p.\(section.page)"
+                    ?? "p.\(section.page)–…"
                 let name = title.count > width ? String(title.prefix(width - 1)) + "…" : title
-                table.append("  " + name.padding(toLength: width, withPad: " ", startingAt: 0)
+                table.append("  " + name.padding(toLength: width + 1, withPad: " ", startingAt: 0)
                              + pages.padding(toLength: 11, withPad: " ", startingAt: 0)
                              + (section.tokens.map { Info.thousands($0) } ?? "…"))
             }

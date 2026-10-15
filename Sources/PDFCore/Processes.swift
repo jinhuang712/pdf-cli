@@ -112,15 +112,20 @@ final class LineReader: @unchecked Sendable {
 
     private func loop() {
         var pending = Data()
+        // How much of `pending` holds no newline, so a long line is searched once, not again
+        // with every chunk that adds to it.
+        var searched = 0
         var chunk = [UInt8](repeating: 0, count: 1 << 16)
         while true {
             let count = read(descriptor, &chunk, chunk.count)
             if count > 0 {
                 pending.append(contentsOf: chunk[0..<count])
-                while let newline = pending.firstIndex(of: 0x0A) {
+                while let newline = pending[(pending.startIndex + searched)...].firstIndex(of: 0x0A) {
                     onLine(pending[pending.startIndex..<newline])
                     pending.removeSubrange(pending.startIndex...newline)
+                    searched = 0
                 }
+                searched = pending.count
             } else if count < 0 && errno == EINTR {
                 continue
             } else {

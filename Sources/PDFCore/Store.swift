@@ -152,11 +152,11 @@ public final class Store: Sendable {
         try db.execute(sql: "PRAGMA user_version = \(schemaVersion)")
     }
 
-    /// The checks the index runs on a file: the font check, the sample check, the producer
-    /// and the title. Raise it when they change. A file entry indexed with older checks still
-    /// holds its document, so a cleanup keeps the document's pages, but a read indexes the
-    /// file again and runs every check.
-    static let indexChecks = 6
+    /// The checks the index runs on a file: the font check, the sample check, the producer,
+    /// the title and the facts. Raise it when they change. A file entry indexed with older
+    /// checks still holds its document, so a cleanup keeps the document's pages, but a read
+    /// indexes the file again and runs every check.
+    static let indexChecks = 7
 
     static func createVersion1(_ db: Database) throws {
         try db.execute(sql: """

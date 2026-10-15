@@ -108,8 +108,7 @@ public final class Runner: @unchecked Sendable {
             var pageCount: Int?
             var producer: String?
             var title: String?
-            var documentFacts: FileFacts?
-            var pageFacts: [Int: FileFacts] = [:]
+            var facts: FileFacts?
             var keys: [Int: String] = [:]
             var checks: [Int: FontCheck] = [:]
             var agreement: Double?
@@ -132,14 +131,13 @@ public final class Runner: @unchecked Sendable {
                     pageCount = event.pageCount
                     producer = event.producer
                     title = event.title
-                    if let facts = event.facts { documentFacts = facts }
                 case .openFailed: fileFailure = event.reason ?? OpenFailure.damaged
                 case .key:
                     guard let page = event.page, let key = event.key else { break }
                     keys[page] = key
                     checks[page] = FontCheck(gaps: event.gaps ?? 0, risky: event.risky ?? 0)
-                    if let facts = event.facts { pageFacts[page] = facts }
                 case .sample: agreement = event.agreement
+                case .facts: facts = event.facts
                 default: break
                 }
             }
@@ -181,18 +179,22 @@ public final class Runner: @unchecked Sendable {
                 }
                 if start >= count { break }
             }
+            // The facts are read in a worker of their own, beside the sample check, so facts
+            // that take too long or crash the reader cost the facts, never the file or a page.
+            let factsReader = fileFailure == nil ? startJob("facts", supervising: [sampler].compactMap { $0 }, handle: handle) : nil
+            let others = [factsReader].compactMap { $0 }
             var unchecked = false
-            if fileFailure == nil && sampler == nil { sampler = startSample() }
+            if fileFailure == nil && sampler == nil { sampler = startJob("sample", supervising: others, handle: handle) }
             if let sampler {
                 // A file that cannot be read needs no verdict on its text layer.
                 if fileFailure != nil { stop(sampler, reason: "the file cannot be read", kind: .runner) }
-                while !sampler.finished { step([sampler], handle: handle) }
+                while !sampler.finished { step([sampler] + others, handle: handle) }
                 // A sample check that crashed or ran out of time, as on a busy machine, gets a
                 // second try. If that fails too, the text layer stays unchecked, and OCR reads
                 // every page: an unverified layer is not trusted.
                 if fileFailure == nil, agreement == nil, !sampler.endedCleanly {
-                    if let again = startSample() {
-                        while !again.finished { step([again], handle: handle) }
+                    if let again = startJob("sample", supervising: others, handle: handle) {
+                        while !again.finished { step([again] + others, handle: handle) }
                         unchecked = agreement == nil && !again.endedCleanly
                     } else {
                         unchecked = true
@@ -201,6 +203,15 @@ public final class Runner: @unchecked Sendable {
             } else if fileFailure == nil {
                 // The check could not start at all, so the text layer stays unverified too.
                 unchecked = true
+            }
+            if let factsReader {
+                while !factsReader.finished { step([factsReader], handle: handle) }
+                if facts == nil {
+                    facts = FileFacts(failure: factsReader.endedCleanly ? "the reader could not open the file's catalog"
+                                                                        : factsReader.endReason)
+                }
+            } else if fileFailure == nil && facts == nil {
+                facts = FileFacts(failure: "the reader could not start")
             }
             // Another runner took the file over while this one waited, and it saves the index.
             guard !mutex.locked({ lostLock }) else { return .unavailable }
@@ -232,9 +243,6 @@ public final class Runner: @unchecked Sendable {
             // file that PDFKit saved counts as a new file, with a warning).
             let savedByPDFKit = producer?.contains("Quartz PDFContext") ?? false
             let named = TextCleanup.line(title ?? "")
-            // Page facts are kept by page, so a page an index restart reads again counts once.
-            var facts = documentFacts ?? FileFacts()
-            for page in pageFacts.keys.sorted() { facts.merge(pageFacts[page]!) }
             guard let id = try? store.saveIndex(path: path, stat: before, pageKeys: ordered, spacesAtRisk: atRisk,
                                                 needsOCR: needsOCR, savedByPDFKit: savedByPDFKit, title: named,
                                                 failures: failures, facts: facts) else {
@@ -567,9 +575,13 @@ public final class Runner: @unchecked Sendable {
         return nil
     }
 
-    /// Starts the sample check once the pool has a slot for it.
-    func startSample() -> Supervised? {
-        waitForSlot(foreground: true).flatMap { startWorker(["sample", path], pages: [], slot: $0, foreground: true) }
+    /// Starts a sample or facts job once the pool has a slot for it, supervising `workers` while
+    /// it waits.
+    func startJob(_ job: String, supervising workers: [Supervised],
+                  handle: (Supervised, WorkerEvent) -> Void) -> Supervised? {
+        waitForSlot(foreground: true, supervising: workers, handle: handle).flatMap {
+            startWorker([job, path], pages: [], slot: $0, foreground: true)
+        }
     }
 
     /// Runs until every worker in `workers` has finished.

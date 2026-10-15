@@ -77,7 +77,7 @@ struct WorkerCommand: AsyncParsableCommand {
         shouldDisplay: false
     )
 
-    enum Mode: String, ExpressibleByArgument { case index, sample, parse }
+    enum Mode: String, ExpressibleByArgument { case index, sample, facts, parse }
 
     @Argument var mode: Mode
     @Argument var path: String
@@ -94,6 +94,8 @@ struct WorkerCommand: AsyncParsableCommand {
             throw ExitCode(Worker.index(path: path, from: from))
         case .sample:
             throw ExitCode(await Worker.sample(path: path))
+        case .facts:
+            throw ExitCode(Worker.facts(path: path))
         case .parse:
             throw ExitCode(await Worker.parse(path: path, pages: pages, repairSpaces: repairSpaces,
                                               readAllByOCR: readAllByOCR))

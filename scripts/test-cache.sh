@@ -76,6 +76,10 @@ output=$(run env PDF_CLI_TEST_FAULT=index-hang:3 $pdf debug-pages $paper)
 check "a page that hangs while keys are read fails" "p.4 failed: time limit" "$output"
 check "the other pages still read" "p.5 ok" "$output"
 
+output=$(run env PDF_CLI_TEST_FAULT=facts-hang:0 sh -c "$pdf read $paper --page 1 >/dev/null && $pdf info $paper")
+check "facts that hang leave the file readable" "^Dataset Distillation" "$output"
+check "facts that hang show as unknown, with the reason" "and scripts: unknown, time limit" "$output"
+
 # Quality checks: failure blocks, unsure blocks and picks, --raw, the exit codes and the PDFKit
 # warning.
 quality() { PDF_CLI_HOME=$work/quality $pdf "$@" 2>&1; echo "exit $?"; }
