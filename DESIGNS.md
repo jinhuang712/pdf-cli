@@ -33,7 +33,7 @@ WORKER: a child process with time and memory limits, page by page
    │      figures ◄───── drawing commands + "Figure N" captions
    │      headings, footnotes, running headers, footnote markers
    │              ◄───── font sizes and positions
-   │      hidden text ─► set aside, shown only with a flag
+   │      hidden text ─► a marker in place, its words only with a flag
    │
    └─ 4. Quality check, then every result is cached
           ok ──────────► agent reads the text
@@ -94,7 +94,7 @@ A page can read wrong while it looks right, and the agent believes what it is ha
 ### Safety
 
 - **Untrusted files stay in a child process.** Each parse runs in a worker with a time limit and a memory limit. Cost: a process starts for each job. Holds as: only workers open PDF content, the CLI process reads only the cache, and a worker that hits a limit yields a `failed` page instead of a crash.
-- **Invisible text stays out of normal output.** Text that a reader cannot see is flagged and set aside: text drawn in the color behind it, tiny, clipped, covered by an image or off the page. Cost: visibility depends on what is drawn behind the text, so every text block needs a look at the layers below it, and an OCR text layer is invisible by design, so it needs its own rule. Holds as: invisible text over a scanned image counts as a text layer, white text on a dark box counts as visible, and every other invisible block reaches the output only with an explicit flag.
+- **Invisible text leaves a marker, not its words.** Text that a reader cannot see is flagged, and a marker takes its place in normal output: text drawn in the color behind it, tiny, clipped, covered by an image or off the page. The marker gives the hidden text's size, how it was hidden and the command that shows it, so nothing goes missing without a trace. Cost: visibility depends on what is drawn behind the text, so every text block needs a look at the layers below it, and an OCR text layer is invisible by design, so it needs its own rule. Holds as: invisible text over a scanned image counts as a text layer, white text on a dark box counts as visible, and every other invisible block reaches normal output as a marker, with its words only behind an explicit flag.
 - **Parsing stays offline.** Models download only during setup. Cost: a missing model needs a setup step before first use. Holds as: a test parses the open test set under a network monitor and sees zero connections.
 - **PDF actions never run.** JavaScript, launch actions and embedded files stay inert. Cost: none for reading. Holds as: workers call no engine API that runs a document action.
 
@@ -289,6 +289,16 @@ A sample-paper page holds about 950 tokens of text, so 5,000 tokens is about 5 p
 | **5,000 tokens** | A typical paper section in one call, inside Claude Code's 30,000 characters. | A long section takes two calls. |
 | 2,000 tokens | Cheaper per call. | More calls for the same section. |
 | No default | The agent always gets everything it asked for. | A flagless read of a 300-page book sends about 285,000 tokens, and Claude Code cuts it mid-sentence. |
+
+## Decision: a marker in place of hidden text over its words with a label — 2026-10-15
+
+Normal output replaces hidden text with a marker at the same spot: its size, how it was hidden, and the command that shows its words. Nothing goes missing without a trace, and planted words reach the agent only when it asks for them.
+
+| Option | For | Against |
+|---|---|---|
+| **A marker in place** | The agent knows where hidden text sits and how much there is, and planted instructions stay out of its context. | One more command to read the hidden words. |
+| The words in place, with a label | Nothing is even one command away. | Planted instructions reach every agent that reads the page. In Microsoft's 2024 study, wrapping untrusted text in markers only about halved attack success on GPT-3.5-Turbo ([Hines et al.](https://arxiv.org/abs/2403.14720)). |
+| A count in the summary line only | The shortest output. | The agent learns the page, but not where on it or how much. |
 
 ## Decision: a loud failure for a file PDFKit cannot open — 2026-10-15
 

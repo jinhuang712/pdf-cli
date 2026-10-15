@@ -187,9 +187,15 @@ Settings: none.
 
 ## F9 — Hidden text ⬜
 
-Keeps text that a reader cannot see out of the agent's way.
+Marks where a reader's eye would miss text, and keeps that text's words out of the agent's way until it asks.
 
-Text that renders invisible, such as text in the color behind it, tiny text, clipped text, text covered by an image or text off the page, stays out of the normal output. White text on a dark box stays in, because a reader can see it. The summary line says how many hidden blocks were set aside, and on which pages. `--include-hidden` shows them, each labelled `[hidden]`. The text layer on a scanned page is read normally.
+Text that renders invisible, such as text in the color behind it, tiny text, clipped text, text covered by an image or text off the page, is replaced by a marker in normal output. The marker sits where the text sat, and gives its size, how it was hidden and the command that shows it:
+
+```text
+…the results support our claim. [hidden: 38 words, white on white · show: pdf read paper.pdf --page 3 --include-hidden]
+```
+
+White text on a dark box stays in, because a reader can see it. The summary line says how many hidden blocks the output marks, and on which pages. `--include-hidden` shows their words in place, each labelled `[hidden]`. The text layer on a scanned page is read normally.
 
 Settings: none.
 

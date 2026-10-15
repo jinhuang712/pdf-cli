@@ -57,7 +57,7 @@ The spike shipped no features. It answered the riskiest questions.
   - [ ] M1.9 `pdf crop` for pages and regions
   - Later: figures, tables and equations (M2.6)
 - **Hidden text** (F9)
-  - [ ] M1.10 Hidden text kept out of the output
+  - [ ] M1.10 Hidden text replaced by a marker in place, with its words shown on request
 - **Agent guide** (F13)
   - [ ] M1.11 `pdf agent-guide` and its Claude Code skill
 - **Tests**
