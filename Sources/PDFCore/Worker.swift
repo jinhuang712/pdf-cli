@@ -266,6 +266,14 @@ public enum Worker {
             }
         case "crash":
             abort()
+        case "crash-once":
+            // Crashes the first worker of a runner only, as a busy machine might stop one.
+            let marker = FileManager.default.temporaryDirectory.appendingPathComponent("pdf-cli-fault-\(getppid())")
+            if !FileManager.default.fileExists(atPath: marker.path) {
+                FileManager.default.createFile(atPath: marker.path, contents: nil)
+                abort()
+            }
+            try? FileManager.default.removeItem(at: marker)
         default:
             break
         }

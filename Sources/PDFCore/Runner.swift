@@ -204,11 +204,16 @@ public final class Runner: @unchecked Sendable {
                 // The check could not start at all, so the text layer stays unverified too.
                 unchecked = true
             }
-            if let factsReader {
-                while !factsReader.finished { step([factsReader], handle: handle) }
+            if var last = factsReader {
+                while !last.finished { step([last], handle: handle) }
+                // A facts worker that ran out of time or crashed, as on a busy machine, gets a
+                // second try, as the sample check does. Its failure is kept until the file changes.
+                if facts == nil, !last.endedCleanly, let again = startJob("facts", supervising: [], handle: handle) {
+                    while !again.finished { step([again], handle: handle) }
+                    last = again
+                }
                 if facts == nil {
-                    facts = FileFacts(failure: factsReader.endedCleanly ? "the reader could not open the file's catalog"
-                                                                        : factsReader.endReason)
+                    facts = FileFacts(failure: last.endedCleanly ? "the reader could not open the file's catalog" : last.endReason)
                 }
             } else if fileFailure == nil && facts == nil {
                 facts = FileFacts(failure: "the reader could not start")
@@ -474,6 +479,8 @@ public final class Runner: @unchecked Sendable {
         let id: Int
         let pid: pid_t
         let pages: [Int]
+        /// The time limit when it differs from the page limit.
+        var timeLimit: TimeInterval?
         var lastEventAt = Date()
         var sawEvent = false
         var current: Int?
@@ -579,9 +586,13 @@ public final class Runner: @unchecked Sendable {
     /// it waits.
     func startJob(_ job: String, supervising workers: [Supervised],
                   handle: (Supervised, WorkerEvent) -> Void) -> Supervised? {
-        waitForSlot(foreground: true, supervising: workers, handle: handle).flatMap {
+        let worker = waitForSlot(foreground: true, supervising: workers, handle: handle).flatMap {
             startWorker([job, path], pages: [], slot: $0, foreground: true)
         }
+        // Facts take under 0.2 s even on 30,000 pages, and a new file's first page waits for
+        // them, so a facts worker that hangs is stopped sooner than a page.
+        if job == "facts" { worker?.timeLimit = min(Env.pageTimeLimit, 10) }
+        return worker
     }
 
     /// Runs until every worker in `workers` has finished.
@@ -622,9 +633,9 @@ public final class Runner: @unchecked Sendable {
             }
             handle(worker, event)
         }
-        let limit = Env.pageTimeLimit
         let now = Date()
         for worker in workers where worker.exitStatus == nil && worker.stopReason == nil {
+            let limit = worker.timeLimit ?? Env.pageTimeLimit
             if let started = worker.currentStartedAt, now.timeIntervalSince(started) > limit {
                 stop(worker, reason: "time limit: the page took more than \(Int(limit)) s", kind: .pageTime)
             } else if worker.current == nil, now.timeIntervalSince(worker.lastEventAt) > limit {

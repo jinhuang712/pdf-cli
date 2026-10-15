@@ -98,6 +98,7 @@ import Testing
     }
 
     /// An action whose chain lists itself 16 times would give a million scripts, once per path.
+    /// It counts once for the document and once for the page whose link holds it.
     @Test func anActionChainedToItselfCountsOnce() throws {
         let facts = try facts([
             "<< /Type /Catalog /Pages 2 0 R /OpenAction 4 0 R >>",
@@ -106,7 +107,7 @@ import Testing
             "<< /S /JavaScript /JS (x) /Next [" + Array(repeating: "4 0 R", count: 16).joined(separator: " ") + "] >>",
             "<< /Type /Annot /Subtype /Link /Rect [0 0 10 10] /A 4 0 R >>",
         ])
-        #expect(facts.scripts.count == 1)
+        #expect(facts.scripts.map(\.trigger) == ["document open", "link click"])
     }
 
     /// A radio group with three buttons is one field; a text field shown on two pages is one;
@@ -131,6 +132,33 @@ import Testing
         #expect(facts.formFields == 2)
         #expect(facts.filledFields == 1)
         #expect(facts.scripts.map(\.trigger) == ["field keystroke"])
+    }
+
+    /// A page tree may list a node twice. CGPDF counts it twice, and so do the facts, so each
+    /// script names the page CGPDF numbers.
+    @Test func aPageTreeThatListsANodeTwiceKeepsCGPDFsPageNumbers() throws {
+        let url = try makePDF([
+            "<< /Type /Catalog /Pages 2 0 R >>",
+            "<< /Type /Pages /Kids [5 0 R 5 0 R] /Count 4 >>",
+            "<< /Type /Page /Parent 5 0 R /MediaBox [0 0 612 792] >>",
+            "<< /Type /Page /Parent 5 0 R /MediaBox [0 0 612 792] /AA << /O << /S /JavaScript /JS (x) >> >> >>",
+            "<< /Type /Pages /Parent 2 0 R /Kids [3 0 R 4 0 R] /Count 2 >>",
+        ])
+        defer { try? FileManager.default.removeItem(at: url) }
+        let document = try #require(CGPDFDocument(url as CFURL))
+        let facts = FactReader.read(document, url: url)
+        #expect(document.numberOfPages == 4)
+        #expect(facts.scripts.compactMap(\.page) == [1, 3])
+    }
+
+    /// A page label's start number at the integer limit would overflow once pages count on.
+    @Test func aHugeLabelStartNumberIsNoCrash() throws {
+        let facts = try facts([
+            "<< /Type /Catalog /Pages 2 0 R /PageLabels << /Nums [0 << /S /D /St 9223372036854775807 >>] >> >>",
+            "<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>",
+            Self.page, Self.page,
+        ])
+        #expect(facts.labels == ["1000000000", "1000000001"])
     }
 
     /// A compressed attachment's stream length is not its size.
@@ -231,6 +259,12 @@ import Testing
         let sections = Info.sections(outline: outline, pages: [try page(0, [("Beta", 0.5), ("Body", 0.6)])],
                                      pageCount: 2, complete: false)
         #expect(sections[0].lastPage == nil && sections[0].tokens == nil)
+
+        // Once that page is parsed and has failed, the section takes it whole.
+        let failed = Output.Page(index: 1, result: .failed("time limit"), key: "k1")
+        let measured = Info.sections(outline: outline, pages: [try page(0, [("Beta", 0.5), ("Body", 0.6)]), failed],
+                                     pageCount: 2, complete: true)
+        #expect(measured[0].lastPage == 2 && measured[0].tokens ?? 0 > 0)
     }
 
     /// A bookmark lands on the heading that spells its title, not on a longer heading or a

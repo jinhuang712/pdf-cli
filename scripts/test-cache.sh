@@ -79,6 +79,8 @@ check "the other pages still read" "p.5 ok" "$output"
 output=$(run env PDF_CLI_TEST_FAULT=facts-hang:0 sh -c "$pdf read $paper --page 1 >/dev/null && $pdf info $paper")
 check "facts that hang leave the file readable" "^Dataset Distillation" "$output"
 check "facts that hang show as unknown, with the reason" "and scripts: unknown, time limit" "$output"
+output=$(run env PDF_CLI_TEST_FAULT=facts-crash-once:0 sh -c "$pdf read $paper --page 1 >/dev/null && $pdf info $paper")
+check "facts whose first worker crashes are read on a second try" "comments: 0 · highlights: 0" "$output"
 
 # Quality checks: failure blocks, unsure blocks and picks, --raw, the exit codes and the PDFKit
 # warning.

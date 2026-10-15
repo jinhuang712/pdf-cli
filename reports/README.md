@@ -17,4 +17,4 @@ The spike's reports (M0) are in [spike/](../spike/README.md).
 | M1.3 Quality checks | 2026-10-15 | no wrong text; 10 smaller; all but 1 fixed | [M1.3](M1.3-quality-checks.md) |
 | M1.5 Library commands | 2026-10-15 | 2 data bugs, 8 smaller; all but 1 fixed | [M1.5](M1.5-library.md) |
 | M1.7 `pdf read` | 2026-10-15 | 1 wrong text, 1 endless loop, 7 smaller; all fixed | [M1.7](M1.7-read.md) |
-| M1.6 `pdf info` | 2026-10-15 | 1 crash, 3 that fail readable files, 8 smaller; all fixed, 1 in part | [M1.6](M1.6-info.md) |
+| M1.6 `pdf info` | 2026-10-15 | 1 crash, 3 that fail readable files, 8 smaller; all fixed, 1 in part. Second review: 5 more, 4 fixed, 1 bounded | [M1.6](M1.6-info.md) |

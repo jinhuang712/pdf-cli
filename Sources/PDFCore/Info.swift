@@ -275,17 +275,24 @@ public struct Info: Encodable, Sendable {
         let byIndex = Dictionary(pages.map { ($0.index, $0) }, uniquingKeysWith: { first, _ in first })
         var measured = sections
         for (position, section) in sections.enumerated() {
-            let next = stop(position, in: sections).map { (page: $0.page, block: $0.block) }
-            if let next, next.block == nil { continue }
+            var next = stop(position, in: sections).map { (page: $0.page, block: $0.block) }
+            if let found = next, found.block == nil {
+                // A next section on a page that failed has no block: the section takes that
+                // page whole, as a read by section does. On a page not parsed yet, it waits.
+                guard byIndex[found.page - 1] != nil else { continue }
+                next = (found.page + 1, 1)
+            }
             let endPage = next.map { $0.block! <= 1 ? max($0.page - 1, section.page) : $0.page } ?? pageCount
             measured[position].lastPage = endPage
             var tokens = 0
             var known = true
             for page in section.page...max(endPage, section.page) {
-                guard let layer = byIndex[page - 1]?.result.pageText else {
+                guard let parsed = byIndex[page - 1] else {
                     known = false
                     break
                 }
+                // A page that failed shows only its failure block, so it adds no text.
+                guard let layer = parsed.result.pageText else { continue }
                 for (index, block) in layer.blocks.enumerated() {
                     let number = index + 1
                     if page == section.page, let start = section.block, number < start { continue }

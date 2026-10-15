@@ -60,6 +60,7 @@ When a file's comments, form fields, attachments and scripts cannot be read, as 
 Gap:
 - The figures and tables come with M2.6, and the running headers, footers and publisher stamps with M2.5.
 - The counts of headnotes, footnotes and references, and two-page spreads, come later.
+- In a file without bookmarks, a heading set in the top 7.5% of its page, as on a page with a small margin, is taken for a running header and left out of the sections, until running headers are set aside in M2.5.
 
 Settings: none.
 

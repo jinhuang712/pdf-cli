@@ -73,8 +73,8 @@ public struct FileFacts: Codable, Equatable, Sendable {
 }
 
 /// Reads a file's facts. A worker of its own runs it, apart from the index, so a file whose
-/// facts take too long or crash the reader loses its facts and keeps its pages. Each dictionary
-/// is visited once, and one read visits at most `maxVisits`, so the work stays bounded however
+/// facts take too long or crash the reader loses its facts and keeps its pages. One read visits
+/// at most `maxVisits` objects, and no walk follows a loop, so the work stays bounded however
 /// the file's objects point at each other.
 final class FactReader {
     static let maxDepth = 12
@@ -83,7 +83,10 @@ final class FactReader {
 
     private(set) var facts = FileFacts()
     private var visits = 0
+    /// Tree nodes, file specifications and form fields: each counts once in the file.
     private var seen = Set<OpaquePointer>()
+    /// Actions: each counts once for the document, and once on each page that holds it.
+    private var actionsSeen = Set<OpaquePointer>()
 
     /// Reads every fact of `document`. The outline comes from PDFKit, which opens the file again.
     static func read(_ document: CGPDFDocument, url: URL) -> FileFacts {
@@ -95,7 +98,8 @@ final class FactReader {
         if let catalog = document.catalog {
             var root: CGPDFDictionaryRef?
             if CGPDFDictionaryGetDictionary(catalog, "Pages", &root), let root {
-                reader.walkPages(root) { page in
+                var path = Set<OpaquePointer>()
+                reader.walkPages(root, path: &path) { page in
                     reader.readPage(page, index: index)
                     index += 1
                 }
@@ -108,17 +112,28 @@ final class FactReader {
         return reader.facts
     }
 
-    /// Whether the read may visit `dictionary`: once each, and `maxVisits` in all.
-    private func visit(_ dictionary: CGPDFDictionaryRef) -> Bool {
+    /// CGPDF hands out the same reference for the same object while the document is open, so the
+    /// reference names it.
+    static func identity(_ dictionary: CGPDFDictionaryRef) -> OpaquePointer {
+        unsafeBitCast(dictionary, to: OpaquePointer.self)
+    }
+
+    /// Whether the read may visit one more object: `maxVisits` in all.
+    private func spend() -> Bool {
         guard visits < Self.maxVisits else {
             facts.partial = true
             return false
         }
-        // CGPDF hands out the same reference for the same object, so the reference names it.
-        guard seen.insert(unsafeBitCast(dictionary, to: OpaquePointer.self)).inserted else { return false }
         visits += 1
         return true
     }
+
+    /// Whether the read may visit `dictionary`: once in `set`, within the budget.
+    private func visit(_ dictionary: CGPDFDictionaryRef, in set: inout Set<OpaquePointer>) -> Bool {
+        set.insert(Self.identity(dictionary)).inserted && spend()
+    }
+
+    private func visit(_ dictionary: CGPDFDictionaryRef) -> Bool { visit(dictionary, in: &seen) }
 
     /// The facts the catalog and the information dictionary hold: metadata, page labels, the
     /// document's attachments and its scripts.
@@ -159,28 +174,35 @@ final class FactReader {
         ])
     }
 
-    /// Calls `visit` for each page of the page tree, in order.
-    func walkPages(_ node: CGPDFDictionaryRef, depth: Int = 0, visit page: (CGPDFDictionaryRef) -> Void) {
-        guard depth <= 64, visit(node) else { return }
+    /// Calls `visit` for each page of the page tree, in order. A node the tree lists twice counts
+    /// twice, as CGPDF counts it, so the pages keep CGPDF's numbers; only a node inside itself,
+    /// a loop, is passed over.
+    func walkPages(_ node: CGPDFDictionaryRef, depth: Int = 0, path: inout Set<OpaquePointer>,
+                   visit page: (CGPDFDictionaryRef) -> Void) {
+        let id = Self.identity(node)
+        guard depth <= 64, !path.contains(id), spend() else { return }
         var kids: CGPDFArrayRef?
         guard Self.name(node, "Type") != "Page", CGPDFDictionaryGetArray(node, "Kids", &kids), let kids else {
             page(node)
             return
         }
+        path.insert(id)
         for index in 0..<CGPDFArrayGetCount(kids) where visits < Self.maxVisits {
             var kid: CGPDFDictionaryRef?
-            if CGPDFArrayGetDictionary(kids, index, &kid), let kid { walkPages(kid, depth: depth + 1, visit: page) }
+            if CGPDFArrayGetDictionary(kids, index, &kid), let kid { walkPages(kid, depth: depth + 1, path: &path, visit: page) }
         }
+        path.remove(id)
     }
 
-    /// The facts one page's annotations hold.
+    /// The facts one page's annotations hold. A page the tree lists twice counts twice.
     func readPage(_ dictionary: CGPDFDictionaryRef, index: Int) {
+        actionsSeen.removeAll(keepingCapacity: true)
         additionalActions(dictionary, page: index, triggers: ["O": "page open", "C": "page close"])
         var annotations: CGPDFArrayRef?
         guard CGPDFDictionaryGetArray(dictionary, "Annots", &annotations), let annotations else { return }
         for position in 0..<CGPDFArrayGetCount(annotations) {
             var annotation: CGPDFDictionaryRef?
-            guard CGPDFArrayGetDictionary(annotations, position, &annotation), let annotation, visit(annotation) else { continue }
+            guard CGPDFArrayGetDictionary(annotations, position, &annotation), let annotation, spend() else { continue }
             switch Self.name(annotation, "Subtype") ?? "" {
             case "Text", "FreeText":
                 facts.comments += 1
@@ -220,10 +242,8 @@ final class FactReader {
         if !Self.has(widget, "T") && !Self.has(widget, "FT"), CGPDFDictionaryGetDictionary(widget, "Parent", &parent), let parent {
             field = parent
         }
-        if field != widget {
-            guard visit(field) else { return }
-            additionalActions(field, page: page, triggers: Self.fieldTriggers)
-        }
+        guard visit(field) else { return }
+        if field != widget { additionalActions(field, page: page, triggers: Self.fieldTriggers) }
         let type = inherited(field) { Self.name($0, "FT") }
         var flags: CGPDFInteger = 0
         _ = inherited(field) { CGPDFDictionaryGetInteger($0, "Ff", &flags) ? true : nil }
@@ -294,7 +314,8 @@ final class FactReader {
             guard start >= 0, start < pageCount, CGPDFObjectGetValue(value, .dictionary, &range), let range else { return }
             var first: CGPDFInteger = 1
             _ = CGPDFDictionaryGetInteger(range, "St", &first)
-            ranges.append((start, Self.name(range, "S"), Self.string(range, "P") ?? "", max(first, 1)))
+            // A start beyond any real page number would overflow when pages are counted on.
+            ranges.append((start, Self.name(range, "S"), Self.string(range, "P") ?? "", min(max(first, 1), 1_000_000_000)))
         }
         guard !ranges.isEmpty else { return nil }
         ranges.sort { $0.start < $1.start }
@@ -444,7 +465,7 @@ final class FactReader {
     /// The scripts and launches of an action and of the actions chained after it. A script is
     /// measured by its stored length, never decompressed.
     func scripts(in action: CGPDFDictionaryRef, trigger: String, page: Int?, depth: Int = 0) {
-        guard depth <= Self.maxDepth, visit(action) else { return }
+        guard depth <= Self.maxDepth, visit(action, in: &actionsSeen) else { return }
         var found: FileFacts.Script?
         switch Self.name(action, "S") ?? "" {
         case "JavaScript":
