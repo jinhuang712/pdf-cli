@@ -19,16 +19,21 @@ Under them: worker processes with time and memory limits and a shared pool of sl
 
 **On branch `wt/m1-10-hidden`** (pushed, not merged): M1.10, hidden text.
 
-- `7378826` builds it, `15bda2e` fixes the first review, and `28522d2` marks DESIGNS, FEATURES, ROADMAP and README approved, as the user asked on 2026-10-15.
-- A second review of `15bda2e` was running when this was written. Its report reaches only the session that started it. If it is lost, run the review again on `git diff 7378826 15bda2e`, with the prompt in the M1.10 report's spirit: hostile PDFs that evade the check, and real text marked hidden.
-- To land it: fix what the second review finds, add its table to `reports/M1.10-hidden.md`, then fast-forward `main` to the branch and push.
+- `7378826` builds it, `15bda2e` fixes the first review, `28522d2` marks DESIGNS, FEATURES, ROADMAP and README approved, as the user asked on 2026-10-15, and `a6616ff` records the second review.
+- **The second review found 7 problems, all open.** `reports/M1.10-hidden.md` → "Second review" lists each with a suggested fix. The serious ones:
+  - **A.** A page with a full-page background image keeps only the color and size checks, so most tricks pass there.
+  - **B.** Two grey rules along a word's box fool the color test.
+  - **E.** Real words of narrow letters in condensed type, as "lilt fill tilt", read as stacked.
+  - **F.** Text in a script OCR cannot read, as Greek, under a transparent image reads as covered.
+  - The rest: **C**, letters hidden one by one by render mode; **D**, small fragments that leak; **G**, no cap on OCR calls a page.
+- To land it: fix these, or record any that stays as a limit in FEATURES.md → F9 → Gap. Then run a third review, fast-forward `main` to the branch and push. The reviewer's hostile PDFs were made by `/private/tmp/claude-501/m110rev/gen.py` and `gen2.py`, outside the repo; copying the useful pages into M1.12's safety set would keep them.
 - The design is DESIGNS.md → "Decision: hidden text found by ink, with the drawing commands for what ink cannot tell"; its known limits are in FEATURES.md → F9 → Gap.
 
 **Docs:** all seven core docs are approved on the M1.10 branch. On `main`, DESIGNS, FEATURES, ROADMAP and README still say drafted until that branch lands.
 
 ## What comes next
 
-1. Land M1.10, as above.
+1. Fix the second review's findings and land M1.10, as above.
 2. **M1.11** `pdf agent-guide` and its Claude Code skill (FEATURES.md → F13). `pdf agent-guide` prints the guide; `--install claude-code` writes it to `~/.claude/skills/pdf-cli/SKILL.md`, with YAML frontmatter whose `description` leads with when to use it (format checked on 2026-10-15 against [code.claude.com/docs/en/skills](https://code.claude.com/docs/en/skills)). The draft text is in the appendix. Keep it to commands that are built, and add a test that it names every subcommand.
 3. **M1.12** the smoke set and the safety set of broken and hidden-text PDFs. `testdata/hidden/hidden.pdf` (from `scripts/make-hidden-fixture.swift`) and the M1.10 reviewer's hostile pages are a start.
 4. **M1.13** comments, highlights, form fields and link targets at their positions; **M1.14** a marker with a crop command for every image and drawing.
