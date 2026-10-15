@@ -36,6 +36,21 @@ enum OCR {
     /// A run of a leader mark, such as the dots in a contents line or the blank of a form,
     /// counts as one character.
     static func needed(text: String, images: Int) -> Bool {
+        let (visible, usable, bad) = census(text)
+        if images > 0 && (usable < 10 || usable * 10 < visible * 3) { return true }
+        return bad >= 10 && bad * 10 >= visible
+    }
+
+    /// The share of a text layer's visible characters that are letters or digits: about 0.7–0.8
+    /// on a born-digital page, and lower on a layer of stray marks or broken characters.
+    static func layerScore(_ text: String) -> Double {
+        let (visible, usable, _) = census(text)
+        return visible == 0 ? 0 : Double(usable) / Double(visible)
+    }
+
+    /// Counts a text layer's visible characters, its letters and digits, and its broken
+    /// characters. A run of a leader mark counts as one character.
+    static func census(_ text: String) -> (visible: Int, usable: Int, bad: Int) {
         var usable = 0, bad = 0, visible = 0
         var previous: Unicode.Scalar?
         for scalar in text.unicodeScalars where !scalar.properties.isWhitespace {
@@ -50,8 +65,7 @@ enum OCR {
                 if scalar.properties.isAlphabetic || scalar.properties.numericType != nil { usable += 1 }
             }
         }
-        if images > 0 && (usable < 10 || usable * 10 < visible * 3) { return true }
-        return bad >= 10 && bad * 10 >= visible
+        return (visible, usable, bad)
     }
 
     static var usesDocumentRecognizer: Bool {
@@ -76,8 +90,8 @@ enum OCR {
         return textRecognizerParagraphs(image)
     }
 
-    /// The older text recognizer: lines only, grouped into paragraphs by position.
-    static func textRecognizerParagraphs(_ image: CGImage) -> [Paragraph]? {
+    /// The older text recognizer's lines.
+    static func textRecognizerLines(_ image: CGImage) -> [Line]? {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         // Left alone, the recognizer reads English only, and a Chinese or Arabic scan comes
@@ -89,10 +103,15 @@ enum OCR {
         }
         let handler = VNImageRequestHandler(cgImage: image, options: [:])
         guard (try? handler.perform([request])) != nil else { return nil }
-        let lines = (request.results ?? []).compactMap { observation -> Line? in
+        return (request.results ?? []).compactMap { observation -> Line? in
             guard let candidate = observation.topCandidates(1).first else { return nil }
             return Line(text: candidate.string, box: observation.boundingBox, confidence: Double(candidate.confidence))
         }
+    }
+
+    /// The older text recognizer: lines only, grouped into paragraphs by position.
+    static func textRecognizerParagraphs(_ image: CGImage) -> [Paragraph]? {
+        guard let lines = textRecognizerLines(image) else { return nil }
         // Group in a top-down frame the size of the image, as the text layer groups PDFKit lines.
         let size = CGSize(width: image.width, height: image.height)
         let raw = lines.map { line in
@@ -113,8 +132,9 @@ enum OCR {
     }
 
     /// Reads a whole page through OCR, as a text layer whose boxes follow the unrotated page,
-    /// like PDFKit's.
-    static func pageText(_ page: PDFPage) async -> PageText? {
+    /// like PDFKit's. With `check`, a second reading measures how far the first agrees with it,
+    /// for the page and for each block with enough words.
+    static func pageText(_ page: PDFPage, check: Bool = false) async -> PageText? {
         guard let image = render(page, dpi: 200), let paragraphs = await recognize(image) else { return nil }
         let rotation = ((page.rotation % 360) + 360) % 360
         let dehyphenator = Dehyphenator(pageText: paragraphs.map(\.text).joined(separator: "\n"))
@@ -133,10 +153,82 @@ enum OCR {
                                     lines: zip(lines, lineBoxes).map { TextLine(text: $0.text, box: $1) }))
         }
         let joined = blocks.map(\.text).joined(separator: "\n")
-        return PageText(blocks: blocks, words: TextCleanup.wordCount(joined),
-                        runTogether: TextCleanup.runTogetherWords(joined),
-                        confidence: confidences.isEmpty ? nil : confidences.reduce(0, +) / Double(confidences.count),
-                        ocrEngine: usesDocumentRecognizer ? "document recognizer" : "text recognizer")
+        var read = PageText(blocks: blocks, words: TextCleanup.wordCount(joined),
+                            runTogether: TextCleanup.runTogetherWords(joined),
+                            confidence: confidences.isEmpty ? nil : confidences.reduce(0, +) / Double(confidences.count),
+                            ocrEngine: usesDocumentRecognizer ? "document recognizer" : "text recognizer")
+        if check, let lines = checkReading(image) {
+            // Lines, not blocks, are compared, as in the measurements: a block's text has its
+            // line-end hyphens resolved, and the second reading's lines do not.
+            let checked = lines.map { (box: pageBox($0.box, rotation: rotation), units: units($0.text)) }
+            read.agreement = agreement(units: read.blocks.flatMap(\.lines).flatMap { units($0.text) },
+                                       check: Set(checked.flatMap(\.units)))
+            for index in read.blocks.indices {
+                let box = read.blocks[index].box
+                let inside = checked.filter { line in
+                    let x = line.box.x + line.box.width / 2, y = line.box.y + line.box.height / 2
+                    return x >= box.x - 0.005 && x <= box.x + box.width + 0.005
+                        && y >= box.y - 0.005 && y <= box.y + box.height + 0.005
+                }
+                read.blocks[index].agreement = agreement(units: read.blocks[index].lines.flatMap { units($0.text) },
+                                                         check: Set(inside.flatMap(\.units)))
+            }
+        }
+        return read
+    }
+
+    /// Below this share of a reading's words that a second reading also finds, OCR's text is in
+    /// doubt. Neither engine's own confidence tracks its accuracy: on pages made blurry, coarse
+    /// or noisy, the older recognizer still reported about 1.0 where half its words were wrong.
+    /// On 33 renderings of three pages made poor in those ways, read by each method, the pages
+    /// where OCR got at least 90% of its words right agreed on 0.89 or more, and the pages under
+    /// 80% agreed on 0.83 or less. Provisional, until goal G11 tunes it.
+    static let agreementThreshold = 0.85
+
+    /// A second reading of the same image, to check the first. On macOS 26 it comes from the
+    /// older text recognizer. Before, that recognizer is the only one, so it reads the image
+    /// again at 70% of its size: a misread rarely repeats at another size.
+    static func checkReading(_ image: CGImage) -> [Line]? {
+        if usesDocumentRecognizer { return textRecognizerLines(image) }
+        let width = Int(Double(image.width) * 0.7), height = Int(Double(image.height) * 0.7)
+        guard width > 0, height > 0, let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return nil }
+        context.interpolationQuality = .high
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return context.makeImage().flatMap(textRecognizerLines)
+    }
+
+    /// What two readings are compared by: words of four letters or more, lowercased, and in
+    /// Chinese, Japanese and Korean text, which has no spaces, each pair of neighbouring
+    /// characters.
+    static func units(_ text: String) -> [String] {
+        var units: [String] = []
+        for token in text.lowercased().split(whereSeparator: { !$0.isLetter }) {
+            if token.unicodeScalars.contains(where: isCJK) {
+                let characters = Array(token)
+                for index in characters.indices.dropLast() { units.append(String(characters[index...index + 1])) }
+            } else if token.count >= 4 {
+                units.append(String(token))
+            }
+        }
+        return units
+    }
+
+    static func isCJK(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar.value {
+        case 0x3040...0x30FF, 0x3400...0x4DBF, 0x4E00...0x9FFF, 0xAC00...0xD7AF, 0xF900...0xFAFF, 0x20000...0x2FA1F:
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// The share of `units` found in the second reading. Nil under 20 units, too few to judge.
+    static func agreement(units: [String], check: Set<String>) -> Double? {
+        guard units.count >= 20 else { return nil }
+        return Double(units.filter { check.contains($0) }.count) / Double(units.count)
     }
 
     /// Whether OCR came back with far less than the text layer it was meant to replace, as when

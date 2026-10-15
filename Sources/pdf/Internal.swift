@@ -14,6 +14,7 @@ struct DebugOCR: AsyncParsableCommand {
     @Argument(help: "Paths to PDF files.") var paths: [String]
     @Option(help: "Read this page, counted from 1, through OCR instead.") var page: Int?
     @Option(help: "Turn the page by this many degrees first.") var rotation = 0
+    @Flag(help: "Print the page's OCR text.") var text = false
 
     func run() async throws {
         for path in paths {
@@ -33,6 +34,7 @@ struct DebugOCR: AsyncParsableCommand {
             }
             print("\(name) p.\(page): \(ocr.blocks.count) blocks, \(ocr.words) words, confidence "
                   + String(format: "%.2f", ocr.confidence ?? 0))
+            if text { print(ocr.text) }
             // How far each OCR block's center lies from the nearest text-layer block's center.
             let centers = result.layer.blocks.map { ($0.box.x + $0.box.width / 2, $0.box.y + $0.box.height / 2) }
             let distances = ocr.blocks.map { block -> Double in
@@ -125,10 +127,12 @@ struct DebugPages: ParsableCommand {
             print("doc \(docID.prefix(12)) · \(pageCount) pages · \(results.count) read in \(millis) ms")
             for (page, result) in results {
                 let layer = result.pageText
-                let detail = result.status == .ok
+                var detail = result.status == .ok
                     ? "\(result.method) · \(layer?.blocks.count ?? 0) blocks · \(layer?.words ?? 0) words · "
                         + "\(layer?.runTogether ?? 0) run together · parsed in \(Int(result.parseMillis)) ms"
                     : result.reason
+                if let unsure = layer?.unsure { detail += " · \(unsure.count) unsure" }
+                if let agreement = layer?.agreement { detail += " · OCR readings agree \(String(format: "%.2f", agreement))" }
                 print("p.\(page + 1) \(result.status.rawValue): \(detail)")
                 if text && result.status == .ok { print(result.text) }
             }

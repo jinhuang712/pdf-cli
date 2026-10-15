@@ -38,9 +38,9 @@ import Testing
         let url = repoRoot.appendingPathComponent("testdata/smoke/arxiv-2609.23257.pdf")
         let document = try #require(PDFDocument(url: url))
         let page = try #require(document.page(at: 1))
-        let upright = await SpaceRepair.spacesBefore(page).count
+        let upright = await SpaceRepair.breaks(page)?.spaces.count ?? 0
         page.rotation = 90
-        let turned = await SpaceRepair.spacesBefore(page).count
+        let turned = await SpaceRepair.breaks(page)?.spaces.count ?? 0
         #expect(upright > 100)
         #expect(Double(turned) > 0.9 * Double(upright))
     }

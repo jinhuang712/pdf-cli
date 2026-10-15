@@ -38,6 +38,23 @@ public struct TextBlock: Codable, Equatable, Sendable {
     public var text: String
     public var box: Box
     public var lines: [TextLine]
+    /// For a block read by OCR with enough words to judge: the share of its words that a second
+    /// OCR reading of the page also finds (see `OCR.agreement(units:check:)`).
+    public var agreement: Double? = nil
+}
+
+/// A word that two readings of the page spell with the same letters but break differently, as
+/// when PDFKit loses spaces. The agent picks one reading with `pdf pick`.
+public struct Unsure: Codable, Equatable, Sendable {
+    /// The block that holds the word, counted from 0.
+    public var block: Int
+    /// Where the word starts in the block's text, in UTF-16 units.
+    public var offset: Int
+    /// The readings: first the text layer's, as the block's text holds it, then the one with
+    /// OCR's word breaks.
+    public var readings: [String]
+    /// The line that holds the word.
+    public var box: Box
 }
 
 /// A page's text layer, as the parse stores it.
@@ -55,6 +72,14 @@ public struct PageText: Codable, Equatable, Sendable {
     /// The text layer that OCR replaced, kept so `--raw` can show it. Nothing goes missing
     /// without a trace (PHILOSOPHY.md).
     public var replacedText: String? = nil
+    /// For a page read by OCR: the share of its words that a second OCR reading also finds. Nil
+    /// when the page has too few words to judge, or the second reading failed.
+    public var agreement: Double? = nil
+    /// Words whose two readings differ in their breaks.
+    public var unsure: [Unsure]? = nil
+    /// For a text layer that looked garbled, so OCR was asked to read the page and could not:
+    /// the share of the layer's characters that are letters or digits.
+    public var layerScore: Double? = nil
 
     public var text: String { blocks.map(\.text).joined(separator: "\n\n") }
 }

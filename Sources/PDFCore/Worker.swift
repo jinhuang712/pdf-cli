@@ -115,11 +115,11 @@ public enum Worker {
             }
             let key = keyer.key(for: reference)
             let check = FontCheck(page: reference)
-            let layer: PageText
+            var layer: PageText
             let method: String
             if readAllByOCR || OCR.needed(text: page.string ?? "", images: check.images) {
                 let textLayer = TextLayer.read(page)
-                if var read = await OCR.pageText(page), !OCR.lostText(ocr: read, layer: textLayer) {
+                if var read = await OCR.pageText(page, check: true), !OCR.lostText(ocr: read, layer: textLayer) {
                     let replaced = (page.string ?? "").split(whereSeparator: \.isNewline)
                         .map { TextCleanup.line(String($0)) }.filter { !$0.isEmpty }.joined(separator: "\n")
                     if !replaced.isEmpty { read.replacedText = replaced }
@@ -127,8 +127,10 @@ public enum Worker {
                     method = "ocr"
                 } else if textLayer.words > 0 {
                     // OCR could not read the page, or read far less than its text layer holds:
-                    // the layer serves, marked so the quality checks can flag it.
-                    layer = textLayer
+                    // the layer serves, with its score, so the quality check flags it.
+                    var served = textLayer
+                    served.layerScore = OCR.layerScore(page.string ?? "")
+                    layer = served
                     method = "pdfkit+ocr-failed"
                 } else {
                     emit(WorkerEvent(kind: .result, page: index, key: key,
@@ -136,10 +138,14 @@ public enum Worker {
                     continue
                 }
             } else {
-                let repair = repairSpaces || check.pageAtRisk
-                let spaces = repair ? await SpaceRepair.spacesBefore(page) : []
-                layer = TextLayer.read(page, spacesBefore: spaces)
-                method = repair ? "pdfkit+ocr-spaces" : "pdfkit"
+                (layer, method) = await readTextLayer(page, atRisk: repairSpaces || check.pageAtRisk)
+            }
+            // Words still run together, which OCR could not break either, get a second reading
+            // split into common words.
+            if layer.runTogether > 0 {
+                let existing = layer.unsure ?? []
+                let splits = SpaceRepair.splitSpans(layer, besides: existing)
+                if !splits.isEmpty { layer.unsure = (existing + splits).sorted { ($0.block, $0.offset) < ($1.block, $1.offset) } }
             }
             let data = (try? JSONEncoder().encode(layer)).map { String(decoding: $0, as: UTF8.self) }
             let millis = Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000
@@ -147,6 +153,25 @@ public enum Worker {
                              data: data, method: method))
         }
         return 0
+    }
+
+    /// Reads a page from its text layer. A page at risk of lost spaces, or one whose words turn
+    /// out to run together, gets OCR's word breaks, and the words that OCR breaks with less
+    /// certainty become unsure spans for the agent to pick from. When OCR cannot read the page,
+    /// the layer serves as it is, and its run-together words flag it.
+    static func readTextLayer(_ page: PDFPage, atRisk: Bool) async -> (PageText, String) {
+        let plain = atRisk ? nil : TextLayer.read(page)
+        if let plain, plain.runTogether == 0 { return (plain, "pdfkit") }
+        guard let breaks = await SpaceRepair.breaks(page) else {
+            return (plain ?? TextLayer.read(page), "pdfkit+ocr-failed")
+        }
+        var repaired = TextLayer.read(page, spacesBefore: breaks.spaces)
+        if !breaks.unsure.isEmpty {
+            let relaxed = TextLayer.read(page, spacesBefore: breaks.spaces.union(breaks.unsure))
+            let spans = SpaceRepair.unsureSpans(strict: repaired, relaxed: relaxed)
+            if !spans.isEmpty { repaired.unsure = spans }
+        }
+        return (repaired, "pdfkit+ocr-spaces")
     }
 
     /// Puts the worker in macOS's background state, which runs it at the lowest priority on the

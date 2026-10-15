@@ -59,19 +59,81 @@ import Testing
 @Suite struct SpaceRepairTests {
     @Test func ocrWordBreaksGoWhereBothTextsAgree() {
         let kit = "Thequickbrown fox"
-        let spaces = SpaceRepair.align(kit: kit, ocr: "The quick brown fox")
-        #expect(spaces == [3, 8])
+        let breaks = SpaceRepair.align(kit: kit, ocr: "The quick brown fox")
+        #expect(breaks.spaces == [3, 8])
+        #expect(breaks.unsure.isEmpty)
     }
 
     @Test func aBreakAtAMismatchIsNotTrusted() {
         // OCR misread "1" as "l": the break before the misread character has no agreeing
-        // neighbour on its left, so it is not taken.
-        let spaces = SpaceRepair.align(kit: "Lee1and", ocr: "Lee l and")
-        #expect(!spaces.contains(3))
+        // neighbour on its left, so it is not taken. The break after it, at the start of the
+        // next agreeing run, goes to the agent as a second reading.
+        let breaks = SpaceRepair.align(kit: "Lee1and", ocr: "Lee l and")
+        #expect(breaks.spaces.isEmpty)
+        #expect(breaks.unsure == [4])
+    }
+
+    @Test func aWordReadInAnotherOrderIsRepairedWhereItsLettersMatch() {
+        // OCR reads the run-together line before the paragraph that PDFKit puts first, so the
+        // alignment matches the paragraph and leaves the line unmatched.
+        let paragraph = String(repeating: "a long paragraph that both readers agree on ", count: 4)
+        let line = "nineALW/WOAHeditionsviatheACLAnthology"
+        let kit = paragraph + line
+        let breaks = SpaceRepair.align(kit: kit, ocr: "nine ALW/WOAH editions via the ACL Anthology\n" + paragraph)
+        let start = paragraph.utf16.count
+        #expect(breaks.spaces.isSuperset(of: [4, 12, 20, 23, 26, 29].map { start + $0 }))
     }
 
     @Test func existingSpacesAreLeftAlone() {
-        #expect(SpaceRepair.align(kit: "a b c", ocr: "a b c").isEmpty)
+        #expect(SpaceRepair.align(kit: "a b c", ocr: "a b c") == SpaceRepair.Breaks())
+    }
+
+    func page(_ texts: [String]) -> PageText {
+        let box = Box(x: 0.1, y: 0.1, width: 0.8, height: 0.05)
+        return PageText(blocks: texts.map { TextBlock(text: $0, box: box, lines: [TextLine(text: $0, box: box)]) },
+                        words: 0, runTogether: 0)
+    }
+
+    @Test func aWordTheSecondReadingSplitsIsUnsure() {
+        let spans = SpaceRepair.unsureSpans(strict: page(["Data", "We see timeseries are hard."]),
+                                            relaxed: page(["Data", "We see time series are hard."]))
+        #expect(spans.map(\.readings) == [["timeseries", "time series"]])
+        #expect(spans.first?.block == 1)
+        #expect(spans.first?.offset == 7)
+    }
+
+    @Test func punctuationStaysOutOfTheReadings() {
+        let spans = SpaceRepair.unsureSpans(strict: page(["see (inhigh) and (inlow"]),
+                                            relaxed: page(["see (in high) and ( inlow"]))
+        #expect(spans.map(\.readings) == [["inhigh", "in high"]])
+        #expect(spans.first?.offset == 5)
+    }
+
+    @Test func onlyBreaksTheWordListBacksCount() {
+        let spans = SpaceRepair.unsureSpans(
+            strict: page(["See Table and CTRLperforms well on 𝑁test and statistics"]),
+            relaxed: page(["See T able and CTRL performs well on 𝑁 test and s tatistics"]))
+        #expect(spans.map(\.readings) == [["CTRLperforms", "CTRL performs"], ["𝑁test", "𝑁 test"]])
+    }
+
+    func split(_ word: String) -> String? {
+        SpaceRepair.splitSpans(page([word]), besides: []).first?.readings[1]
+    }
+
+    @Test func wordsBothReadersRunTogetherSplitIntoCommonWords() {
+        #expect(split("singledatasetperconditionandshouldbetreated") == "single dataset per condition and should be treated")
+        #expect(split("Alldatasetsarepubliclyavailableoravailableupon") == "All datasets are publicly available or available upon")
+        #expect(split("conditionandRU-ENEmotionusesemotionlabels") == "condition and RU-EN Emotion uses emotion labels")
+        #expect(split("FirstspecialisthandlingTRENDcorrection") == "First specialist handling TREND correction")
+    }
+
+    @Test func aLongWordWithNoCleanSplitStays() {
+        #expect(split("Donaudampfschifffahrtsgesellschaft") == nil)
+        #expect(split("Twoprompttemplateswereusedthroughouttheexpe") == nil)
+    }
+
+    @Test func spacingInsideFormulasIsNoWordDifference() {
+        #expect(SpaceRepair.unsureSpans(strict: page(["so x2+3=y holds"]), relaxed: page(["so x2 + 3 = y holds"])).isEmpty)
     }
 }
 
