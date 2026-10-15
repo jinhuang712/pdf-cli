@@ -1,0 +1,20 @@
+# Reports
+
+Each task gets one report: what was built, what was measured, what the independent review found with how each finding was resolved, and which tests ran. A report is written on the task's branch before the task lands, and then stays as written, as the record of that day. The current design lives in [DESIGNS.md](../DESIGNS.md), and follow-ups without a milestone in [TODO.md](../TODO.md).
+
+- **Machine:** an M3 MacBook with 24 GB, macOS 26.4, unless a report says otherwise.
+- **Reviews:** each one comes from a separate Claude agent that did not write the code. It reads the commit, builds it, and reproduces what it can. Its verdicts are *confirmed* (reproduced or proven by reading) or *likely* (traced, not reproduced).
+- **Written after the fact:** the reports for M1.1 to M1.7 were written on 2026-10-15, after those tasks landed, from the reviewers' reports and the session's notes. Where a report says *not re-checked*, the resolution comes from the notes alone.
+
+The spike's reports (M0) are in [spike/](../spike/README.md).
+
+| Task | Landed | Review | Report |
+|---|---|---|---|
+| M1.1 Worker processes and the cache | 2026-10-15 | 1 high, 2 medium, 4 low; 6 fixed, 1 partly | [M1.1](M1.1-workers-and-cache.md) |
+| M1.2 Text layer, font check, space repair | 2026-10-15 | 1 high, 7 smaller; all fixed | [M1.2](M1.2-text-layer.md) |
+| M1.4 Apple OCR | 2026-10-15 | 3 confirmed, 5 smaller; all fixed | [M1.4](M1.4-ocr.md) |
+| M1.15 Worker pool | 2026-10-15 | 1 confirmed, 3 likely, 2 doc gaps; all fixed | [M1.15](M1.15-worker-pool.md) |
+| M1.3 Quality checks | 2026-10-15 | no wrong text; 10 smaller; all but 1 fixed | [M1.3](M1.3-quality-checks.md) |
+| M1.5 Library commands | 2026-10-15 | 2 data bugs, 8 smaller; all but 1 fixed | [M1.5](M1.5-library.md) |
+| M1.7 `pdf read` | 2026-10-15 | 1 wrong text, 1 endless loop, 7 smaller; all fixed | [M1.7](M1.7-read.md) |
+| M1.6 `pdf info` | — | review back, fixes in progress | — |

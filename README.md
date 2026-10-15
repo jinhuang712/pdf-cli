@@ -54,6 +54,7 @@ The commands below are planned, and none is built yet.
 | [ROADMAP.md](ROADMAP.md) | When, and how far along? |
 | [CHANGELOG.md](CHANGELOG.md) | What changed in each release? |
 | [TODO.md](TODO.md) | Which small follow-ups have no milestone yet? |
+| [reports/](reports/README.md) | What did each task's review and measurements find? |
 
 ## License
 
