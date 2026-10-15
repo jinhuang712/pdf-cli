@@ -290,7 +290,7 @@ Settings: none.
 
 Marks where a reader's eye would miss text, and keeps that text's words out of the agent's way until it asks.
 
-Text that renders invisible, such as text in the color behind it, tiny text, clipped text, text covered by an image, text off the page or text in a layer switched off, is replaced by a marker in normal output. The marker sits where the text sat, and gives its size, how it was hidden and the command that shows it:
+Text that renders invisible, such as text in the color behind it, tiny text, clipped text, text covered by an image, a shape or an annotation, text off the page or text in a layer switched off, is replaced by a marker in normal output. The marker sits where the text sat, and gives its size, how it was hidden and the command that shows it:
 
 ```text
 ¶3 Visible start of a line, [hidden: 3 words, in the color behind it · show: pdf read paper.pdf --page 1 --include-hidden] visible end.
@@ -303,10 +303,11 @@ Very faint text, under a contrast of 1.3 to 1 with what lies behind it, as #EEEE
 Gap:
 - A word set at an angle, as a chart's slanted label, is checked for its size, but not for ink, since PDFKit's boxes for it miss its ink.
 - On a page whose images cover most of it, as a scan's or a slide's background, text in the invisible mode, or drawn with no opacity, reads as text, as a scan's own text layer does. Text drawn to show there gets every check.
-- Text over a photo always counts as seen: the photo's own ink cannot tell whether the text shows. So does white text with shapes drawn inside its box other than rules across it, as bars between its letters.
-- Text in a script OCR does not read, as Greek or Hebrew, under an image that lets part of it through by a blend mode, a stencil or a color key, counts as seen.
+- Text over a photo always counts as seen: the photo's own ink cannot tell whether the text shows. So does white text with shapes drawn inside its box other than rules across it, as bars between its letters, and text in the invisible mode, or white, laid over other text that shows: the other text's ink stands for its own.
+- Text under a shape drawn after it counts as hidden when the shape leaves no ink there, or is an opaque rectangle or an axial shading over it; under other shapes, as stripes, a pattern or a stamp annotation's picture, with ink of their own, it counts as seen.
+- Text in a script OCR does not read, as Greek or Hebrew, under an image that lets part of it through by a blend mode, a stencil or a color key, counts as seen. A word OCR misreads there by more than one letter, as a label of look-alike letters, "Il1O0", read as "100", counts as covered.
 - Letters hidden one by one count only in a word of letters and digits set across the page: in maths, and in a word set down the page, such letters read as text.
-- OCR checks at most 8 places a page under images that blend or that the drawing commands cannot read; past them, text there counts as seen, and the page says its check is incomplete.
+- OCR checks at most 24 places a page under images that blend or that the drawing commands cannot read, and stops after 3 s, the page's own drawing included; past that, text there counts as seen, and the page says its check is incomplete.
 - Text that runs off the page part-way keeps the part on the page as text.
 
 Settings: none.

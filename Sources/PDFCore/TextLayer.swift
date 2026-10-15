@@ -401,7 +401,7 @@ enum TextLayer {
         var hiddenEnd = Set<Int>()
         if let visibility {
             let widths = Dictionary(characters.map { ($0.index, $0.width) }, uniquingKeysWith: { first, _ in first })
-            // The line's usual glyph height, against which a word set at an angle stands out.
+            // The line's usual glyph height, for a word whose own glyphs have no boxes.
             let glyphHeight = median(characters.compactMap { glyphs.boxes[$0.index]?.height }.filter { $0 > 0 })
             var previous: HiddenReason?
             for word in words where !word.isEmpty {
@@ -413,21 +413,27 @@ enum TextLayer {
                 let spelled = word.map { text.substring(with: NSRange(location: $0, length: widths[$0] ?? 1)) }.joined()
                 // Letters that run neither straight across nor straight down, as a chart's label
                 // set at an angle: PDFKit's boxes for them hold other words' ink. Such a word's
-                // box is several glyphs tall and wide.
-                let straight = glyphHeight == 0 || min(rect.width, rect.height) <= 2.5 * glyphHeight
+                // box is several of its own glyphs tall and wide; small glyphs beside large ones
+                // on a line cannot make the large ones look slanted.
+                let own = median(word.compactMap { glyphs.boxes[$0]?.height }.filter { $0 > 0 })
+                let glyph = own > 0 ? own : glyphHeight
+                let straight = glyph == 0 || min(rect.width, rect.height) <= 2.5 * glyph
                 // Letters squeezed into slivers by horizontal scaling, or stacked on one spot by
                 // negative spacing, as each character's own box shows: a sliver against the font
                 // size, and stacked letters moving on by a tenth of their boxes' size from one to
                 // the next. Narrow letters in condensed type still move on by most of their width,
                 // and letters set at an angle by their width, though their boxes overlap.
                 // A glyph stacked on the one before has no width left, and PDFKit gives it none.
+                // The font size most of the word's letters have: a large glyph PDFKit joins to
+                // small ones, as a drop cap, does not make them slivers.
+                let typical = median(word.map { glyphs.sizes[$0] }.filter { $0 > 0 })
                 let all = word.compactMap { glyphs.boxes[$0] }
                 let boxes = all.filter { $0.width > 0 && $0.height > 0 }
                 var squeezed = false
-                if size >= 2, all.count >= 2 {
-                    squeezed = median(all.map { min($0.width, $0.height) }) < 0.1 * size
+                if typical >= 2, all.count >= 2 {
+                    squeezed = median(all.map { min($0.width, $0.height) }) < 0.1 * typical
                 }
-                if size >= 2, boxes.count >= 2 {
+                if typical >= 2, boxes.count >= 2 {
                     let steps = zip(boxes, boxes.dropFirst()).map { hypot($1.midX - $0.midX, $1.midY - $0.midY) }
                     squeezed = squeezed || steps.reduce(0, +) / CGFloat(steps.count) < 0.1 * median(boxes.map { max($0.width, $0.height) })
                 }
@@ -457,9 +463,18 @@ enum TextLayer {
                 guard let firstWordy = wordy.firstIndex(of: true), let lastWordy = wordy.lastIndex(of: true),
                       wordy[firstWordy...lastWordy].allSatisfy({ $0 }),
                       characters.indices.allSatisfy({ wordy[$0] || characters[$0].allSatisfy(\.isPunctuation) }) else { continue }
+                // A letter of another color is judged against the color behind it alone, as white
+                // letters on a highlight behind just them, and by the test ink takes.
                 var unseen = [Bool](repeating: false, count: word.count)
+                var behind = [Color?](repeating: nil, count: word.count)
                 if Set(colors.compactMap { $0.map { "\($0.red) \($0.green) \($0.blue)" } }).count > 1 {
-                    unseen = zip(colors, wordy).map { color, wordy in wordy && color.map { $0.distance(ink.background) < 0.2 } == true }
+                    for (position, index) in word.enumerated() where wordy[position] {
+                        guard let color = colors[position] else { continue }
+                        let letter = visibility.box(of: NSRange(location: index, length: widths[index] ?? 1))
+                        let background = letter.flatMap { visibility.ink(in: $0.insetBy(dx: 0, dy: -1))?.background } ?? ink.background
+                        behind[position] = background
+                        unseen[position] = !color.stands(apartFrom: background)
+                    }
                 }
                 if visibility.gapped(ink, height: rect.height) {
                     for (position, index) in word.enumerated() where wordy[position] && !unseen[position] {
@@ -472,7 +487,7 @@ enum TextLayer {
                 guard unseen.contains(true) && unseen.contains(false) else { continue }
                 for (position, index) in word.enumerated() where unseen[position] {
                     if position == 0 || !unseen[position - 1] {
-                        let inColor = colors[position].map { $0.distance(ink.background) < 0.2 } == true
+                        let inColor = colors[position].map { !$0.stands(apartFrom: behind[position] ?? ink.background) } == true
                         hiddenStart[index] = inColor ? .background : .invisible
                     }
                     if position == word.count - 1 || !unseen[position + 1] { hiddenEnd.insert(index) }

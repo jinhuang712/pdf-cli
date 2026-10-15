@@ -9,9 +9,11 @@ import Testing
     static let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
         .deletingLastPathComponent().appendingPathComponent("testdata/hidden/hidden.pdf")
 
-    func layer(_ index: Int) throws -> PageText {
-        let page = try #require(PDFDocument(url: Self.fixture)?.page(at: index))
-        return TextLayer.read(page, visibility: Visibility(page: page))
+    /// A page's text, read as the worker reads it, with its document open throughout.
+    func layer(_ index: Int, in url: URL = Self.fixture) throws -> PageText {
+        let document = try #require(PDFDocument(url: url))
+        let page = try #require(document.page(at: index))
+        return withExtendedLifetime(document) { TextLayer.read(page, visibility: Visibility(page: page)) }
     }
 
     /// The hidden runs of a page, as their words and reasons.
@@ -30,7 +32,17 @@ import Testing
                       (10, .covered), (11, .invisible), (12, .invisible), (13, .tiny), (14, .background),
                       // Between grey rules and in a cell's frame; squeezed and stacked short words;
                       // under images with a solid soft mask or drawn at 95%.
-                      (15, .background), (19, .tiny), (23, .covered)])
+                      (15, .background), (19, .tiny), (23, .covered),
+                      // Third review: a form switched off that shares words with the page; under
+                      // an annotation, a shading, a white box with bars on it, a black box with
+                      // labels on it; large white words beside small dots; under a keyed picture
+                      // with its words shown below it; letters overlapping by three quarters; white
+                      // words beside a large invisible string on a background image; marked
+                      // content whose layer membership is off.
+                      (33, .invisible), (34, .invisible), (35, .invisible), (36, .invisible), (37, .invisible),
+                      (38, .background), (39, .covered), (40, .tiny), (41, .background), (42, .invisible),
+                      // An annotation on a page whose media box starts away from the origin.
+                      (43, .invisible)])
     func eachTrickHidesItsPlantedLineAndOnlyIt(page: Int, reason: HiddenReason) throws {
         let layer = try layer(page)
         let runs = hidden(layer)
@@ -89,12 +101,34 @@ import Testing
     /// picture: a reader sees each.
     @Test(arguments: [(8, "White on a dark box"), (9, "Words of a scan"), (20, "lilt fill tilt, still ill."),
                       (20, "Lilliput fillip, illicit skill."), (21, "Latin words under the clear image."),
-                      (22, "Tag10"), (24, "A label drawn over a picture.")])
+                      (22, "Tag10"), (24, "A label drawn over a picture."),
+                      // Third review: words beside a turned and a round picture, under groups drawn
+                      // faint or blending, under a picture in a layer switched off, between two
+                      // thumbnails of one picture, partly white on a highlight, partly pale grey.
+                      (25, "corner"), (26, "nook"), (27, "Readable words under a faint group picture."),
+                      (28, "Readable words under a multiplied group picture."), (29, "Readable words under a picture nobody sees."),
+                      (30, "between"), (31, "Highlighted words, the last letters white on blue."),
+                      (32, "Palegrey letters, the second half pale.")])
     func textAReaderSeesStaysText(page: Int, words: String) throws {
         let layer = try layer(page)
         #expect(hidden(layer).isEmpty)
         #expect(layer.offPage == nil)
         #expect(layer.blocks.map(\.visibleText).joined(separator: " ").contains(words))
+    }
+
+    /// A form in a layer switched off hides the words it shows where it shows them, not the
+    /// page's own words that it shares.
+    @Test func aFormSwitchedOffLeavesThePagesOwnWords() throws {
+        let visible = try layer(33).blocks.map(\.visibleText).joined(separator: " ")
+        #expect(visible.contains("The method and the results of this report are clear."))
+    }
+
+    /// Pages drawn in ways that once crashed the check read, and their visible lines stay text.
+    @Test(arguments: 0..<6)
+    func pagesThatCrashedTheCheckRead(page index: Int) throws {
+        let url = Self.fixture.deletingLastPathComponent().appendingPathComponent("broken.pdf")
+        let visible = try layer(index, in: url).blocks.map(\.visibleText).joined(separator: " ")
+        #expect(visible.contains(index == 3 ? "Words on a page larger than any." : "Visible words before the trick on this page."))
     }
 
     /// Greek, which OCR does not read, under an image with a clear soft mask and under one drawn
