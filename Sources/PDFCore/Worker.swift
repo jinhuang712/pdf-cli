@@ -197,6 +197,9 @@ public enum Worker {
         switch kind {
         case "hang":
             while true { sleep(60) }
+        case "background-hang":
+            // Hangs only in the background state, as a throttled worker can seem to.
+            while getpriority(PRIO_DARWIN_PROCESS, 0) == 1 { sleep(1) }
         case "alloc":
             var blocks: [UnsafeMutableRawPointer] = []
             while true {

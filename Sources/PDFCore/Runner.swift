@@ -129,7 +129,8 @@ public final class Runner: @unchecked Sendable {
             }
             while fileFailure == nil {
                 // An index worker that stopped gave its slot back, so the next one waits for a slot.
-                guard let slot = indexSlot ?? waitForSlot(foreground: true),
+                guard let slot = indexSlot ?? waitForSlot(foreground: true, supervising: [sampler].compactMap { $0 },
+                                                          handle: handle),
                       let worker = startWorker(["index", path, "--from", String(start)], pages: [], slot: slot,
                                                foreground: true) else {
                     if let sampler { stop(sampler, reason: "the index could not start", kind: .runner) }
@@ -254,6 +255,9 @@ public final class Runner: @unchecked Sendable {
         }
         var alone: [Int] = []
         var triedAlone: Set<Int> = []
+        // Pages whose background worker hit a time limit. A throttled worker may hit it through no
+        // fault of the page, so the page gets one more try at full speed before it fails.
+        var fullSpeed: Set<Int> = []
         var attempts: [Int: Int] = [:]
         var workers: [Supervised] = []
         var changed = false
@@ -292,7 +296,8 @@ public final class Runner: @unchecked Sendable {
                 return .aborted
             }
 
-            let requested = requestedPages(docID: docID, keys: keys, firstIndex: firstIndex)
+            // Pages a command waits on, and pages owed a try at full speed, run in the foreground.
+            let requested = requestedPages(docID: docID, keys: keys, firstIndex: firstIndex) + fullSpeed.sorted()
             promote(workers, requested: requested)
             var waitingForSlot = false
             while workers.count < capacity, !(pending.isEmpty && alone.isEmpty) {
@@ -358,9 +363,12 @@ public final class Runner: @unchecked Sendable {
                     continue
                 }
                 let reason = worker.endReason
+                if worker.startedInBackground && worker.stopKind == .silence { fullSpeed.formUnion(unreported) }
                 if let page = worker.blamedPage, unreported.contains(page) {
                     unreported.removeAll { $0 == page }
                     switch worker.stopKind {
+                    case .pageTime where worker.startedInBackground && fullSpeed.insert(page).inserted:
+                        pending.insert(page, at: 0)
                     case .pageTime:
                         save(page, .failed(reason))
                     case .memory:
@@ -437,6 +445,9 @@ public final class Runner: @unchecked Sendable {
         var slot: WorkerPool.Slot?
         /// The worker runs in macOS's background state, for pages nobody waits on yet.
         var inBackground = false
+        /// The worker began in the background state, so a time limit may have been the
+        /// throttling's doing, even if a request promoted it later.
+        var startedInBackground = false
 
         init(id: Int, pid: pid_t, pages: [Int]) {
             self.id = id
@@ -484,6 +495,7 @@ public final class Runner: @unchecked Sendable {
         let worker = Supervised(id: id, pid: pid, pages: pages)
         worker.slot = slot
         worker.inBackground = !foreground
+        worker.startedInBackground = !foreground
         return worker
     }
 
@@ -501,11 +513,17 @@ public final class Runner: @unchecked Sendable {
     }
 
     /// Waits until the pool has a slot for this work. Returns nil when another runner took the
-    /// file over in the meantime.
-    func waitForSlot(foreground: Bool) -> WorkerPool.Slot? {
+    /// file over in the meantime. Workers already running stay supervised while it waits, so
+    /// their limits hold and their slots go back as they exit.
+    func waitForSlot(foreground: Bool, supervising workers: [Supervised] = [],
+                     handle: (Supervised, WorkerEvent) -> Void = { _, _ in }) -> WorkerPool.Slot? {
         while !mutex.locked({ lostLock }) {
             if let slot = WorkerPool.acquire(foreground: foreground) { return slot }
-            Thread.sleep(forTimeInterval: 0.02)
+            if workers.contains(where: { !$0.finished }) {
+                step(workers, handle: handle)
+            } else {
+                Thread.sleep(forTimeInterval: 0.02)
+            }
         }
         return nil
     }

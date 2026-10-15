@@ -63,8 +63,9 @@ public enum Env {
         return url.resolvingSymlinksInPath().path
     }
 
-    /// A fault that a test plants in a worker, such as "hang:3", "alloc:3" or "crash:3",
-    /// where 3 is a page index counted from 0. The prefix "index-" moves it to the index.
+    /// A fault that a test plants in a worker, such as "hang:3", "alloc:3", "crash:3" or
+    /// "background-hang:3", where 3 is a page index counted from 0. The prefix "index-" moves
+    /// it to the index.
     static var testFault: (kind: String, page: Int)? {
         guard let value = variables["PDF_CLI_TEST_FAULT"] else { return nil }
         let parts = value.split(separator: ":")

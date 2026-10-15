@@ -129,8 +129,22 @@ slow=testdata/smoke/arxiv-2609.23257.pdf
 promote() { PDF_CLI_HOME=$work/promote PDF_CLI_WORKERS=2 PDF_CLI_LOG=$work/promote-log.txt $pdf debug-pages $slow "$@" 2>&1; }
 promote --page 1 >/dev/null
 check "a page a background worker holds still reads" "p.3 ok" "$(promote --page 3)"
-check "asking for it brings the worker to full speed" "left the background" "$(cat "$work/promote-log.txt")"
+check "asking for it brings the worker to full speed" "promoted worker" "$(cat "$work/promote-log.txt")"
 check "a full read brings the rest to full speed too" "18 read" "$(promote)"
+
+# A page that runs out of time in the background, as a throttled worker can, gets one more try
+# at full speed before it fails for good.
+home=$work/background-hang
+PDF_CLI_HOME=$home PDF_CLI_PAGE_TIME_LIMIT=2 PDF_CLI_TEST_FAULT=background-hang:5 \
+    $pdf debug-pages $paper --page 1 >/dev/null 2>&1
+for _ in $(seq 30); do
+    pgrep -f "pdf __runner .*$(basename $paper)" >/dev/null || break
+    sleep 1
+done
+check "a page that ran out of time in the background reads at full speed" "p.6 ok" \
+    "$(PDF_CLI_HOME=$home $pdf debug-pages $paper --page 6 2>&1)"
+
+check "page 0 is out of range" "page 0 is out of range" "$(run $pdf debug-pages $paper --page 0)"
 
 # Pages nobody waits for parse slowly, at background priority, so runners get a minute to finish.
 for _ in $(seq 60); do
