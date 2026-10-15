@@ -119,7 +119,10 @@ public enum Output {
             if whole.kind == .lowQuality, let layer {
                 if raw {
                     unit.blocks += layer.blocks.enumerated().map { index, block in
-                        Block(kind: .doubtful, page: number, block: index + 1, box: block.box, text: block.text, status: whole.kind.rawValue)
+                        Block(kind: .doubtful, page: number, block: index + 1, box: block.box,
+                              text: shown(block.text, pick: nil, choices: [], hidden: block.hidden ?? [], includeHidden: includeHidden,
+                                          path: path, page: number),
+                              status: whole.kind.rawValue)
                     }
                 } else {
                     unit.doubtful = layer.blocks.count
@@ -133,7 +136,9 @@ public enum Output {
                                                           region: expanded(block.box, lines: block.lines), path: path, raw: raw)],
                                     flag: status(doubt))
                     if raw {
-                        unit.blocks.append(Block(kind: .doubtful, page: number, block: index + 1, box: block.box, text: block.text,
+                        unit.blocks.append(Block(kind: .doubtful, page: number, block: index + 1, box: block.box,
+                                                 text: shown(block.text, pick: nil, choices: [], hidden: block.hidden ?? [],
+                                                             includeHidden: includeHidden, path: path, page: number),
                                                  status: doubt.kind.rawValue))
                     } else {
                         unit.doubtful = 1
@@ -168,6 +173,14 @@ public enum Output {
                 let words = offPage.joined(separator: " ")
                 var unit = Unit(blocks: [Block(kind: .hidden, page: number,
                                                text: marker(words, reason: .offPage, includeHidden: includeHidden, path: path, page: number))])
+                unit.hidden = 1
+                result.units.append(unit)
+            }
+            if layer.hiddenCheckIncomplete == true {
+                var unit = Unit(blocks: [Block(kind: .hidden, page: number, text: """
+                    [hidden-text check incomplete: the page draws more than the check reads, so some hidden text may read as \
+                    text · look: pdf crop \(path) --page \(number)]
+                    """)])
                 unit.hidden = 1
                 result.units.append(unit)
             }
@@ -263,6 +276,7 @@ public enum Output {
                         let shownHere = kept.count - (resumed ? 1 : 0)
                         if kept.count < text.count && shownHere > 0 {
                             var cut = Unit(blocks: [unit.blocks[0]], holdsText: true)
+                            cut.hidden = unit.hidden
                             cut.blocks[0].text = kept + "…"
                             emit(cut, page: number)
                             next = continuation(number, first.block, (resumed ? offset ?? 0 : 0) + shownHere)

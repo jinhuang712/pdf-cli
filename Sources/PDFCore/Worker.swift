@@ -171,8 +171,9 @@ public enum Worker {
             if readAllByOCR || OCR.needed(text: page.string ?? "", images: check.images) {
                 let textLayer = TextLayer.read(page, visibility: Visibility(page: page))
                 if var read = await OCR.pageText(page, check: true), !OCR.lostText(ocr: read, layer: textLayer) {
-                    let replaced = (page.string ?? "").split(whereSeparator: \.isNewline)
-                        .map { TextCleanup.line(String($0)) }.filter { !$0.isEmpty }.joined(separator: "\n")
+                    // The replaced layer, which `--raw` shows, as a reader would see it: what it
+                    // hides stays out.
+                    let replaced = textLayer.blocks.map(\.visibleText).filter { !$0.isEmpty }.joined(separator: "\n")
                     if !replaced.isEmpty { read.replacedText = replaced }
                     layer = read
                     method = "ocr"

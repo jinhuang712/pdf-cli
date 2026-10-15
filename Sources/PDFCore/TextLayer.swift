@@ -106,6 +106,9 @@ public struct PageText: Codable, Equatable, Sendable {
     /// Text the page places off the page, as its strings spell it. PDFKit leaves it out of the
     /// page's text, so it has no block.
     public var offPage: [String]? = nil
+    /// The check for hidden text stopped at a limit on this page, as forms nested deeper than it
+    /// reads, so some hidden text may read as text.
+    public var hiddenCheckIncomplete: Bool? = nil
 
     public var text: String { blocks.map(\.text).joined(separator: "\n\n") }
 }
@@ -117,21 +120,21 @@ struct Glyphs {
     let boxes: [CGRect?]
     let sizes: [CGFloat]
     let raises: [CGFloat]
-    /// Each character's text color, from 0 for black to 1 for white, or -1 when unknown.
-    let brightness: [CGFloat]
+    /// Each character's text color, when PDFKit gives it.
+    let colors: [Color?]
 
-    init(boxes: [CGRect?], sizes: [CGFloat], raises: [CGFloat], brightness: [CGFloat] = []) {
+    init(boxes: [CGRect?], sizes: [CGFloat], raises: [CGFloat], colors: [Color?] = []) {
         self.boxes = boxes
         self.sizes = sizes
         self.raises = raises
-        self.brightness = brightness
+        self.colors = colors
     }
 
     init(_ page: PDFPage, _ text: NSString) {
         boxes = Glyphs.boxes(page, text)
         var sizes = [CGFloat](repeating: 0, count: text.length)
         var raises = [CGFloat](repeating: 0, count: text.length)
-        var brightness = [CGFloat](repeating: -1, count: text.length)
+        var colors = [Color?](repeating: nil, count: text.length)
         if let attributed = page.attributedString, attributed.length == text.length {
             let whole = NSRange(location: 0, length: attributed.length)
             attributed.enumerateAttribute(.font, in: whole) { value, range, _ in
@@ -143,13 +146,14 @@ struct Glyphs {
                 for index in range.location..<NSMaxRange(range) { raises[index] = raise }
             }
             attributed.enumerateAttribute(.foregroundColor, in: whole) { value, range, _ in
-                guard let gray = (value as? NSColor)?.usingColorSpace(.genericGray) else { return }
-                for index in range.location..<NSMaxRange(range) { brightness[index] = gray.whiteComponent }
+                guard let rgb = (value as? NSColor)?.usingColorSpace(.sRGB) else { return }
+                let color = Color(red: rgb.redComponent, green: rgb.greenComponent, blue: rgb.blueComponent)
+                for index in range.location..<NSMaxRange(range) { colors[index] = color }
             }
         }
         self.sizes = sizes
         self.raises = raises
-        self.brightness = brightness
+        self.colors = colors
     }
 
     /// The boxes of a page's characters. PDFKit's `characterBounds(at:)` counts glyphs, not
@@ -288,6 +292,7 @@ enum TextLayer {
         var layer = PageText(blocks: blocks, words: TextCleanup.wordCount(joined),
                              runTogether: TextCleanup.runTogetherWords(joined))
         if let offPage = visibility?.drawing.offPage.filter({ !$0.isEmpty }), !offPage.isEmpty { layer.offPage = offPage }
+        if visibility?.drawing.incomplete == true { layer.hiddenCheckIncomplete = true }
         return layer
     }
 
@@ -303,8 +308,9 @@ enum TextLayer {
     static func isMark(_ scalar: Unicode.Scalar) -> Bool { (0xFDD0...0xFDEF).contains(scalar.value) }
 
     /// A block's text without the marks, and its hidden runs. Runs of one reason that only spaces
-    /// part become one, and a run of fewer than 3 letters or digits, as a maths symbol whose box
-    /// PDFKit places off its ink, counts as seen: it can carry no instruction.
+    /// part become one, and a run without 3 letters or digits in a row counts as seen: a maths
+    /// symbol whose box PDFKit places off its ink, or the stray marks of a scan's old OCR layer,
+    /// as "I I I", carry no instruction.
     static func hiddenRuns(_ marked: String) -> (text: String, hidden: [Hidden]) {
         guard marked.unicodeScalars.contains(where: isMark) else { return (marked, []) }
         var text = String.UnicodeScalarView()
@@ -336,7 +342,7 @@ enum TextLayer {
         }
         let kept = merged.filter { run in
             String(decoding: units[run.offset..<run.offset + run.length], as: UTF16.self)
-                .filter { $0.isLetter || $0.isNumber }.count >= 3
+                .split(whereSeparator: { !($0.isLetter || $0.isNumber) }).contains { $0.count >= 3 }
         }
         return (plain, kept)
     }
@@ -388,19 +394,50 @@ enum TextLayer {
             let widths = Dictionary(characters.map { ($0.index, $0.width) }, uniquingKeysWith: { first, _ in first })
             // The line's usual glyph height, against which a word set at an angle stands out.
             let glyphHeight = median(characters.compactMap { glyphs.boxes[$0.index]?.height }.filter { $0 > 0 })
+            var previous: HiddenReason?
             for word in words where !word.isEmpty {
+                defer { previous = hiddenStart[word[0]] }
                 let end = word[word.count - 1] + (widths[word[word.count - 1]] ?? 1)
                 guard let rect = visibility.box(of: NSRange(location: word[0], length: end - word[0])) else { continue }
                 let size = word.map { glyphs.sizes[$0] }.max() ?? 0
-                let known = word.compactMap { glyphs.brightness.indices.contains($0) && glyphs.brightness[$0] >= 0 ? glyphs.brightness[$0] : nil }
-                let brightness = known.isEmpty ? nil : known.reduce(0, +) / CGFloat(known.count)
+                let colors = word.map { glyphs.colors.indices.contains($0) ? glyphs.colors[$0] : nil }
+                let spelled = word.map { text.substring(with: NSRange(location: $0, length: widths[$0] ?? 1)) }.joined()
                 // Letters that run neither straight across nor straight down, as a chart's label
-                // set at an angle: PDFKit's boxes for them miss their ink, so ink cannot judge them.
-                // Such a word's box is several glyphs tall and wide.
+                // set at an angle: PDFKit's boxes for them hold other words' ink. Such a word's
+                // box is several glyphs tall and wide.
                 let straight = glyphHeight == 0 || min(rect.width, rect.height) <= 2.5 * glyphHeight
-                if let reason = visibility.reason(rect, size: size, brightness: brightness, inkTells: straight) {
+                // Letters squeezed into slivers by horizontal scaling, or stacked on one spot by
+                // negative spacing, as each character's own box shows against the font size.
+                let boxes = word.compactMap { glyphs.boxes[$0] }.filter { $0.width > 0 && $0.height > 0 }
+                var squeezed = false
+                if size >= 2, boxes.count >= 3 {
+                    let span = boxes.dropFirst().reduce(boxes[0]) { $0.union($1) }
+                    let laidEnd = boxes.reduce(0) { $0 + max($1.width, $1.height) }
+                    squeezed = median(boxes.map { min($0.width, $0.height) }) < 0.1 * size
+                        || (boxes.count >= 4 && max(span.width, span.height) < 0.3 * laidEnd)
+                }
+                if let reason = visibility.reason(rect, text: spelled, size: size, color: colors.compactMap { $0 }.first,
+                                                  straight: straight, squeezed: squeezed) {
                     hiddenStart[word[0]] = reason
                     hiddenEnd.insert(word[word.count - 1])
+                } else if previous == .covered, spelled.filter({ $0.isLetter || $0.isNumber }).count < 3,
+                          visibility.underCovering(rect) {
+                    // OCR cannot vouch for a word of one or two letters, so under the same image
+                    // it goes with the covered word before it.
+                    hiddenStart[word[0]] = .covered
+                    hiddenEnd.insert(word[word.count - 1])
+                } else if Set(colors.compactMap { $0.map { "\($0.red) \($0.green) \($0.blue)" } }).count > 1,
+                          let background = visibility.background(of: rect) {
+                    // A word whose letters are drawn some in ink and some in the color behind
+                    // them reads as its inked letters alone: the others are hidden, letter by letter.
+                    // A word of one color is judged whole, above.
+                    let unseen = colors.map { $0.map { $0.distance(background) < 0.2 } ?? false }
+                    if unseen.contains(true) && unseen.contains(false) {
+                        for (position, index) in word.enumerated() where unseen[position] {
+                            if position == 0 || !unseen[position - 1] { hiddenStart[index] = .background }
+                            if position == word.count - 1 || !unseen[position + 1] { hiddenEnd.insert(index) }
+                        }
+                    }
                 }
             }
         }

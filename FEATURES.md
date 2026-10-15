@@ -298,8 +298,11 @@ Text that renders invisible, such as text in the color behind it, tiny text, cli
 
 White text on a dark box stays in, because a reader can see it. The summary line says how many hidden places the output marks, and on which pages. `--include-hidden` shows their words in place, each labelled with its reason, as in `[hidden, in the color behind it: …]`. The text layer on a scanned page is read normally. A hidden run is words, so a run of fewer than 3 letters or digits stays in. Hidden words stay out of `pdf search`, by keyword and by pattern, and out of the title and sections `pdf info` finds.
 
+Very faint text, under a contrast of 1.3 to 1 with what lies behind it, as #EEEEEE on white, counts as hidden; pale grey such as #D9D9D9 reads as text. A page where the check stopped at a limit says so in place.
+
 Gap:
-- A word set at an angle, as a chart's slanted label, is checked for its size and for an image over it, but not for ink, since PDFKit's boxes for it miss its ink.
+- A word set at an angle, as a chart's slanted label, is checked for its size, but not for ink, since PDFKit's boxes for it miss its ink.
+- On a page whose images cover most of it, as a scan's or a slide's background, only text in the color behind it and type under 2 pt count as hidden: text in the invisible mode there reads as text, as a scan's own text layer does.
 - Text over a photo always counts as seen: the photo's own ink cannot tell whether the text shows.
 - Text that runs off the page part-way keeps the part on the page as text.
 
