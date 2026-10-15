@@ -241,6 +241,31 @@ One SQLite file holds the cache and both kinds of search.
 | qmd | Keyword search, search by meaning and reranking, with an MCP server already built. | Needs Node, reads only Markdown files, and keeps its index apart from our page positions. |
 | Tantivy | A fast full-text engine. | A Rust dependency in a Swift project, and a second store beside the cache. |
 
+## Decision: macOS's Library folders, with no size limit — 2026-10-15
+
+What the tool can rebuild from the PDFs goes to `~/Library/Caches/pdf-cli/`: the SQLite cache with its keyword index, and the crop images. The agent's own work goes to `~/Library/Application Support/pdf-cli/`: the library list, picks and memos. These are the folders macOS sets aside for each kind of data, so a cleanup tool that clears caches costs time and leaves the agent's work intact.
+
+The cache keeps every parse result until `pdf rm` or `pdf gc` removes it, as the principle "Pay once, read many times" says. Crop images are the exception: each one goes 7 days after it is written, because making it again needs no parse.
+
+The 10 sample papers hold 3.8 KB of text per page, measured with PDFKit. With positions and the keyword index, a page likely takes 10–20 KB, so a 30-page paper takes about 0.3–0.6 MB, against 1.6 MB for the average sample PDF itself. The estimate stays unmeasured until the cache exists.
+
+| Option | For | Against |
+|---|---|---|
+| **Library folders, no size limit** | macOS's own convention. A cleared cache costs only time. Nothing is parsed twice. | The cache grows with every PDF an agent opens, because any command adds a PDF on first use. |
+| A size cap that removes the least recently read PDFs | Disk use stays bounded. | A removed PDF is parsed again. For a 300-page scan, that is about 3 minutes of OCR on one worker, at 0.6 s per page. |
+| One dot-folder, such as `~/.pdf-cli/` or `~/.cache/pdf-cli/` | One place that command-line users know. | Mixes rebuildable data with the agent's own work, and follows Linux's convention instead of macOS's. |
+
+## Decision: a worker process per job over a background service — 2026-10-15
+
+Each parse job starts its own worker process, which exits when the job ends. A command that needs only one page returns once that page is ready, and its worker goes on with the rest of the document in the background. The SQLite cache records which pages a worker has claimed, so two commands never parse the same page twice.
+
+The principle "Untrusted files stay in a child process" already pays a process start for each job, and the start is cheap enough: the M0 spike read a whole paper's text and page 1's figures in at most 0.36 s per file, each in a fresh process, against the 2 s of goal G2. The decision reopens when a model joins the default and its load time breaks goal G2 or G4.
+
+| Option | For | Against |
+|---|---|---|
+| **A worker per job** | Nothing runs while the tool is idle. Nothing to install or upgrade beside the binary. A crash ends one job. | Every job pays a process start, and every worker loads its models again. |
+| A background service that stays running | Loaded models and warm engines stay in memory. | A launchd service to install, upgrade and restart, and memory held while idle. |
+
 ## Decision: one Homebrew binary over a Python package — 2026-10-14
 
 The tool installs with one Homebrew command. Models that the base install leaves out download in a separate setup step. A Python package would bring PyTorch, an install measured in gigabytes.
@@ -255,6 +280,4 @@ The tool returns text, crops and failure reports, and the calling agent does all
 - How the cache handles a macOS update. A key that includes the macOS build parses every page again after each update. A key without it mixes text from two versions of PDFKit.
 - What reads a file that PDFKit cannot open, now that PDFium stays out of the binary.
 - The embedding model for search by meaning: Apple's built-in embeddings, or a small MLX model.
-- How worker processes start and stop: started per command, or kept running while idle.
-- Where the cache lives, and its size limit.
 - The quality thresholds that make a page `low-quality`. They get tuned until goal G11 in [GOALS.md](GOALS.md) passes.

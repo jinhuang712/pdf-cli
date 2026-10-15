@@ -1,4 +1,4 @@
-<!-- what-we-build: approved 2026-10-15 -->
+<!-- what-we-build: drafted 2026-10-15 -->
 # Features
 
 ✅ built · 🚧 built with a gap · ⬜ planned
@@ -112,7 +112,7 @@ $ pdf crop paper.pdf --figure 4
 caption: Accuracy vs. dropout rate · mentioned on p.15, p.20
 ```
 
-The image is in color, and it is sized so small text in a chart stays readable. `pdf crop` prints the absolute path of the image file.
+The image is in color, and it is sized so small text in a chart stays readable. `pdf crop` prints the absolute path of the image file. The file stays for 7 days, and the same command makes it again after that.
 
 Settings: none.
 
@@ -211,6 +211,8 @@ Shows and cleans up what the tool has cached.
 | `pdf ls` | Lists every PDF in the library, with its ID, title, page count and flagged pages. |
 | `pdf rm <path or ID>` | Removes one PDF from the library and its results from the cache. |
 | `pdf gc` | Removes cached results for files that no longer exist, and for old parser versions. Prints the space it freed. |
+
+Parse results and crop images live in `~/Library/Caches/pdf-cli/`. The library list, picks and memos live in `~/Library/Application Support/pdf-cli/`. The cache keeps every parse result until `pdf rm` or `pdf gc` removes it, and `pdf doctor` shows its size.
 
 Settings: none.
 
