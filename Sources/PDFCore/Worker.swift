@@ -74,6 +74,7 @@ public enum Worker {
     /// index, so a new file waits for the slower of the two, not for both.
     public static func sample(path: String) async -> Int32 {
         watchParent()
+        plantedFault(at: 0, phase: "sample-")
         let url = URL(fileURLWithPath: path)
         guard let document = PDFDocument(url: url) else { return 0 }
         if document.isLocked { _ = document.unlock(withPassword: "") }
@@ -117,16 +118,23 @@ public enum Worker {
             let layer: PageText
             let method: String
             if readAllByOCR || OCR.needed(text: page.string ?? "", images: check.images) {
-                guard var read = await OCR.pageText(page) else {
+                let textLayer = TextLayer.read(page)
+                if var read = await OCR.pageText(page), !OCR.lostText(ocr: read, layer: textLayer) {
+                    let replaced = (page.string ?? "").split(whereSeparator: \.isNewline)
+                        .map { TextCleanup.line(String($0)) }.filter { !$0.isEmpty }.joined(separator: "\n")
+                    if !replaced.isEmpty { read.replacedText = replaced }
+                    layer = read
+                    method = "ocr"
+                } else if textLayer.words > 0 {
+                    // OCR could not read the page, or read far less than its text layer holds:
+                    // the layer serves, marked so the quality checks can flag it.
+                    layer = textLayer
+                    method = "pdfkit+ocr-failed"
+                } else {
                     emit(WorkerEvent(kind: .result, page: index, key: key,
                                      reason: "Apple OCR could not read this page", millis: 0))
                     continue
                 }
-                let replaced = (page.string ?? "").split(whereSeparator: \.isNewline)
-                    .map { TextCleanup.line(String($0)) }.filter { !$0.isEmpty }.joined(separator: "\n")
-                if !replaced.isEmpty { read.replacedText = replaced }
-                layer = read
-                method = "ocr"
             } else {
                 let repair = repairSpaces || check.pageAtRisk
                 let spaces = repair ? await SpaceRepair.spacesBefore(page) : []
@@ -163,11 +171,12 @@ public enum Worker {
     }
 
     /// Makes a test's planted fault happen: a hang, a runaway allocation or a crash. A fault
-    /// named with the prefix "index-", such as "index-hang:3", happens while keys are read.
+    /// named with the prefix "index-", such as "index-hang:3", happens while keys are read, and
+    /// one with "sample-", such as "sample-crash:0", in the sample check.
     static func plantedFault(at index: Int, phase: String) {
         guard let fault = Env.testFault, fault.page == index, fault.kind.hasPrefix(phase) else { return }
         let kind = fault.kind.dropFirst(phase.count)
-        if phase.isEmpty && fault.kind.hasPrefix("index-") { return }
+        if phase.isEmpty && (fault.kind.hasPrefix("index-") || fault.kind.hasPrefix("sample-")) { return }
         switch kind {
         case "hang":
             while true { sleep(60) }

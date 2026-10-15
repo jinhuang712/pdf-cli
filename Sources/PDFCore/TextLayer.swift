@@ -47,7 +47,11 @@ public struct PageText: Codable, Equatable, Sendable {
     /// Letter runs longer than 25 characters, a sign of lost spaces.
     public var runTogether: Int
     /// The mean confidence of OCR's lines, from 0 to 1. Nil for a page read from its text layer.
+    /// The two engines score differently: on clean text, macOS 26's document recognizer gives
+    /// about 0.5–0.7 and the older text recognizer 1.0, so a threshold must know the engine.
     public var confidence: Double? = nil
+    /// The OCR engine that read the page: "document recognizer" or "text recognizer".
+    public var ocrEngine: String? = nil
     /// The text layer that OCR replaced, kept so `--raw` can show it. Nothing goes missing
     /// without a trace (PHILOSOPHY.md).
     public var replacedText: String? = nil

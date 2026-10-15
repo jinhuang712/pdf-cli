@@ -32,9 +32,15 @@ enum OCR {
     ///   digits make up under 30% of the characters (born-digital pages have about 70–80%);
     /// - a text layer where at least a tenth of the characters, and at least 10, are
     ///   replacement characters, private-use characters or controls.
+    ///
+    /// A run of a leader mark, such as the dots in a contents line or the blank of a form,
+    /// counts as one character.
     static func needed(text: String, images: Int) -> Bool {
         var usable = 0, bad = 0, visible = 0
+        var previous: Unicode.Scalar?
         for scalar in text.unicodeScalars where !scalar.properties.isWhitespace {
+            defer { previous = scalar }
+            if scalar == previous, ".-_·…‥".unicodeScalars.contains(scalar) { continue }
             visible += 1
             switch scalar.properties.generalCategory {
             case .privateUse, .unassigned, .control, .surrogate:
@@ -74,6 +80,13 @@ enum OCR {
     static func textRecognizerParagraphs(_ image: CGImage) -> [Paragraph]? {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
+        // Left alone, the recognizer reads English only, and a Chinese or Arabic scan comes
+        // back nearly empty.
+        if #available(macOS 13, *) {
+            request.automaticallyDetectsLanguage = true
+        } else {
+            request.recognitionLanguages = ["en-US", "fr-FR", "it-IT", "de-DE", "es-ES", "pt-BR", "zh-Hans", "zh-Hant"]
+        }
         let handler = VNImageRequestHandler(cgImage: image, options: [:])
         guard (try? handler.perform([request])) != nil else { return nil }
         let lines = (request.results ?? []).compactMap { observation -> Line? in
@@ -122,7 +135,19 @@ enum OCR {
         let joined = blocks.map(\.text).joined(separator: "\n")
         return PageText(blocks: blocks, words: TextCleanup.wordCount(joined),
                         runTogether: TextCleanup.runTogetherWords(joined),
-                        confidence: confidences.isEmpty ? nil : confidences.reduce(0, +) / Double(confidences.count))
+                        confidence: confidences.isEmpty ? nil : confidences.reduce(0, +) / Double(confidences.count),
+                        ocrEngine: usesDocumentRecognizer ? "document recognizer" : "text recognizer")
+    }
+
+    /// Whether OCR came back with far less than the text layer it was meant to replace, as when
+    /// it cannot read the page's script: under 30% of the layer's letters and digits, with at
+    /// least 100 in the layer. The layer then serves instead.
+    static func lostText(ocr: PageText, layer: PageText) -> Bool {
+        func count(_ text: String) -> Int {
+            text.unicodeScalars.filter { $0.properties.isAlphabetic || $0.properties.numericType != nil }.count
+        }
+        let kept = count(layer.text)
+        return kept >= 100 && count(ocr.text) * 10 < kept * 3
     }
 
     /// Maps a box normalized to the upright image, origin lower left, onto the unrotated page,
@@ -147,14 +172,19 @@ enum OCR {
     /// page's rotation, so a page turned a quarter needs a canvas turned too. With `region`, a
     /// rectangle of the unrotated crop box in points from its lower-left corner, only that part
     /// is drawn.
+    ///
+    /// Annotations stay out of the image. Page keys leave them out too, so a note on one copy of
+    /// a file must not reach the text cached for another copy.
     static func render(_ page: PDFPage, dpi: Double, region: CGRect? = nil) -> CGImage? {
         let bounds = page.bounds(for: .cropBox)
-        let scale = dpi / 72
         let turned = (page.rotation / 90) % 2 != 0
         var size = turned ? CGSize(width: bounds.height, height: bounds.width) : bounds.size
         if let region { size = region.size }
-        let width = Int((size.width * scale).rounded()), height = Int((size.height * scale).rounded())
-        guard width > 0, height > 0, width * height <= 60_000_000,
+        guard size.width > 0, size.height > 0 else { return nil }
+        // A poster-sized page renders at a lower resolution, under 60 million pixels.
+        let scale = min(dpi / 72, (60_000_000 / (size.width * size.height)).squareRoot())
+        let width = Int((size.width * scale).rounded(.down)), height = Int((size.height * scale).rounded(.down))
+        guard width > 0, height > 0,
               let space = CGColorSpace(name: CGColorSpace.sRGB),
               let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
                                       space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
@@ -163,6 +193,9 @@ enum OCR {
         context.fill(CGRect(x: 0, y: 0, width: width, height: height))
         context.scaleBy(x: scale, y: scale)
         if let region { context.translateBy(x: -region.minX, y: -region.minY) }
+        let shown = page.displaysAnnotations
+        page.displaysAnnotations = false
+        defer { page.displaysAnnotations = shown }
         page.draw(with: .cropBox, to: context)
         return context.makeImage()
     }
@@ -194,8 +227,12 @@ enum OCR {
                                 width: crop.width, height: CGFloat(height) * crop.height)
             let image = rotation == 0 ? render(page, dpi: 200, region: region) : render(page, dpi: 200)
             guard let image, let paragraphs = await recognize(image) else { return nil }
-            let kept = rotation == 0 ? paragraphs : paragraphs.filter { inBand(pageBox($0.box, rotation: rotation)) }
-            let ocr = kept.map(\.text).joined(separator: "\n")
+            // On a turned page OCR reads the whole page, so only its lines inside the band count:
+            // a paragraph can reach past the band.
+            let ocr = rotation == 0
+                ? paragraphs.map(\.text).joined(separator: "\n")
+                : paragraphs.flatMap(\.lines).filter { inBand(pageBox($0.box, rotation: rotation)) }
+                    .map(\.text).joined(separator: "\n")
             Env.log("sample check: page \(index + 1), characters \(agreement(kit, ocr)), words \(wordAgreement(layer: kit, ocr: ocr))")
             return (index, wordAgreement(layer: kit, ocr: ocr))
         }

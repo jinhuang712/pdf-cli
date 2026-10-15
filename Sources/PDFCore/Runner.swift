@@ -140,10 +140,22 @@ public final class Runner: @unchecked Sendable {
                 }
                 if start >= count { break }
             }
+            var unchecked = false
             if let sampler {
                 // A file that cannot be read needs no verdict on its text layer.
                 if fileFailure != nil { stop(sampler, reason: "the file cannot be read", kind: .runner) }
                 while !sampler.finished { step([sampler], handle: handle) }
+                // A sample check that crashed or ran out of time, as on a busy machine, gets a
+                // second try. If that fails too, the text layer stays unchecked, and OCR reads
+                // every page: an unverified layer is not trusted.
+                if fileFailure == nil, agreement == nil, !sampler.endedCleanly {
+                    if let again = startWorker(["sample", path], pages: []) {
+                        while !again.finished { step([again], handle: handle) }
+                        unchecked = agreement == nil && !again.endedCleanly
+                    } else {
+                        unchecked = true
+                    }
+                }
             }
             guard FileStat(path: path) == before else { continue }
             if let fileFailure {
@@ -161,7 +173,7 @@ public final class Runner: @unchecked Sendable {
             }
             // A text layer that fails the sample check is not read at all, so its fonts no longer
             // matter: OCR reads every page.
-            let needsOCR = agreement.map { $0 < OCR.sampleThreshold } ?? false
+            let needsOCR = unchecked || (agreement.map { $0 < OCR.sampleThreshold } ?? false)
             let atRisk = !needsOCR && FontCheck.atRisk(gaps: checks.values.reduce(0) { $0 + $1.gaps },
                                                        risky: checks.values.reduce(0) { $0 + $1.risky })
             let ordered = (0..<count).map { page -> String in

@@ -42,6 +42,8 @@ public struct FontCheck: Sendable, Equatable {
         /// Text and form operations counted, against `operationLimit`.
         var operations = 0
         var images = 0
+        /// The page's resources, for an old form that has none of its own.
+        var pageResources: CGPDFDictionaryRef?
 
         func add(_ counts: [UnsafeRawPointer: (gaps: Int, risky: Int)]) {
             for (font, entry) in counts {
@@ -76,6 +78,11 @@ public struct FontCheck: Sendable, Equatable {
             let identity = UnsafeRawPointer(font.rawValue)
             if scan.halfSpace[identity] == nil { scan.halfSpace[identity] = FontCheck.halfSpace(font) }
             scan.font = identity
+            // A Type 3 font draws its glyphs as pictures, so a scan can hide in one.
+            var subtype: UnsafePointer<CChar>?
+            if CGPDFDictionaryGetName(font, "Subtype", &subtype), let subtype, String(cString: subtype) == "Type3" {
+                scan.images += 1
+            }
         }
         CGPDFOperatorTableSetCallback(table, "TJ") { scanner, info in
             let scan = Unmanaged<Scan>.fromOpaque(info!).takeUnretainedValue()
@@ -112,9 +119,10 @@ public struct FontCheck: Sendable, Equatable {
             guard CGPDFDictionaryGetName(dictionary, "Subtype", &subtype), let subtype else { return }
             if String(cString: subtype) == "Image" { scan.images += 1 }
             guard String(cString: subtype) == "Form" else { return }
-            // A form without its own resources is rare, and old: the check skips it.
-            var resources: CGPDFDictionaryRef?
-            guard CGPDFDictionaryGetDictionary(dictionary, "Resources", &resources), let resources else { return }
+            // A form without its own resources is rare, and old: it uses the page's.
+            var own: CGPDFDictionaryRef?
+            _ = CGPDFDictionaryGetDictionary(dictionary, "Resources", &own)
+            guard let resources = own ?? scan.pageResources else { return }
             let inner = CGPDFContentStreamCreateWithStream(form, resources, stream)
             defer { CGPDFContentStreamRelease(inner) }
             // A form runs inside its own graphics state: the font it sets ends with it.
@@ -161,6 +169,10 @@ public struct FontCheck: Sendable, Equatable {
     /// Measures one page.
     public init(page: CGPDFPage) {
         let scan = Scan()
+        if let dictionary = page.dictionary, let object = PageKeyer.inherited(dictionary, "Resources") {
+            var resources: CGPDFDictionaryRef?
+            if CGPDFObjectGetValue(object, .dictionary, &resources) { scan.pageResources = resources }
+        }
         let stream = CGPDFContentStreamCreateWithPage(page)
         defer { CGPDFContentStreamRelease(stream) }
         FontCheck.run(stream, scan)
