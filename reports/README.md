@@ -20,4 +20,4 @@ The spike's reports (M0) are in [spike/](../spike/README.md).
 | M1.6 `pdf info` | 2026-10-15 | 1 crash, 3 that fail readable files, 8 smaller; all fixed, 1 in part. Second review: 5 more, 4 fixed, 1 bounded | [M1.6](M1.6-info.md) |
 | M1.8 `pdf search` | 2026-10-15 | 1 hang, 9 smaller; all fixed | [M1.8](M1.8-search.md) |
 | M1.9 `pdf crop` | 2026-10-15 | 2 high, 3 smaller; all fixed | [M1.9](M1.9-crop.md) |
-| M1.10 Hidden text | 2026-10-15 | 3 false alarms, 6 ways through, 6 smaller; 12 fixed, 1 in part, 2 kept with reasons | [M1.10](M1.10-hidden.md) |
+| M1.10 Hidden text | not landed | 3 false alarms, 6 ways through, 6 smaller; 12 fixed, 1 in part, 2 kept. Second review: 7 open | [M1.10](M1.10-hidden.md) |
