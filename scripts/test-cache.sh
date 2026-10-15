@@ -234,7 +234,9 @@ check "a lone PDF without words is refused" "give the words to find after the PD
 # Hidden text: one page per way of hiding a planted line (scripts/make-hidden-fixture.swift).
 hidden=testdata/hidden/hidden.pdf
 output=$(reading read $hidden --budget all)
-check "every hiding trick leaves a marker" "hidden text: 9 places on p.1, p.2, p.3, p.4, p.5, p.6, p.7, p.8 (show: --include-hidden)" "$output"
+check "every hiding trick leaves a marker" "hidden text: 24 places on p.1, p.2, p.3, p.4, p.5, p.6, p.7, p.8, p.11, p.12, p.13, p.14, p.15, p.16, p.17, p.18, p.19, p.20, p.23, p.24 (show: --include-hidden)" "$output"
+check "a page where OCR stopped at its cap says so" "^\[hidden-text check incomplete: .* · look: pdf crop $hidden --page 23\]$" "$output"
+check "a word showing its first letter keeps only that letter" "^¶2 P\[hidden: 7 words, leaves no ink" "$(reading read $hidden --page 17)"
 check "a marker says what is hidden and how to show it" \
     "^¶2 \[hidden: 10 words, in the color behind it · show: pdf read $hidden --page 1 --include-hidden\]$" "$output"
 check "text off the page leaves a marker too" "^\[hidden: 7 words, off the page · show:" "$output"

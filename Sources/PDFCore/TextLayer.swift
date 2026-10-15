@@ -307,10 +307,12 @@ enum TextLayer {
 
     static func isMark(_ scalar: Unicode.Scalar) -> Bool { (0xFDD0...0xFDEF).contains(scalar.value) }
 
-    /// A block's text without the marks, and its hidden runs. Runs of one reason that only spaces
-    /// part become one, and a run without 3 letters or digits in a row counts as seen: a maths
-    /// symbol whose box PDFKit places off its ink, or the stray marks of a scan's old OCR layer,
-    /// as "I I I", carry no instruction.
+    /// A block's text without the marks, and its hidden runs. Runs of one reason become one where
+    /// only spaces part them, or what a reader sees between them holds no 3 letters or digits in
+    /// a row, as the one letter a word shows when the rest is hidden. A run without 3 letters or
+    /// digits in a row counts as seen, unless it is part of a word: a maths symbol whose box
+    /// PDFKit places off its ink, or the stray marks of a scan's old OCR layer, as "I I I", carry
+    /// no instruction, but the rest of a word whose first letter shows does.
     static func hiddenRuns(_ marked: String) -> (text: String, hidden: [Hidden]) {
         guard marked.unicodeScalars.contains(where: isMark) else { return (marked, []) }
         var text = String.UnicodeScalarView()
@@ -331,18 +333,25 @@ enum TextLayer {
         if let current = open { runs.append(Hidden(offset: current.start, length: length - current.start, reason: current.reason)) }
         let plain = String(text)
         let units = Array(plain.utf16)
+        func pieces(_ range: Range<Int>) -> [Substring] {
+            String(decoding: units[range], as: UTF16.self).split(whereSeparator: { !($0.isLetter || $0.isNumber) })
+        }
+        func wordy(_ unit: UInt16) -> Bool {
+            Unicode.Scalar(unit).map { Character($0).isLetter || Character($0).isNumber } ?? true
+        }
         var merged: [Hidden] = []
         for run in runs where run.length > 0 {
             if let last = merged.last, last.reason == run.reason,
-               units[(last.offset + last.length)..<run.offset].allSatisfy({ $0 == 0x20 }) {
+               !pieces((last.offset + last.length)..<run.offset).contains(where: { $0.count >= 3 }) {
                 merged[merged.count - 1].length = run.offset + run.length - last.offset
             } else {
                 merged.append(run)
             }
         }
         let kept = merged.filter { run in
-            String(decoding: units[run.offset..<run.offset + run.length], as: UTF16.self)
-                .split(whereSeparator: { !($0.isLetter || $0.isNumber) }).contains { $0.count >= 3 }
+            let end = run.offset + run.length
+            return pieces(run.offset..<end).contains { $0.count >= 3 }
+                || (run.offset > 0 && wordy(units[run.offset - 1])) || (end < units.count && wordy(units[end]))
         }
         return (plain, kept)
     }
@@ -407,37 +416,66 @@ enum TextLayer {
                 // box is several glyphs tall and wide.
                 let straight = glyphHeight == 0 || min(rect.width, rect.height) <= 2.5 * glyphHeight
                 // Letters squeezed into slivers by horizontal scaling, or stacked on one spot by
-                // negative spacing, as each character's own box shows against the font size.
-                let boxes = word.compactMap { glyphs.boxes[$0] }.filter { $0.width > 0 && $0.height > 0 }
+                // negative spacing, as each character's own box shows: a sliver against the font
+                // size, and stacked letters moving on by a tenth of their boxes' size from one to
+                // the next. Narrow letters in condensed type still move on by most of their width,
+                // and letters set at an angle by their width, though their boxes overlap.
+                // A glyph stacked on the one before has no width left, and PDFKit gives it none.
+                let all = word.compactMap { glyphs.boxes[$0] }
+                let boxes = all.filter { $0.width > 0 && $0.height > 0 }
                 var squeezed = false
-                if size >= 2, boxes.count >= 3 {
-                    let span = boxes.dropFirst().reduce(boxes[0]) { $0.union($1) }
-                    let laidEnd = boxes.reduce(0) { $0 + max($1.width, $1.height) }
-                    squeezed = median(boxes.map { min($0.width, $0.height) }) < 0.1 * size
-                        || (boxes.count >= 4 && max(span.width, span.height) < 0.3 * laidEnd)
+                if size >= 2, all.count >= 2 {
+                    squeezed = median(all.map { min($0.width, $0.height) }) < 0.1 * size
                 }
-                if let reason = visibility.reason(rect, text: spelled, size: size, color: colors.compactMap { $0 }.first,
-                                                  straight: straight, squeezed: squeezed) {
+                if size >= 2, boxes.count >= 2 {
+                    let steps = zip(boxes, boxes.dropFirst()).map { hypot($1.midX - $0.midX, $1.midY - $0.midY) }
+                    squeezed = squeezed || steps.reduce(0, +) / CGFloat(steps.count) < 0.1 * median(boxes.map { max($0.width, $0.height) })
+                }
+                let verdict = visibility.check(rect, text: spelled, size: size, color: colors.compactMap { $0 }.first,
+                                               straight: straight, squeezed: squeezed)
+                if case .hidden(let reason) = verdict {
                     hiddenStart[word[0]] = reason
                     hiddenEnd.insert(word[word.count - 1])
-                } else if previous == .covered, spelled.filter({ $0.isLetter || $0.isNumber }).count < 3,
-                          visibility.underCovering(rect) {
+                    continue
+                }
+                if previous == .covered, spelled.filter({ $0.isLetter || $0.isNumber }).count < 3, visibility.underCovering(rect) {
                     // OCR cannot vouch for a word of one or two letters, so under the same image
                     // it goes with the covered word before it.
                     hiddenStart[word[0]] = .covered
                     hiddenEnd.insert(word[word.count - 1])
-                } else if Set(colors.compactMap { $0.map { "\($0.red) \($0.green) \($0.blue)" } }).count > 1,
-                          let background = visibility.background(of: rect) {
-                    // A word whose letters are drawn some in ink and some in the color behind
-                    // them reads as its inked letters alone: the others are hidden, letter by letter.
-                    // A word of one color is judged whole, above.
-                    let unseen = colors.map { $0.map { $0.distance(background) < 0.2 } ?? false }
-                    if unseen.contains(true) && unseen.contains(false) {
-                        for (position, index) in word.enumerated() where unseen[position] {
-                            if position == 0 || !unseen[position - 1] { hiddenStart[index] = .background }
-                            if position == word.count - 1 || !unseen[position + 1] { hiddenEnd.insert(index) }
+                    continue
+                }
+                guard case .seen(let ink?) = verdict, word.count >= 2 else { continue }
+                // Letters a reader cannot see in a word they can: letters in the color behind
+                // them, and letters that leave no ink, by the render mode, a clip or a shape drawn
+                // over them, where the word's ink leaves a gap a letter wide. Such a word reads as
+                // its inked letters alone. Only words of letters and digits, punctuation at their
+                // ends aside, are checked so, and only their letters and digits: in maths, PDFKit
+                // places the boxes of symbols, accents and the letters beside them off their ink.
+                let characters = word.map { text.substring(with: NSRange(location: $0, length: widths[$0] ?? 1)) }
+                let wordy = characters.map { $0.allSatisfy { $0.isLetter || $0.isNumber } }
+                guard let firstWordy = wordy.firstIndex(of: true), let lastWordy = wordy.lastIndex(of: true),
+                      wordy[firstWordy...lastWordy].allSatisfy({ $0 }),
+                      characters.indices.allSatisfy({ wordy[$0] || characters[$0].allSatisfy(\.isPunctuation) }) else { continue }
+                var unseen = [Bool](repeating: false, count: word.count)
+                if Set(colors.compactMap { $0.map { "\($0.red) \($0.green) \($0.blue)" } }).count > 1 {
+                    unseen = zip(colors, wordy).map { color, wordy in wordy && color.map { $0.distance(ink.background) < 0.2 } == true }
+                }
+                if visibility.gapped(ink, height: rect.height) {
+                    for (position, index) in word.enumerated() where wordy[position] && !unseen[position] {
+                        if let letter = visibility.box(of: NSRange(location: index, length: widths[index] ?? 1)),
+                           !visibility.inked(letter, ink) {
+                            unseen[position] = true
                         }
                     }
+                }
+                guard unseen.contains(true) && unseen.contains(false) else { continue }
+                for (position, index) in word.enumerated() where unseen[position] {
+                    if position == 0 || !unseen[position - 1] {
+                        let inColor = colors[position].map { $0.distance(ink.background) < 0.2 } == true
+                        hiddenStart[index] = inColor ? .background : .invisible
+                    }
+                    if position == word.count - 1 || !unseen[position + 1] { hiddenEnd.insert(index) }
                 }
             }
         }

@@ -1,4 +1,4 @@
-<!-- what-we-build: approved 2026-10-15 -->
+<!-- what-we-build: drafted 2026-10-16 -->
 # Features
 
 ✅ built · 🚧 built with a gap · ⬜ planned
@@ -302,8 +302,11 @@ Very faint text, under a contrast of 1.3 to 1 with what lies behind it, as #EEEE
 
 Gap:
 - A word set at an angle, as a chart's slanted label, is checked for its size, but not for ink, since PDFKit's boxes for it miss its ink.
-- On a page whose images cover most of it, as a scan's or a slide's background, only text in the color behind it and type under 2 pt count as hidden: text in the invisible mode there reads as text, as a scan's own text layer does.
-- Text over a photo always counts as seen: the photo's own ink cannot tell whether the text shows.
+- On a page whose images cover most of it, as a scan's or a slide's background, text in the invisible mode, or drawn with no opacity, reads as text, as a scan's own text layer does. Text drawn to show there gets every check.
+- Text over a photo always counts as seen: the photo's own ink cannot tell whether the text shows. So does white text with shapes drawn inside its box other than rules across it, as bars between its letters.
+- Text in a script OCR does not read, as Greek or Hebrew, under an image that lets part of it through by a blend mode, a stencil or a color key, counts as seen.
+- Letters hidden one by one count only in a word of letters and digits set across the page: in maths, and in a word set down the page, such letters read as text.
+- OCR checks at most 8 places a page under images that blend or that the drawing commands cannot read; past them, text there counts as seen, and the page says its check is incomplete.
 - Text that runs off the page part-way keeps the part on the page as text.
 
 Settings: none.

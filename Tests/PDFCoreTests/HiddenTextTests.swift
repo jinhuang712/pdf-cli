@@ -25,12 +25,19 @@ import Testing
     }
 
     @Test(arguments: [(0, HiddenReason.background), (1, .tiny), (2, .invisible), (3, .covered), (4, .invisible),
-                      (6, .invisible), (7, .invisible)])
+                      (6, .invisible), (7, .invisible),
+                      // On a page whose background is a page-size image.
+                      (10, .covered), (11, .invisible), (12, .invisible), (13, .tiny), (14, .background),
+                      // Between grey rules and in a cell's frame; squeezed and stacked short words;
+                      // under images with a solid soft mask or drawn at 95%.
+                      (15, .background), (19, .tiny), (23, .covered)])
     func eachTrickHidesItsPlantedLineAndOnlyIt(page: Int, reason: HiddenReason) throws {
         let layer = try layer(page)
         let runs = hidden(layer)
         #expect(!runs.isEmpty)
-        #expect(runs.allSatisfy { $0.hasPrefix("\(reason): PLANTED") })
+        // PDFKit takes stacked glyphs apart in an order of its own, so the planted word may not
+        // come first.
+        #expect(runs.allSatisfy { $0.hasPrefix("\(reason): ") && $0.contains("PLANTED") })
         // The visible lines stay text, and the planted words leave what a reader sees.
         let visible = layer.blocks.map(\.visibleText).joined(separator: " ")
         #expect(visible.contains("Visible words before the trick on this page."))
@@ -50,12 +57,63 @@ import Testing
         #expect(!layer.text.contains("PLANTED"))
     }
 
-    @Test(arguments: [8, 9])
-    func whiteOnADarkBoxAndAScansTextLayerStayText(page: Int) throws {
+    /// Squeezed and stacked lines leave no word of theirs, short words included, though PDFKit
+    /// takes stacked glyphs apart in an order of its own.
+    @Test(arguments: [13, 19])
+    func squeezedAndStackedTextLeavesNoWord(page: Int) throws {
+        let visible = try layer(page).blocks.map(\.visibleText).joined(separator: " ")
+        let rest = visible.replacingOccurrences(of: "Visible words before the trick on this page.", with: "")
+            .replacingOccurrences(of: "Visible words after the trick on this page.", with: "")
+        #expect(!rest.contains { $0.isLetter }, "\(rest)")
+    }
+
+    /// Each word of the planted line shows its first letter, and the render mode, a clip or white
+    /// boxes hide the rest: the rests are hidden, down to the one and two letters of short words.
+    @Test(arguments: [16, 17, 18])
+    func lettersHiddenOneByOneLeaveOnlyWhatShows(page: Int) throws {
+        let layer = try layer(page)
+        let runs = hidden(layer)
+        #expect(!runs.isEmpty)
+        #expect(runs.allSatisfy { $0.hasPrefix("invisible: ") })
+        let visible = layer.blocks.map(\.visibleText).joined(separator: " ")
+        #expect(visible.contains("Visible words before the trick on this page."))
+        #expect(visible.contains("Visible words after the trick on this page."))
+        // What is left of the planted line is single letters at most.
+        let rest = visible.replacingOccurrences(of: "Visible words before the trick on this page.", with: "")
+            .replacingOccurrences(of: "Visible words after the trick on this page.", with: "")
+        #expect(rest.split(separator: " ").allSatisfy { $0.filter(\.isLetter).count <= 1 }, "\(rest)")
+    }
+
+    /// White text on a dark box, a scan's text layer, narrow letters in condensed type, text
+    /// under images that let it show, labels under images that blend, and a label drawn over a
+    /// picture: a reader sees each.
+    @Test(arguments: [(8, "White on a dark box"), (9, "Words of a scan"), (20, "lilt fill tilt, still ill."),
+                      (20, "Lilliput fillip, illicit skill."), (21, "Latin words under the clear image."),
+                      (22, "Tag10"), (24, "A label drawn over a picture.")])
+    func textAReaderSeesStaysText(page: Int, words: String) throws {
         let layer = try layer(page)
         #expect(hidden(layer).isEmpty)
         #expect(layer.offPage == nil)
-        #expect(!layer.text.isEmpty)
+        #expect(layer.blocks.map(\.visibleText).joined(separator: " ").contains(words))
+    }
+
+    /// Greek, which OCR does not read, under an image with a clear soft mask and under one drawn
+    /// at 20%, stays text.
+    @Test func textInAScriptOCRCannotReadUnderImagesThatLetItShowStaysText() throws {
+        let layer = try layer(21)
+        #expect(hidden(layer).isEmpty)
+        let greek = layer.text.unicodeScalars.filter { (0x0370...0x03FF).contains($0.value) }.count
+        #expect(greek >= 30)
+    }
+
+    /// 60 labels each under an image that blends: OCR stops at its cap, and the page says its
+    /// check is incomplete.
+    @Test func ocrStopsAtItsCapAndThePageSaysSo() throws {
+        let start = Date()
+        let layer = try layer(22)
+        #expect(Date().timeIntervalSince(start) < 3)
+        #expect(layer.hiddenCheckIncomplete == true)
+        #expect(hidden(layer).isEmpty)
     }
 
     /// Normal output puts a marker in place of the run; --include-hidden shows its words,
