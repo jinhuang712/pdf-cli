@@ -85,7 +85,8 @@ Finds the right page, in one PDF or across the whole library.
 | `pdf search <query>` | Searches every PDF in the library. |
 | `pdf search <path> --regex <pattern>` | Finds exact matches, including matches that cross a line or column break. |
 | `--in body\|notes\|refs\|memos\|all` | Limits the search to one part of the document. The default is `all`. |
-| `--top N` | Sets how many results to show. The default number is not set yet. |
+| `--top N` | Shows at most N results. By default, search lists every hit in rank order, until the output budget stops it with a line such as `next: pdf search "dropout" --from 61`. |
+| `--from N` | Starts the list at result N. |
 
 A query in another language finds matches by meaning, for example a Chinese query on an English paper.
 
@@ -140,7 +141,7 @@ Every command follows the same rules, so an agent learns them once.
 - Superscripts and subscripts keep a mark, as in `10^{-5}` and `x_{2}`. Footnote markers and citation numbers have their own marks (see F14 and F15).
 - Every command accepts `--json`.
 - Output starts with a one-line summary: the pages read and the pages flagged.
-- `--budget N` stops the output at about N tokens and ends it with a line that continues the read, such as `next: pdf read paper.pdf --page 15`. A block larger than the budget is cut the same way. `read` and `search` have a default budget, and its number is not set yet.
+- `--budget N` stops the output at about N tokens and ends it with a line that continues the read, such as `next: pdf read paper.pdf --page 15`. A block larger than the budget is cut the same way. `read` and `search` stop at 5,000 tokens by default, about 5 pages of a paper, and `--budget all` turns the limit off.
 - While a document is still parsing, output is marked `provisional`, because headings and note numbers can change once the whole document is known.
 
 Settings: none.
