@@ -8,7 +8,7 @@ public enum Env {
     /// Part of every cache key. Raise it when a change alters what a parse produces, so each
     /// page is parsed again on its next read (DESIGNS.md → Decision: macOS updates leave the
     /// cache alone).
-    public static let parserVersion = 1
+    public static let parserVersion = 2
 
     static var variables: [String: String] { ProcessInfo.processInfo.environment }
 

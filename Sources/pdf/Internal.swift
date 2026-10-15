@@ -19,7 +19,7 @@ struct RunnerCommand: ParsableCommand {
 }
 
 /// A worker that a runner starts. Hidden: only the runner calls it.
-struct WorkerCommand: ParsableCommand {
+struct WorkerCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "__worker",
         abstract: "Read one file's pages for a runner. Started by the runner.",
@@ -32,11 +32,12 @@ struct WorkerCommand: ParsableCommand {
     @Argument var path: String
     @Option var from: Int = 0
     @Option(transform: { $0.split(separator: ",").compactMap { Int($0) } }) var pages: [Int] = []
+    @Flag var repairSpaces = false
 
-    func run() throws {
+    func run() async throws {
         switch mode {
         case .index: throw ExitCode(Worker.index(path: path, from: from))
-        case .parse: throw ExitCode(Worker.parse(path: path, pages: pages))
+        case .parse: throw ExitCode(await Worker.parse(path: path, pages: pages, repairSpaces: repairSpaces))
         }
     }
 }
@@ -67,8 +68,10 @@ struct DebugPages: ParsableCommand {
             let millis = Int(Date().timeIntervalSince(started) * 1000)
             print("doc \(docID.prefix(12)) · \(pageCount) pages · \(results.count) read in \(millis) ms")
             for (page, result) in results {
+                let layer = result.pageText
                 let detail = result.status == .ok
-                    ? "\(result.method) · \(result.text.count) chars · parsed in \(Int(result.parseMillis)) ms"
+                    ? "\(result.method) · \(layer?.blocks.count ?? 0) blocks · \(layer?.words ?? 0) words · "
+                        + "\(layer?.runTogether ?? 0) run together · parsed in \(Int(result.parseMillis)) ms"
                     : result.reason
                 print("p.\(page + 1) \(result.status.rawValue): \(detail)")
                 if text && result.status == .ok { print(result.text) }

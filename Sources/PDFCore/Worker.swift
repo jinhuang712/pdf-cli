@@ -24,12 +24,19 @@ struct WorkerEvent: Codable, Equatable {
     var text: String?
     var reason: String?
     var millis: Double?
+    /// The page's text layer, as JSON.
+    var data: String?
+    /// The step that produced the page, such as `pdfkit` or `pdfkit+ocr-spaces`.
+    var method: String?
+    /// From the font check: the page's body-font word gaps, and the ones PDFKit would drop.
+    var gaps: Int?
+    var risky: Int?
 }
 
 /// The only kind of process that opens PDF content (DESIGNS.md → Principles → Safety).
 /// A runner starts it, watches its time and memory, and writes what it reports to the cache.
 public enum Worker {
-    /// Reports the key of every page from `start` on.
+    /// Reports the key of every page from `start` on, with the page's font check.
     public static func index(path: String, from start: Int) -> Int32 {
         watchParent()
         let url = URL(fileURLWithPath: path)
@@ -48,14 +55,19 @@ public enum Worker {
         for index in max(start, 0)..<max(count, start) {
             emit(WorkerEvent(kind: .start, page: index))
             plantedFault(at: index, phase: "index-")
-            let key = document.page(at: index + 1).map { keyer.key(for: $0) } ?? PageKeys.missing
-            emit(WorkerEvent(kind: .key, page: index, key: key))
+            guard let page = document.page(at: index + 1) else {
+                emit(WorkerEvent(kind: .key, page: index, key: PageKeys.missing))
+                continue
+            }
+            let check = FontCheck(page: page)
+            emit(WorkerEvent(kind: .key, page: index, key: keyer.key(for: page), gaps: check.gaps, risky: check.risky))
         }
         return 0
     }
 
-    /// Reports the text of each page in `pages`, in that order, with the page's key.
-    public static func parse(path: String, pages: [Int]) -> Int32 {
+    /// Reports the text layer of each page in `pages`, in that order, with the page's key.
+    /// With `repairSpaces`, each page's word breaks come from Apple OCR.
+    public static func parse(path: String, pages: [Int], repairSpaces: Bool = false) async -> Int32 {
         watchParent()
         let url = URL(fileURLWithPath: path)
         guard let document = PDFDocument(url: url) else {
@@ -78,9 +90,13 @@ public enum Worker {
                 continue
             }
             let key = keyer.key(for: reference)
-            let text = page.string ?? ""
+            let repair = repairSpaces || FontCheck(page: reference).pageAtRisk
+            let spaces = repair ? await SpaceRepair.spacesBefore(page) : []
+            let layer = TextLayer.read(page, spacesBefore: spaces)
+            let data = (try? JSONEncoder().encode(layer)).map { String(decoding: $0, as: UTF8.self) }
             let millis = Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000
-            emit(WorkerEvent(kind: .result, page: index, key: key, text: text, millis: millis))
+            emit(WorkerEvent(kind: .result, page: index, key: key, text: layer.text, millis: millis,
+                             data: data, method: repair ? "pdfkit+ocr-spaces" : "pdfkit"))
         }
         return 0
     }

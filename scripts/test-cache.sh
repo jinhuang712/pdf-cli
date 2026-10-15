@@ -29,6 +29,11 @@ run() {
 
 output=$(run $pdf debug-pages $paper --page 3)
 check "a first read returns the page" "p.3 ok" "$output"
+check "a good paper reads without the space repair" "p.3 ok: pdfkit ·" "$output"
+
+output=$(run $pdf debug-pages testdata/smoke/arxiv-2609.23257.pdf --page 2)
+check "a paper whose fonts hide spaces gets the repair" "p.2 ok: pdfkit+ocr-spaces" "$output"
+check "the repaired page has no run-together words" "0 run together" "$output"
 
 output=$(run env PDF_CLI_TEST_FAULT=hang:3 $pdf debug-pages $paper)
 check "a hanging page fails at the time limit" "p.4 failed: time limit" "$output"

@@ -1,4 +1,4 @@
-<!-- what-we-build: approved 2026-10-15 -->
+<!-- what-we-build: drafted 2026-10-15 -->
 # Designs
 
 PDF files on the user's Mac and commands from an agent go in. Text with page addresses, PNG crops, search hits and failure reports come out, served from a local cache. In between, worker processes parse each page once, in steps that escalate only as far as the page needs, and store the result in SQLite. Behavior is in [FEATURES.md](FEATURES.md).
@@ -76,7 +76,7 @@ A page can read wrong while it looks right, and the agent believes what it is ha
 - **Table regions replace their text.** PDFKit turns a table into a stream of numbers without rows or columns, as the M0 spike showed. The text inside a detected table stays out of normal output, and the table goes out as an image (see the decision on tables below). `--raw` shows the text in place, labelled as flat text that lost its rows and columns. The words inside a figure, such as a chart's axis labels, follow the same rule. Cost: a table the detector misses still leaks its flat numbers. Holds as: the output writer moves every text block inside a table or figure region behind `--raw` and emits one table or figure block in its place, and goal G8 in [GOALS.md](GOALS.md) scores table detection.
 - **Raised and lowered characters are found from their boxes.** Plain text turns 10⁻⁵ into "10−5", as the M0 spike showed. A character set smaller and above or below its line's baseline is a superscript or a subscript. Cost: a font that reports odd boxes gets wrong marks. Holds as: every character set smaller and off the baseline leaves the text layer with a superscript or subscript mark, or as a footnote or citation marker.
 - **One sample page per file is checked against its image.** A broken font table can map shapes to wrong letters, and an old OCR layer in a scan can hold misreads. Both look like real words. Apple OCR reads one sample page, and its words are compared with the text layer's words. Cost: about 0.6 s per file. Holds as: a file whose sample page disagrees beyond the threshold has every page escalate to OCR, and its old text layer stays behind `--raw`, labelled `[old OCR]`.
-- **Spaces are checked before and after reading.** A font that declares character 32 wider than a normal space makes PDFKit drop the spaces between words, as the M0 spike found. A Word-made spike paper also loses 1–2 spaces per page, for a reason still unknown. Before reading, the font check marks the file "at risk". After reading, a count of run-together words checks every page. Cost: a few milliseconds per page. Holds as: every page record stores its run-together word count, and a page above the threshold gets the status `low-quality`.
+- **Spaces are checked before and after reading.** A font that declares character 32 wider than a normal space makes PDFKit drop the spaces between words, as the M0 spike found. A Word-made spike paper also loses 1–2 spaces per page, for a reason still unknown. Before reading, the font check measures each word gap in a page's text operations against half its font's declared width for character 32, counting only body fonts, the fonts that hold at least a quarter of the page's gaps: a maths font can declare a wide character 32 harmlessly. A file with at least 5% risky gaps, and at least 20, is "at risk", and so is a page with at least 10%, and at least 10, for a file that mixes papers. On the eleven samples, the paper that loses its spaces had 29%, and the ten others had none on any page. After reading, a count of run-together words checks every page. Cost: about 0.3 ms per page for the check. Holds as: every page record stores its run-together word count, and a page above the threshold gets the status `low-quality`.
 
 ### Cache
 
@@ -183,7 +183,20 @@ The M0 spike scored each method on the one affected paper, against PDFKit's text
 | Apple OCR alone | 98.9% | 88.4% | 71 | Misreads small marks, such as a superscript 1 as `'`. |
 | PDFKit alone | 71.2% | 99.9% | 0 | Words run together on every page. |
 
+Task M1.2 built the repair and scored it the same way: 97.8% of spaces found, 99.9% of characters matching and 68 spaces added, with macOS 26's document recognizer. The text recognizer that older macOS versions use found 96.2% and added 93. A repaired page costs 0.64–0.8 s of OCR in one worker, and the whole 18-page paper took 6.9 s with four workers. The first page of the paper, unseen, came back in 1.33 s, inside goal G2's 2 s.
+
 Most added spaces sit inside formulas and number lists. The run-together count flags the spaces still missing (see Silent errors), and where two readings still differ in words, the agent picks one with `pdf pick`. The sample is one paper, the only one of ten with this problem.
+
+## Decision: line-end hyphens resolved by the page and macOS's word list — 2026-10-15
+
+PDFKit keeps the hyphen where a word breaks across lines, as in "exam-" and "ple". The text layer joins the two halves when the joined word appears elsewhere on the page, or in macOS's word list at `/usr/share/dict/words`, allowing common endings such as "-s" and "-ed". Otherwise the hyphen stays, as in "self-attention". A capital letter or a digit after the break always keeps the hyphen. When in doubt the hyphen stays, because "data-set" still reads right and a wrongly joined word does not.
+
+| Option | For | Against |
+|---|---|---|
+| **The page's words and macOS's word list** | Apple-only and fixed, so the same file always reads the same. | The list is old: it lacks "dataset", so such a word joins only when the page spells it whole elsewhere. |
+| Every hyphen kept | Never wrong. | "exam-ple" in the text breaks search. |
+| Every hyphen dropped | Simple. | "selfattention" is wrong. |
+| macOS's spell checker | Knows modern words. | Learns from each user, so two Macs can read one file differently. |
 
 ## Decision: Apple Vision over Tesseract and RapidOCR — 2026-10-14
 

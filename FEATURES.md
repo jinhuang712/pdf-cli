@@ -1,4 +1,4 @@
-<!-- what-we-build: approved 2026-10-15 -->
+<!-- what-we-build: drafted 2026-10-15 -->
 # Features
 
 ✅ built · 🚧 built with a gap · ⬜ planned
@@ -160,6 +160,7 @@ Every command follows the same rules, so an agent learns them once.
 
 - Every block shows its page and its position, such as `p.12 · 0.10,0.40,0.80,0.30`. The page is its position in the file. When the number printed on the page differs, it follows, as in `p.12 (printed 237)`.
 - Superscripts and subscripts keep a mark, as in `10^{-5}` and `x_{2}`. Footnote markers and citation numbers have their own marks (see F14 and F15).
+- A word that a hyphen splits across two lines comes back whole when the page or macOS's word list knows it. Otherwise the hyphen stays, as in `self-attention`.
 - Every command accepts `--json`.
 - Output starts with a one-line summary: the pages read, the pages flagged and what normal output set aside.
 - A file that macOS Preview or another app saved through PDFKit carries a warning in its summary line: such a save can damage the text, and an earlier copy may read better.

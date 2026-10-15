@@ -86,6 +86,7 @@ public final class Runner: @unchecked Sendable {
             guard let before = FileStat(path: path) else { return .unavailable }
             var pageCount: Int?
             var keys: [Int: String] = [:]
+            var checks: [Int: FontCheck] = [:]
             var failedPages: [Int: String] = [:]
             var fileFailure: String?
             var retried: Set<Int> = []
@@ -99,7 +100,10 @@ public final class Runner: @unchecked Sendable {
                     switch event.kind {
                     case .opened: pageCount = event.pageCount
                     case .openFailed: fileFailure = event.reason ?? OpenFailure.damaged
-                    case .key: if let page = event.page, let key = event.key { keys[page] = key }
+                    case .key:
+                        guard let page = event.page, let key = event.key else { break }
+                        keys[page] = key
+                        checks[page] = FontCheck(gaps: event.gaps ?? 0, risky: event.risky ?? 0)
                     default: break
                     }
                 }
@@ -145,7 +149,9 @@ public final class Runner: @unchecked Sendable {
                 }
             }
             let ordered = (0..<count).map { keys[$0] ?? PageKeys.missing }
-            guard let id = try? store.saveIndex(path: path, stat: before, pageKeys: ordered) else {
+            let atRisk = FontCheck.atRisk(gaps: checks.values.reduce(0) { $0 + $1.gaps },
+                                          risky: checks.values.reduce(0) { $0 + $1.risky })
+            guard let id = try? store.saveIndex(path: path, stat: before, pageKeys: ordered, spacesAtRisk: atRisk) else {
                 return .unavailable
             }
             return .document(id: id, stat: before)
@@ -193,6 +199,11 @@ public final class Runner: @unchecked Sendable {
         var changed = false
         var failedSpawns = 0
         let capacity = max(1, Env.workerCount)
+        // A file at risk reads every page through OCR, about 0.6 s a page, so its batches are
+        // small: a page a command asks for waits for one batch at most.
+        let repair = (try? store.spacesAtRisk(docID: docID)) ?? false
+        let batchSize = repair ? 2 : Runner.batchSize
+        let parseArguments = repair ? ["--repair-spaces"] : []
 
         func unchanged() -> Bool { FileStat(path: path) == stat }
 
@@ -221,10 +232,10 @@ public final class Runner: @unchecked Sendable {
 
             while workers.count < capacity, !(pending.isEmpty && alone.isEmpty) {
                 let batch = alone.isEmpty
-                    ? nextBatch(&pending, docID: docID, keys: keys, firstIndex: firstIndex)
+                    ? nextBatch(&pending, docID: docID, keys: keys, firstIndex: firstIndex, size: batchSize)
                     : [alone.removeFirst()]
                 let list = batch.map(String.init).joined(separator: ",")
-                guard let worker = startWorker(["parse", path, "--pages", list], pages: batch) else {
+                guard let worker = startWorker(["parse", path, "--pages", list] + parseArguments, pages: batch) else {
                     // A full process table or a binary being replaced passes. Nothing is cached.
                     if batch.count == 1 && triedAlone.contains(batch[0]) {
                         alone.insert(batch[0], at: 0)
@@ -252,8 +263,8 @@ public final class Runner: @unchecked Sendable {
                     if let reason = event.reason {
                         save(page, .failed(reason))
                     } else {
-                        save(page, PageResult(status: .ok, method: "pdfkit", text: event.text ?? "",
-                                              reason: "", parseMillis: event.millis ?? 0))
+                        save(page, PageResult(status: .ok, method: event.method ?? "pdfkit", text: event.text ?? "",
+                                              reason: "", parseMillis: event.millis ?? 0, data: event.data ?? ""))
                     }
                 default:
                     break
@@ -305,15 +316,16 @@ public final class Runner: @unchecked Sendable {
     }
 
     /// The next pages for a worker: pages a command asked for, else the next pages in order.
-    func nextBatch(_ pending: inout [Int], docID: String, keys: [String], firstIndex: [String: Int]) -> [Int] {
+    func nextBatch(_ pending: inout [Int], docID: String, keys: [String], firstIndex: [String: Int],
+                   size: Int = Runner.batchSize) -> [Int] {
         let requested = ((try? store.requestedPages(docID: docID)) ?? [])
             .compactMap { keys.indices.contains($0) ? firstIndex[keys[$0]] : nil }
         let waiting = Set(pending)
         var batch: [Int] = []
-        for page in requested where waiting.contains(page) && !batch.contains(page) && batch.count < Runner.batchSize {
+        for page in requested where waiting.contains(page) && !batch.contains(page) && batch.count < size {
             batch.append(page)
         }
-        if batch.isEmpty { batch = Array(pending.prefix(Runner.batchSize)) }
+        if batch.isEmpty { batch = Array(pending.prefix(size)) }
         let taken = Set(batch)
         pending.removeAll { taken.contains($0) }
         return batch

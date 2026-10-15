@@ -43,15 +43,23 @@ public struct PageResult: Equatable, Sendable {
     public let reason: String
     public let macOSBuild: String
     public let parseMillis: Double
+    /// The page's text layer as JSON: blocks and lines with their positions.
+    public let data: String
 
     public init(status: Status, method: String, text: String, reason: String,
-                macOSBuild: String = Env.macOSBuild, parseMillis: Double) {
+                macOSBuild: String = Env.macOSBuild, parseMillis: Double, data: String = "") {
         self.status = status
         self.method = method
         self.text = text
         self.reason = reason
         self.macOSBuild = macOSBuild
         self.parseMillis = parseMillis
+        self.data = data
+    }
+
+    /// The text layer, decoded. Nil for a failed page.
+    public var pageText: PageText? {
+        try? JSONDecoder().decode(PageText.self, from: Data(data.utf8))
     }
 
     public static func failed(_ reason: String) -> PageResult {
@@ -103,11 +111,23 @@ public final class Store: Sendable {
         }
     }
 
-    static let schemaVersion = 1
+    static let schemaVersion = 2
 
     static func createSchema(_ db: Database) throws {
         let version = try Int.fetchOne(db, sql: "PRAGMA user_version") ?? 0
         guard version < schemaVersion else { return }
+        try createVersion1(db)
+        // Version 2: the text layer of each page, and the font check of each document.
+        if try !db.columns(in: "page_result").contains(where: { $0.name == "data" }) {
+            try db.execute(sql: "ALTER TABLE page_result ADD COLUMN data TEXT NOT NULL DEFAULT ''")
+        }
+        if try !db.columns(in: "document").contains(where: { $0.name == "spaces_at_risk" }) {
+            try db.execute(sql: "ALTER TABLE document ADD COLUMN spaces_at_risk INTEGER NOT NULL DEFAULT 0")
+        }
+        try db.execute(sql: "PRAGMA user_version = \(schemaVersion)")
+    }
+
+    static func createVersion1(_ db: Database) throws {
         try db.execute(sql: """
             CREATE TABLE IF NOT EXISTS file_entry (
                 path TEXT PRIMARY KEY,
@@ -155,7 +175,6 @@ public final class Store: Sendable {
                 heartbeat_at REAL NOT NULL
             );
             """)
-        try db.execute(sql: "PRAGMA user_version = \(schemaVersion)")
     }
 
     // MARK: Files and documents
@@ -175,12 +194,14 @@ public final class Store: Sendable {
 
     /// Records a file's pages. The document's ID hashes its page keys, so two copies of one
     /// file, or one file with new highlights, share a document.
+    /// `spacesAtRisk` is the font check's verdict for the whole file.
     @discardableResult
-    public func saveIndex(path: String, stat: FileStat, pageKeys: [String]) throws -> String {
+    public func saveIndex(path: String, stat: FileStat, pageKeys: [String], spacesAtRisk: Bool = false) throws -> String {
         let id = Store.documentID(pageKeys: pageKeys)
         try write { db in
-            try db.execute(sql: "INSERT OR IGNORE INTO document (id, page_count, created_at) VALUES (?, ?, ?)",
-                           arguments: [id, pageKeys.count, Date().timeIntervalSince1970])
+            try db.execute(sql: """
+                INSERT OR IGNORE INTO document (id, page_count, created_at, spaces_at_risk) VALUES (?, ?, ?, ?)
+                """, arguments: [id, pageKeys.count, Date().timeIntervalSince1970, spacesAtRisk])
             for (index, key) in pageKeys.enumerated() {
                 try db.execute(sql: """
                     INSERT OR REPLACE INTO document_page (doc_id, page_index, page_key) VALUES (?, ?, ?)
@@ -208,6 +229,13 @@ public final class Store: Sendable {
         Hashing.hex(of: Data(pageKeys.joined(separator: "\n").utf8))
     }
 
+    /// The font check's verdict for a document: its pages need the space repair.
+    public func spacesAtRisk(docID: String) throws -> Bool {
+        try pool.read { db in
+            try Bool.fetchOne(db, sql: "SELECT spaces_at_risk FROM document WHERE id = ?", arguments: [docID]) ?? false
+        }
+    }
+
     /// The key of every page, in page order.
     public func pageKeys(docID: String) throws -> [String] {
         try pool.read { db in
@@ -232,7 +260,7 @@ public final class Store: Sendable {
                     found[row["page_key"]] = PageResult(
                         status: PageResult.Status(rawValue: row["status"]) ?? .failed,
                         method: row["method"], text: row["text"], reason: row["reason"],
-                        macOSBuild: row["macos_build"], parseMillis: row["parse_ms"])
+                        macOSBuild: row["macos_build"], parseMillis: row["parse_ms"], data: row["data"])
                 }
             }
             return found
@@ -245,11 +273,11 @@ public final class Store: Sendable {
         try write { db in
             try db.execute(sql: """
                 INSERT OR IGNORE INTO page_result
-                    (page_key, parser_version, status, method, text, reason, macos_build, parse_ms, parsed_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (page_key, parser_version, status, method, text, reason, macos_build, parse_ms, parsed_at, data)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, arguments: [key, Env.parserVersion, result.status.rawValue, result.method,
                                  result.text, result.reason, result.macOSBuild, result.parseMillis,
-                                 Date().timeIntervalSince1970])
+                                 Date().timeIntervalSince1970, result.data])
         }
     }
 
