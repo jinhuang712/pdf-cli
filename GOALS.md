@@ -1,4 +1,4 @@
-<!-- what-we-build: drafted 2026-10-15 -->
+<!-- what-we-build: approved 2026-10-15 -->
 # Goals
 
 Each goal is a check with a number. Unless a row says otherwise, goals are measured on an M3 MacBook with 24 GB, against two sets the project builds: the open test set (60 open-access PDFs: 20 journal papers, 10 textbook chapters, 10 reports, 10 essays or articles, 10 scans) and the question set (200 questions, each with a known answer and the page that holds it). The open test set includes Word-made files, pages with dense tables, and scans that carry an old OCR text layer.
