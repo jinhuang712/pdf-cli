@@ -46,7 +46,7 @@ The spike shipped no features. It answered the riskiest questions.
 - **Add** (F1) and **Library** (F11): adding, listing and cleaning up
   - [x] M1.5 `pdf add`, `pdf ls`, `pdf rm` and `pdf gc`
 - **Info** (F2): the outline, page labels and section sizes
-  - [ ] M1.6 `pdf info` from bookmarks, page labels and the text layer, with the counts of comments, highlights and form fields, and the list of attachments and scripts
+  - [x] M1.6 `pdf info` from bookmarks, page labels and the text layer, with the counts of comments, highlights and form fields, and the list of attachments and scripts
   - Later: the figure list, with figure detection (M2.6), and the running headers, footers and publisher stamps (M2.5)
 - **Read** (F3) and **Output basics** (F7): by page, printed page and section, with nothing dropped without a trace
   - [x] M1.7 `pdf read`, with addresses, `--json`, the budget, the provisional mark, and the marks for superscripts and subscripts

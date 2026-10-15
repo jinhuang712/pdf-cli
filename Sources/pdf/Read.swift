@@ -23,6 +23,11 @@ struct ReadCommand: ParsableCommand {
             help: ArgumentHelp("Pages by their position in the file, such as 3, 3-5 or 3,7-9. The flag can repeat.",
                                valueName: "pages"))
     var pageSpecs: [String] = []
+    @Option(name: .customLong("printed-page"), help: ArgumentHelp("A page by the number printed on it, such as 237 or iv.", valueName: "label"))
+    var printedPage: String?
+    @Option(help: ArgumentHelp("A section by its number or its title, such as 2.1 or Method, as pdf info lists them.",
+                               valueName: "section"))
+    var section: String?
     @Flag(help: "Read the whole document, page after page, within the budget.") var full = false
     @Option(help: ArgumentHelp("Stop at about N tokens, or all for no limit.", valueName: "N")) var budget = "5000"
     @Option(help: ArgumentHelp("Go on from where a read stopped, as its next: line says, such as p4.7.", valueName: "address"))
@@ -39,16 +44,17 @@ struct ReadCommand: ParsableCommand {
         if pageSpecs.contains(where: { Self.pages($0) == nil }) {
             throw ValidationError("--page takes pages such as 3, 3-5 or 3,7-9")
         }
-        if full && !pageSpecs.isEmpty { throw ValidationError("--full reads every page; leave out --page") }
+        let scopes = [!pageSpecs.isEmpty, printedPage != nil, section != nil, full].filter { $0 }.count
+        if scopes > 1 { throw ValidationError("choose one of --page, --printed-page, --section and --full") }
     }
 
     func run() throws {
         let store = try Store()
         let reader = Reader(store: store, library: try Library())
-        let start = from.flatMap(Self.place)
+        let resume = from.flatMap(Self.place)
         var wanted: [Int] = []
         for number in pageSpecs.flatMap({ Self.pages($0)! }) where !wanted.contains(number) { wanted.append(number) }
-        let first = start?.page ?? wanted.first ?? 1
+        let first = resume?.page ?? wanted.first ?? 1
 
         // The first page tells the page count, and starts the parse of a file not seen before.
         let docID: String, pageCount: Int
@@ -59,6 +65,23 @@ struct ReadCommand: ParsableCommand {
         case .pages(let id, let count, _):
             docID = id
             pageCount = count
+        }
+        var start = resume
+        var until: (page: Int, block: Int)?
+        var scope = ""
+        if let printedPage {
+            wanted = [try Self.printed(printedPage, path: path, pageCount: pageCount, store: store)]
+            scope = " --printed-page " + Output.quoted(printedPage)
+        } else if let section {
+            let (found, end) = try Self.section(section, path: path, docID: docID, pageCount: pageCount, store: store,
+                                                reader: reader)
+            let last = end.map { $0.block <= 1 ? max($0.page - 1, found.page) : $0.page } ?? pageCount
+            wanted = Array(found.page...last)
+            until = end
+            if start == nil { start = (page: found.page, block: found.block, offset: nil) }
+            scope = " --section " + Output.quoted(section)
+        } else if !wanted.isEmpty {
+            scope = "pages"
         }
         var numbers = wanted.isEmpty ? Array(1...max(pageCount, 1)) : wanted
         if let bad = numbers.first(where: { $0 > pageCount }) {
@@ -76,14 +99,15 @@ struct ReadCommand: ParsableCommand {
         let picks = try Picks().picks(keys: keys)
         let flags = (raw ? " --raw" : "") + (format == .text ? " --format text" : "") + (budget == "5000" ? "" : " --budget \(budget)")
         let quotedPath = Output.quoted(path)
-        let specified = !wanted.isEmpty
         let order = numbers
+        let named = scope
         var document = Output.Document(
             file: path, pageCount: pageCount, style: format == .md ? .md : .text, raw: raw, picks: picks, budget: limit,
             continuation: { page, block, offset in
-                let rest = specified ? " --page " + Self.spec(Array(order.drop { $0 != page })) : ""
+                let rest = named == "pages" ? " --page " + Self.spec(Array(order.drop { $0 != page })) : named
                 return "pdf read \(quotedPath)\(rest) --from \(Output.address(page: page, block: block, offset: offset))\(flags)"
             })
+        document.until = until
 
         // Pages are fetched a few at a time, so a read that the budget stops early waits only
         // for the pages it shows.
@@ -104,6 +128,7 @@ struct ReadCommand: ParsableCommand {
                                          from: resume ? start?.block : nil, offset: resume ? start?.offset : nil)
                 if !added { break reading }
                 index += 1
+                if let until, page + 1 >= until.page { break reading }
             }
         }
 
@@ -117,6 +142,51 @@ struct ReadCommand: ParsableCommand {
             print(report.text, terminator: "")
         }
         if report.exitCode != 0 { throw ExitCode(report.exitCode) }
+    }
+
+    /// The page, counted from 1, that bears a printed number, from the file's page labels. A file
+    /// without labels prints each page's position.
+    static func printed(_ label: String, path: String, pageCount: Int, store: Store) throws -> Int {
+        let resolved = Reader.resolve(path)
+        let labels = try FileStat(path: resolved).flatMap { try store.facts(path: resolved, stat: $0) }?.labels
+        if let labels, let index = labels.firstIndex(where: { $0.caseInsensitiveCompare(label) == .orderedSame }) {
+            return index + 1
+        }
+        if labels == nil, let number = Int(label), (1...pageCount).contains(number) { return number }
+        throw ValidationError("no page is printed \(label)" + (labels == nil ? "; the file has no page labels" : ""))
+    }
+
+    /// The section a `--section` value names, and where the next section at its level or above
+    /// starts. Bookmarks name sections at once; headings in the text need every page parsed.
+    static func section(_ query: String, path: String, docID: String, pageCount: Int, store: Store,
+                        reader: Reader) throws -> (Section, (page: Int, block: Int)?) {
+        func look() throws -> Info { try InfoCommand.info(path: path, docID: docID, pageCount: pageCount, store: store) }
+        var info = try look()
+        if info.sectionsFrom != "bookmarks" && info.pagesParsed < pageCount {
+            _ = try reader.read(path: path, pages: nil)
+            info = try look()
+        }
+        var sections = info.sections
+        if Info.find(query, in: sections) == nil && info.sectionsFrom == "bookmarks" {
+            // Bookmarks often leave out the numbers that the headings print, as in "2 Related
+            // Work", so the headings in the text get a try too.
+            _ = try reader.read(path: path, pages: nil)
+            sections = Info.textSections(try InfoCommand.cachedPages(docID: docID, store: store), pageCount: pageCount)
+        }
+        guard var found = Info.find(query, in: sections) else {
+            let known = sections.filter { $0.level <= 2 }.prefix(12).map(\.title)
+            throw ValidationError("no section matches \(query)" + (known.isEmpty ? "; the file has no bookmarks or numbered headings"
+                : "; sections: " + known.joined(separator: ", ")))
+        }
+        // A bookmark's block shows once its page is parsed, and so does the next section's.
+        var needed = found.block == nil ? [found.page - 1] : []
+        if let next = Info.next(after: found, in: sections), next.block == nil { needed.append(next.page - 1) }
+        if !needed.isEmpty {
+            _ = try reader.read(path: path, pages: needed)
+            sections = try look().sections
+            found = Info.find(query, in: sections) ?? found
+        }
+        return (found, Info.next(after: found, in: sections).map { ($0.page, $0.block ?? 1) })
     }
 
     /// A budget in tokens: nil inside for no limit, nil outside for a value that is neither.

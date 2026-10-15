@@ -186,6 +186,9 @@ public enum Output {
         public private(set) var next: String?
         /// Why the read stopped before the budget did, if it did.
         var stopped: String?
+        /// Where a read of one section ends: the page and block of the next section, counted
+        /// from 1. The blocks from there on stay out.
+        public var until: (page: Int, block: Int)?
 
         /// - Parameter continuation: the full command that goes on from a page, a block and a
         ///   character in the block's text, such as `pdf read paper.pdf --page 4-9 --from p4.7`.
@@ -216,6 +219,7 @@ public enum Output {
             for (position, var unit) in content.units.enumerated() {
                 let first = unit.blocks[0]
                 if position > 0, let block, (first.block ?? Int.max) < block { continue }
+                if position > 0, let until, until.page == number, (first.block ?? Int.max) >= until.block { break }
                 let resumed = position > 0 && offset != nil && first.block == block && first.kind == .text
                 if resumed, let offset, let text = first.text { unit.blocks[0].text = "…" + String(text.dropFirst(offset)) }
                 let cost = unit.blocks.reduce(0) { $0 + tokens(render($1, style: style, raw: raw)) }

@@ -39,6 +39,8 @@ struct WorkerEvent: Codable, Equatable {
     /// From an index job: the file's producer, such as "pdfTeX-1.40.25", and its title.
     var producer: String?
     var title: String?
+    /// From an index job: the document's facts with its opening, and each page's with its key.
+    var facts: FileFacts?
 }
 
 /// The only kind of process that opens PDF content (DESIGNS.md → Principles → Safety).
@@ -65,7 +67,8 @@ public enum Worker {
             guard let dictionary = document.info, CGPDFDictionaryGetString(dictionary, key, &value), let value else { return nil }
             return CGPDFStringCopyTextString(value) as String?
         }
-        emit(WorkerEvent(kind: .opened, pageCount: count, producer: info("Producer"), title: info("Title")))
+        emit(WorkerEvent(kind: .opened, pageCount: count, producer: info("Producer"), title: info("Title"),
+                         facts: start == 0 ? FactReader.document(document, url: url) : nil))
         var keyer = PageKeyer()
         for index in max(start, 0)..<max(count, start) {
             emit(WorkerEvent(kind: .start, page: index))
@@ -75,7 +78,8 @@ public enum Worker {
                 continue
             }
             let check = FontCheck(page: page)
-            emit(WorkerEvent(kind: .key, page: index, key: keyer.key(for: page), gaps: check.gaps, risky: check.risky))
+            emit(WorkerEvent(kind: .key, page: index, key: keyer.key(for: page), gaps: check.gaps, risky: check.risky,
+                             facts: FactReader.page(page, index: index)))
         }
         return 0
     }

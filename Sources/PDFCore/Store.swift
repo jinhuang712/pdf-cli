@@ -125,7 +125,7 @@ public final class Store: Sendable {
         }
     }
 
-    static let schemaVersion = 5
+    static let schemaVersion = 6
 
     static func createSchema(_ db: Database) throws {
         let version = try Int.fetchOne(db, sql: "PRAGMA user_version") ?? 0
@@ -135,12 +135,14 @@ public final class Store: Sendable {
         // Version 3: the sample check of each document.
         // Version 4: whether PDFKit saved the document.
         // Version 5: the document's title, and the index checks each file entry ran.
+        // Version 6: each file's facts.
         for (table, column, type) in [("page_result", "data", "TEXT NOT NULL DEFAULT ''"),
                                       ("document", "spaces_at_risk", "INTEGER NOT NULL DEFAULT 0"),
                                       ("document", "needs_ocr", "INTEGER NOT NULL DEFAULT 0"),
                                       ("document", "saved_by_pdfkit", "INTEGER NOT NULL DEFAULT 0"),
                                       ("document", "title", "TEXT NOT NULL DEFAULT ''"),
-                                      ("file_entry", "checks", "INTEGER NOT NULL DEFAULT 0")]
+                                      ("file_entry", "checks", "INTEGER NOT NULL DEFAULT 0"),
+                                      ("file_entry", "facts", "TEXT NOT NULL DEFAULT ''")]
         where try !db.columns(in: table).contains(where: { $0.name == column }) {
             try db.execute(sql: "ALTER TABLE \(table) ADD COLUMN \(column) \(type)")
         }
@@ -154,7 +156,7 @@ public final class Store: Sendable {
     /// and the title. Raise it when they change. A file entry indexed with older checks still
     /// holds its document, so a cleanup keeps the document's pages, but a read indexes the
     /// file again and runs every check.
-    static let indexChecks = 5
+    static let indexChecks = 6
 
     static func createVersion1(_ db: Database) throws {
         try db.execute(sql: """
@@ -228,11 +230,12 @@ public final class Store: Sendable {
     /// check's, and `savedByPDFKit` says the file's producer is macOS's PDFKit. `title` is the
     /// title the file names in its metadata, or empty. `failures` are the results of pages the
     /// index could not read, by key: they go in the same transaction as their document, so a
-    /// cleanup in between never drops them.
+    /// cleanup in between never drops them. `facts` belong to this version of the file, so they
+    /// go with its entry.
     @discardableResult
     public func saveIndex(path: String, stat: FileStat, pageKeys: [String], spacesAtRisk: Bool = false,
                           needsOCR: Bool = false, savedByPDFKit: Bool = false, title: String = "",
-                          failures: [String: String] = [:]) throws -> String {
+                          failures: [String: String] = [:], facts: FileFacts? = nil) throws -> String {
         let id = Store.documentID(pageKeys: pageKeys)
         try write { db in
             for (key, reason) in failures { try Store.insertResult(db, key: key, .failed(reason)) }
@@ -248,9 +251,22 @@ public final class Store: Sendable {
                     INSERT OR REPLACE INTO document_page (doc_id, page_index, page_key) VALUES (?, ?, ?)
                     """, arguments: [id, index, key])
             }
-            try saveEntry(db, path: path, stat: stat, docID: id, failure: nil)
+            let encoded = facts.flatMap { try? JSONEncoder().encode($0) }.map { String(decoding: $0, as: UTF8.self) }
+            try saveEntry(db, path: path, stat: stat, docID: id, failure: nil, facts: encoded ?? "")
         }
         return id
+    }
+
+    /// The facts of a file as it is now, if the cache knows this version of it.
+    public func facts(path: String, stat: FileStat) throws -> FileFacts? {
+        let text = try pool.read { db in
+            try String.fetchOne(db, sql: """
+                SELECT facts FROM file_entry
+                WHERE path = ? AND size = ? AND modified_ns = ? AND inode = ? AND device = ? AND checks = ?
+                """, arguments: [path, stat.size, stat.modifiedNanos, stat.inode, stat.device, Store.indexChecks])
+        }
+        guard let text, !text.isEmpty else { return nil }
+        return try? JSONDecoder().decode(FileFacts.self, from: Data(text.utf8))
     }
 
     public func saveFailure(path: String, stat: FileStat, reason: String) throws {
@@ -271,13 +287,13 @@ public final class Store: Sendable {
         }
     }
 
-    func saveEntry(_ db: Database, path: String, stat: FileStat, docID: String?, failure: String?) throws {
+    func saveEntry(_ db: Database, path: String, stat: FileStat, docID: String?, failure: String?, facts: String = "") throws {
         try db.execute(sql: """
             INSERT OR REPLACE INTO file_entry
-                (path, size, modified_ns, inode, device, doc_id, failure, indexed_at, checks)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (path, size, modified_ns, inode, device, doc_id, failure, indexed_at, checks, facts)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, arguments: [path, stat.size, stat.modifiedNanos, stat.inode, stat.device,
-                             docID, failure, Date().timeIntervalSince1970, Store.indexChecks])
+                             docID, failure, Date().timeIntervalSince1970, Store.indexChecks, facts])
     }
 
     static func documentID(pageKeys: [String]) -> String {

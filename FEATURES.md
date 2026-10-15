@@ -3,7 +3,7 @@
 
 ✅ built · 🚧 built with a gap · ⬜ planned
 
-F1 and F11 are ✅ built, F3, F7 and F8 are 🚧 built with a gap, and every other feature is ⬜ planned. The commands and output samples show the intended behavior.
+F1 and F11 are ✅ built, F2, F3, F7 and F8 are 🚧 built with a gap, and every other feature is ⬜ planned. The commands and output samples show the intended behavior.
 
 ## F1 — Add ✅
 
@@ -20,7 +20,7 @@ Any other command adds a PDF it has not seen before, on first use, and parses th
 
 Settings: none.
 
-## F2 — Info ⬜
+## F2 — Info 🚧
 
 Gives a cheap first look at a PDF, so the agent can decide what to read.
 
@@ -53,6 +53,12 @@ Figures and tables
 - The running headers, footers and publisher stamps, each once.
 - Every page that is flagged, with its status.
 
+The outline comes from the file's bookmarks, or, in a file with none, from the headings in its text, such as "2.1 Method" or "References". The output says which. `pdf info` answers once the file is indexed and its first page parsed: on a file not seen before, the sizes, the flags and the headings cover the pages parsed so far, and the output says how many those are. `--json` gives every section, at every level.
+
+Gap:
+- The figures and tables come with M2.6, and the running headers, footers and publisher stamps with M2.5.
+- The counts of headnotes, footnotes and references, and two-page spreads, come later.
+
 Settings: none.
 
 ## F3 — Read 🚧
@@ -75,8 +81,8 @@ next: pdf read paper.pdf --from p4.27
 | Flag | What it reads |
 |---|---|
 | `--page 3-5` | Pages by their position in the file, such as `3`, `3-5` or `3,7-9`. The flag can repeat. |
-| `--printed-page 237` | A page by the number printed on it, such as "237" or "iv" |
-| `--section "Method"` or `--section 2.1` | A section by its title or its number. The flag can repeat. |
+| `--printed-page 237` | A page by the number printed on it, such as "237" or "iv", from the file's page labels |
+| `--section "Method"` or `--section 2.1` | A section by its title or its number, as `pdf info` lists them, from its heading to the next section at its level or above. The flag can repeat. |
 | `--full` | The whole document, within the budget, as a read without a page flag does |
 | `--from p4.27` | Goes on from where a read stopped, as its `next:` line says: a page, a block in it, and a character in the block after a colon, as in `p4.27:200` |
 | `--format md\|text\|html` | The output format. The default is `md`. |
@@ -86,7 +92,7 @@ next: pdf read paper.pdf --from p4.27
 Without a page or section flag, `pdf read` starts at the first page and stops at the default budget (see F7). A page asked for is parsed first, and a read that the budget stops early waits only for the pages it shows.
 
 Gap:
-- `--printed-page` and `--section` come with `pdf info`'s page labels and sections (M1.6), `--styles` and `--format html` later.
+- `--section` takes one section per read so far. `--styles` and `--format html` come later.
 - Tables, figures and equations read as plain text until M2.6, and images and annotations get no marker until M1.13 and M1.14.
 
 Apple OCR reads a scanned page, a page whose text layer is stray marks or broken characters, and every page of a file whose text layer disagrees with its own image. Its blocks carry addresses like any other, and the text layer it replaced shows with `--raw`, labelled `[old OCR]`.

@@ -108,6 +108,8 @@ public final class Runner: @unchecked Sendable {
             var pageCount: Int?
             var producer: String?
             var title: String?
+            var documentFacts: FileFacts?
+            var pageFacts: [Int: FileFacts] = [:]
             var keys: [Int: String] = [:]
             var checks: [Int: FontCheck] = [:]
             var agreement: Double?
@@ -130,11 +132,13 @@ public final class Runner: @unchecked Sendable {
                     pageCount = event.pageCount
                     producer = event.producer
                     title = event.title
+                    if let facts = event.facts { documentFacts = facts }
                 case .openFailed: fileFailure = event.reason ?? OpenFailure.damaged
                 case .key:
                     guard let page = event.page, let key = event.key else { break }
                     keys[page] = key
                     checks[page] = FontCheck(gaps: event.gaps ?? 0, risky: event.risky ?? 0)
+                    if let facts = event.facts { pageFacts[page] = facts }
                 case .sample: agreement = event.agreement
                 default: break
                 }
@@ -228,9 +232,12 @@ public final class Runner: @unchecked Sendable {
             // file that PDFKit saved counts as a new file, with a warning).
             let savedByPDFKit = producer?.contains("Quartz PDFContext") ?? false
             let named = TextCleanup.line(title ?? "")
+            // Page facts are kept by page, so a page an index restart reads again counts once.
+            var facts = documentFacts ?? FileFacts()
+            for page in pageFacts.keys.sorted() { facts.merge(pageFacts[page]!) }
             guard let id = try? store.saveIndex(path: path, stat: before, pageKeys: ordered, spacesAtRisk: atRisk,
                                                 needsOCR: needsOCR, savedByPDFKit: savedByPDFKit, title: named,
-                                                failures: failures) else {
+                                                failures: failures, facts: facts) else {
                 return .unavailable
             }
             return .document(id: id, stat: before)

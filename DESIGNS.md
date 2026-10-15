@@ -308,6 +308,27 @@ A cleanup never takes what a read still needs:
 | A command-line argument | Simple. | Every user on the Mac can see it in `ps`. |
 | The macOS keychain | Stored safely, so a changed file opens without asking again. | A keychain prompt in the middle of an agent's work, and a secret kept after the agent is done. |
 
+## Decision: a file's facts kept with its entry, apart from its pages — 2026-10-15
+
+A file's metadata, bookmarks, page labels, comments, highlights, form fields, attachments and scripts live in its catalog and its annotations, not in what its pages draw. The index reads them, as it reads the page keys, and keeps them with the file's entry in the cache: a highlight appended to a file changes its facts and leaves its pages' results alone, as the principle "Annotations leave the cache alone" asks. A new version of the index checks reads every file's facts again on its next read. The reading walks the file's dictionaries with a depth and a count limit, and runs nothing it finds.
+
+| Option | For | Against |
+|---|---|---|
+| **With the file's entry** | Follows the file's bytes, as annotations do. | Read again whenever the file changes, even by a highlight. |
+| With the document, by page content | Shared by every copy. | Two copies with other bookmarks or comments would show each other's. |
+
+## Decision: sections from bookmarks, else from headings in the text — 2026-10-15
+
+`pdf info` and `pdf read --section` take a file's sections from its bookmarks, the outline its author saved. A bookmark points at a page and a spot on it, and the section starts at the short block that spells the bookmark's title, as "5.2. Image Classification" for "Image Classification", else at the block nearest below the spot in its column: on a page of two columns, the height alone pointed into the wrong column. A file with no bookmarks takes its sections from its headings: one-line blocks that read "2.1 Method" or name a usual part, such as "References". A line that repeats on three pages or more is a running header, a title mostly of digits or symbols belongs to a chart or a table, a line in the top 7.5% or bottom 5% of a page is a header or footer, and numbered headings must rise, so a table row such as "5 Italian 4–5" after "3.5" stays out. When the bookmarks lack a number that `--section` asks for, the headings get a try.
+
+On the samples, the arXiv paper with bookmarks gave 17 sections placed on their headings, the Word-made paper without them gave its 16 numbered and named headings, and the 1951 NACA scan gave 6, its real headings, with no running header: its two units tables count as sections too, and the figures after its references fall under "References". Headings need the whole file parsed; until then `pdf info` lists those of the pages parsed so far, and says so.
+
+| Option | For | Against |
+|---|---|---|
+| **Bookmarks, else headings in the text** | The author's own outline when there is one. | Heading rules miss unnumbered headings, and let some noise through on scans. |
+| Headings by font size | Finds unnumbered headings. | Needs each block's font size, which the text layer does not keep yet. |
+| A layout model | Labels headings in one pass. | A model to download, which waits until a goal needs it. |
+
 ## Decision: macOS updates leave the cache alone — 2026-10-15
 
 The cache key holds the page content and the parser version, and leaves the macOS version out, so a macOS update parses nothing again. Each page records the macOS build it was parsed on, and `pdf reparse` reads a page or a file again on the running macOS. When the test set shows that a macOS release changes the output, a new pdf-cli release raises the parser version, and each page is parsed again on its next read.

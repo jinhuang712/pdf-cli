@@ -198,6 +198,18 @@ check "raised characters keep a mark" "Haoru Tan^{1,†}" "$(reading read $paper
 check "--json gives every block its page and position" '"bbox":\[' "$(reading read $paper --page 2 --json)"
 check "a page out of range fails" "page 12 is out of range" "$(reading read $paper --page 12)"
 
+# pdf info, and reads by section and by printed page.
+output=$(reading info $paper)
+check "pdf info names the title" "^Dataset Distillation by Influence Matching" "$output"
+check "pdf info lists the sections from the bookmarks" "^  Introduction  *p.1–2" "$output"
+check "pdf info counts what the file carries" "comments: 0 · highlights: 0 · form fields: 0" "$output"
+output=$(reading read $paper --section experiments --budget all)
+check "a read by section starts at its heading" "^¶[0-9]* 5. Experiments" "$output"
+check "a read by section stops where the next one starts" "read p.6–8" "$output"
+check "a section by its number finds the heading in the text" "^¶[0-9]* 2. Related Works" "$(reading read $paper --section 2 --budget all)"
+check "a printed page" "^## p.3" "$(reading read $paper --printed-page 3)"
+check "an unknown section names the known ones" "no section matches nothing; sections: .*Introduction" "$(reading read $paper --section nothing)"
+
 # The library: pdf add, ls, rm and gc, and a locked file.
 library() { PDF_CLI_HOME=$work/library $pdf "$@" 2>&1; echo "exit $?"; }
 output=$(library add testdata/ocr)
