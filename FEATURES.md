@@ -195,10 +195,11 @@ Settings: none.
 
 ## F10 — Reparse ⬜
 
-Reads chosen pages again with a stronger method.
+Reads pages again, with the usual method on the running macOS or with a stronger one.
 
 | Command | What happens |
 |---|---|
+| `pdf reparse <path>` | Reads every page again with the usual method, and replaces the cached results. `--page 7` limits it to one page. |
 | `pdf reparse <path> --page 7 --step ocr` | Reads page 7 again with the Mac's OCR, and replaces the cached result. |
 | `pdf reparse <path> --page 7 --step vlm` | Reads page 7 again with a local vision model. This step needs `pdf setup vlm` first. |
 
