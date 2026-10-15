@@ -29,9 +29,9 @@ public enum Search {
     /// spaces, as Chinese is, so a snippet can take it out again.
     static let split: Character = "\u{2009}"
 
-    /// Whether a character belongs to a script written without spaces between words: Chinese
-    /// and Japanese characters, and Korean syllables, which the tokenizer would read as one long
-    /// word.
+    /// Whether a character is one the index splits apart: Chinese and Japanese characters, which
+    /// their scripts write without spaces, and Korean syllables, which the tokenizer would
+    /// otherwise read as one word with whatever follows them.
     static func unspaced(_ character: Character) -> Bool {
         guard let scalar = character.unicodeScalars.first else { return false }
         switch scalar.value {
@@ -57,9 +57,27 @@ public enum Search {
         return out
     }
 
-    /// A snippet as a reader sees it, with the index's splits taken out.
+    /// A snippet as a reader sees it, with the index's splits taken out: a thin space beside a
+    /// split character, with the snippet's `**` marks looked past. A thin space the text holds
+    /// itself, as in "5 mm", stays.
     public static func readable(_ text: String) -> String {
-        text.filter { $0 != split }
+        guard text.contains(split) else { return text }
+        let characters = Array(text)
+        func neighbour(_ index: Int, step: Int) -> Character? {
+            var position = index + step
+            while characters.indices.contains(position), characters[position] == split || characters[position] == "*" {
+                position += step
+            }
+            return characters.indices.contains(position) ? characters[position] : nil
+        }
+        var out = ""
+        for (index, character) in characters.enumerated() {
+            if character == split, [neighbour(index, step: -1), neighbour(index, step: 1)].contains(where: { $0.map(unspaced) ?? false }) {
+                continue
+            }
+            out.append(character)
+        }
+        return out
     }
 
     /// An FTS5 query for the words of `text`: each word quoted, so no character is read as
@@ -96,8 +114,10 @@ public enum Search {
     /// Every match of a regular expression in the pages' text, in the order of the file. The
     /// text runs from block to block and page to page with a line break between, so a match can
     /// cross a line, a column or a page. At most `limit` matches are kept.
+    public static let maxMatches = 10_000
+
     public static func matches(_ pattern: NSRegularExpression, docID: String, pages: [(index: Int, layer: PageText)],
-                               limit: Int = 10_000) -> [SearchHit] {
+                               limit: Int = maxMatches) -> [SearchHit] {
         var text = ""
         var starts: [(offset: Int, page: Int, block: Int)] = []
         var length = 0
@@ -119,8 +139,12 @@ public enum Search {
                 if starts[middle].offset <= range.location { low = middle } else { high = middle - 1 }
             }
             let place = starts[low]
-            let before = max(0, range.location - 60)
-            let after = min(whole.length, range.location + range.length + 60)
+            // The context widens to whole characters, so no emoji or accent is cut in half.
+            let context = whole.rangeOfComposedCharacterSequences(for: NSRange(
+                location: max(0, range.location - 60),
+                length: min(whole.length, range.location + range.length + 60) - max(0, range.location - 60)))
+            let before = min(context.location, range.location)
+            let after = max(context.location + context.length, range.location + range.length)
             func flat(_ part: String) -> String { part.replacingOccurrences(of: "\n", with: " ") }
             let snippet = (before > 0 ? "…" : "") + flat(whole.substring(with: NSRange(location: before, length: range.location - before)))
                 + "**" + flat(whole.substring(with: range)) + "**"
@@ -191,11 +215,17 @@ extension Store {
                 WHERE d.doc_id IN (\(marks)) AND s.page_key IS NULL
                 """, arguments: StatementArguments([Env.parserVersion] + docIDs)!)
         }
-        guard !missing.isEmpty else { return }
-        let results = try results(keys: missing)
-        try write { db in
-            for (key, result) in results {
-                try Store.indexForSearch(db, key: key, version: Env.parserVersion, result: result)
+        // A few hundred pages at a time, so no transaction holds the write lock long enough to
+        // stall a runner, and each page is indexed only if its result is still cached: a
+        // cleanup between the read above and the write would leave rows with no page behind them.
+        for start in stride(from: 0, to: missing.count, by: 200) {
+            let results = try results(keys: Array(missing[start..<min(start + 200, missing.count)]))
+            try write { db in
+                for (key, result) in results {
+                    guard try Bool.fetchOne(db, sql: "SELECT 1 FROM page_result WHERE page_key = ? AND parser_version = ?",
+                                            arguments: [key, Env.parserVersion]) ?? false else { continue }
+                    try Store.indexForSearch(db, key: key, version: Env.parserVersion, result: result)
+                }
             }
         }
     }

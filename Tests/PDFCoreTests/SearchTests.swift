@@ -30,6 +30,8 @@ import Testing
         #expect(Search.query("深度学习 model") == "\"深 度 学 习\" AND \"model\"")
         let indexed = Search.indexable("基于深度学习的方法")
         #expect(Search.readable(indexed) == "基于深度学习的方法")
+        // A thin space the text holds itself stays.
+        #expect(Search.readable(Search.indexable("5\u{2009}mm of 水")) == "5\u{2009}mm of 水")
         let store = try makeStore()
         let id = try store.saveIndex(path: "/a.pdf", stat: FileStat(size: 1, modifiedNanos: 1, inode: 1, device: 1), pageKeys: ["k0"])
         try store.saveResult(key: "k0", result(["我们提出一种基于深度学习的方法。", "Unrelated text"]))

@@ -152,7 +152,7 @@ read a hit: pdf read paper.pdf --from p3.19
 next: pdf search paper.pdf 'influence matching' --from 11
 ```
 
-A keyword finds its other forms, as "dropouts" finds "dropout", and ignores accents. Every word must be in the same paragraph; when no paragraph holds them all, the result lists paragraphs that hold some of them, and says so. A search of one PDF that is new to the cache waits up to 10 s for its pages to parse. A search of the library searches the pages parsed so far and starts no parse. `--json` gives every hit with its file, page, paragraph, section and snippet. A hit on a flagged page names the page's status.
+A keyword finds its other forms, as "dropouts" finds "dropout", and ignores accents. Every word must be in the same paragraph; when no paragraph holds them all, the result lists paragraphs that hold some of them, and says so. A search of one PDF that is not fully parsed waits up to 10 s for its pages. A search of the library searches the pages parsed so far, starts no parse, and searches copies of one file once. `--json` gives each hit with its file, page, paragraph, section and snippet, within the same budget. A hit on a flagged page names the page's status. A pattern stops counting at 10,000 matches in a PDF, and one that runs longer than 10 s stops with an error that says so.
 
 Gap:
 - Search by meaning, and so queries in another language, come with M3.1.

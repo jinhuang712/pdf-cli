@@ -37,17 +37,27 @@ struct SearchCommand: ParsableCommand {
                 throw ValidationError("--regex takes a regular expression: \(error.localizedDescription)")
             }
             if words.count > 1 { throw ValidationError("with --regex, give at most a PDF, and no words") }
+        } else if words.count == 1 && Self.namesFile(words[0]) {
+            throw ValidationError("give the words to find after the PDF, or --regex with a pattern")
         } else if scope.query.isEmpty || Search.query(scope.query) == nil {
             throw ValidationError("give the words to find, or --regex with a pattern")
         }
     }
 
+    /// Whether a word names a PDF: it ends in ".pdf", or names a file. A folder is no PDF, so
+    /// a word that happens to name one stays a word.
+    static func namesFile(_ word: String) -> Bool {
+        if word.lowercased().hasSuffix(".pdf") { return true }
+        var folder: ObjCBool = false
+        return FileManager.default.fileExists(atPath: word, isDirectory: &folder) && !folder.boolValue
+    }
+
     /// The PDF, if the first word names one, and the words to find.
     var scope: (path: String?, query: String) {
         guard let first = words.first else { return (nil, "") }
-        let named = first.lowercased().hasSuffix(".pdf") || FileManager.default.fileExists(atPath: first)
         if regex != nil { return (words.count == 1 ? first : nil, "") }
-        return named && words.count > 1 ? (first, words.dropFirst().joined(separator: " ")) : (nil, words.joined(separator: " "))
+        return Self.namesFile(first) && words.count > 1
+            ? (first, words.dropFirst().joined(separator: " ")) : (nil, words.joined(separator: " "))
     }
 
     /// A PDF the search covers, and how much of it is parsed.
@@ -73,10 +83,19 @@ struct SearchCommand: ParsableCommand {
                                   parsed: try Self.waitForPages(docID: docID, store: store))]
             }
         } else {
+            // Copies of one file are one document, searched once, under a path that still exists.
+            var known: [String: Int] = [:]
             for entry in try library.entries() {
+                if let index = known[entry.docID] {
+                    if !FileManager.default.fileExists(atPath: targets[index].path) && FileManager.default.fileExists(atPath: entry.path) {
+                        targets[index].path = entry.path
+                    }
+                    continue
+                }
                 let keys = try store.pageKeys(docID: entry.docID)
                 guard !keys.isEmpty else { continue }
                 let cached = try store.cachedKeys(keys)
+                known[entry.docID] = targets.count
                 targets.append(Target(path: entry.path, docID: entry.docID, pageCount: keys.count,
                                       parsed: keys.filter { cached.contains($0) }.count))
             }
@@ -93,13 +112,28 @@ struct SearchCommand: ParsableCommand {
         var hits: [SearchHit] = []
         var total = 0
         var loose = false
+        var capped = false
         let pattern = regex.map { try! NSRegularExpression(pattern: $0, options: [.anchorsMatchLines]) }
         if let pattern {
+            // A pattern with nested repeats can run for minutes, and NSRegularExpression has no
+            // time limit, so the command stops itself, and says why.
+            let seconds = min(Env.pageTimeLimit, 10)
+            let watchdog = DispatchWorkItem {
+                FileHandle.standardError.write(Data("""
+                    Error: the pattern ran longer than \(Int(seconds)) s. Nested repeats, as in (\\w+\\s?)+, can take \
+                    minutes on a page; simplify it.\n
+                    """.utf8))
+                Foundation.exit(1)
+            }
+            DispatchQueue.global().asyncAfter(deadline: .now() + seconds, execute: watchdog)
             for target in targets {
                 let pages = try InfoCommand.cachedPages(docID: target.docID, store: store)
                     .compactMap { page in page.result.pageText.map { (index: page.index, layer: $0) } }
-                hits += Search.matches(pattern, docID: target.docID, pages: pages)
+                let found = Search.matches(pattern, docID: target.docID, pages: pages)
+                if found.count >= Search.maxMatches { capped = true }
+                hits += found
             }
+            watchdog.cancel()
             total = hits.count
             hits = Array(hits.dropFirst(from - 1).prefix(wanted))
         } else {
@@ -108,9 +142,12 @@ struct SearchCommand: ParsableCommand {
             total = try store.search(match, docIDs: docIDs, limit: 0, offset: 0).total
             if total == 0, let any = Search.query(query, any: true), any != match {
                 // No block holds every word: blocks that hold some of them, best first.
-                match = any
-                loose = true
-                total = try store.search(match, docIDs: docIDs, limit: 0, offset: 0).total
+                let some = try store.search(any, docIDs: docIDs, limit: 0, offset: 0).total
+                if some > 0 {
+                    match = any
+                    loose = true
+                    total = some
+                }
             }
             var offset = from - 1
             while hits.count < min(wanted, total - (from - 1)) && offset < total {
@@ -124,7 +161,7 @@ struct SearchCommand: ParsableCommand {
         }
 
         let report = Report(query: regex ?? query, regex: regex != nil, targets: targets, single: path != nil,
-                            total: total, loose: loose, from: from, store: store)
+                            total: total, loose: loose, capped: capped, from: from, store: store, picks: try? Picks())
         let shown = report.render(hits, budget: limit, top: top)
         let flags = (regex.map { " --regex " + Output.quoted($0) } ?? "")
             + (budget == "5000" ? "" : " --budget \(budget)") + (json ? " --json" : "")
@@ -165,8 +202,11 @@ struct SearchCommand: ParsableCommand {
         var single: Bool
         var total: Int
         var loose: Bool
+        /// True when a pattern matched more than `Search.maxMatches` times in a file.
+        var capped: Bool
         var from: Int
         var store: Store
+        var picks: Picks?
 
         struct Line: Encodable {
             var file: String
@@ -195,28 +235,40 @@ struct SearchCommand: ParsableCommand {
             } ?? []
         }
 
-        /// The status of a hit's page when it is not ok, such as "low-quality".
-        func flag(_ hit: SearchHit, keys: [String]) -> String? {
-            guard keys.indices.contains(hit.page), let result = (try? store.results(keys: [keys[hit.page]]))?[keys[hit.page]]
-            else { return nil }
-            let key = keys[hit.page]
-            let status = Output.judge(Output.Page(index: hit.page, result: result, key: key),
-                                      picks: (try? Picks().picks(keys: [key])) ?? [:]).quality.status
-            return status == .ok ? nil : status.rawValue
+        /// The status of each page with a hit that is not ok, such as "low-quality", keyed by
+        /// document and page, read in one pass per document.
+        func flags(_ hits: [SearchHit]) -> [String: String] {
+            var flags: [String: String] = [:]
+            for (docID, docHits) in Dictionary(grouping: hits, by: \.docID) {
+                guard let keys = try? store.pageKeys(docID: docID) else { continue }
+                let pages = Set(docHits.map(\.page)).filter { keys.indices.contains($0) }
+                let wanted = pages.map { keys[$0] }
+                let results = (try? store.results(keys: wanted)) ?? [:]
+                let picked = (try? picks?.picks(keys: wanted)) ?? [:]
+                for page in pages {
+                    guard let result = results[keys[page]] else { continue }
+                    let status = Output.judge(Output.Page(index: page, result: result, key: keys[page]), picks: picked)
+                        .quality.status
+                    if status != .ok { flags["\(docID) \(page)"] = status.rawValue }
+                }
+            }
+            return flags
         }
 
-        /// The hits that fit the budget, as lines. The first always goes out.
+        /// The hits that fit the budget, as lines. The first always goes out. The budget keeps
+        /// room for the lines that close the output.
         func render(_ hits: [SearchHit], budget: Int?, top: Int?) -> [Line] {
-            var known: [String: (sections: [Section], keys: [String])] = [:]
+            var known: [String: [Section]] = [:]
             var lines: [Line] = []
-            var used = Output.tokens(header())
+            var used = Output.tokens(header()) + 60
+            let flagged = flags(hits)
             for hit in hits {
                 guard let target = targets.first(where: { $0.docID == hit.docID }) else { continue }
-                let found = known[hit.docID] ?? (sections(target), (try? store.pageKeys(docID: hit.docID)) ?? [])
+                let found = known[hit.docID] ?? sections(target)
                 known[hit.docID] = found
                 let line = Line(file: target.path, page: hit.page + 1, block: hit.block,
-                                section: Info.section(at: hit.page + 1, block: hit.block, in: found.sections)?.title,
-                                flagged: flag(hit, keys: found.keys), snippet: hit.snippet)
+                                section: Info.section(at: hit.page + 1, block: hit.block, in: found)?.title,
+                                flagged: flagged["\(hit.docID) \(hit.page)"], snippet: hit.snippet)
                 let cost = Output.tokens(text(line))
                 if let budget, !lines.isEmpty, used + cost > budget { break }
                 used += cost
@@ -233,7 +285,8 @@ struct SearchCommand: ParsableCommand {
         }
 
         func header() -> String {
-            let hits = "\(total) hit\(total == 1 ? "" : "s")"
+            let hits = capped ? "\(total)+ hits: a pattern stops counting at \(Search.maxMatches) in each PDF"
+                : "\(total) hit\(total == 1 ? "" : "s")"
             let shown = regex ? "/\(query)/" : "\"\(query)\""
             let parts: [String]
             if single, let target = targets.first {
@@ -288,13 +341,14 @@ struct SearchCommand: ParsableCommand {
                 var regex: Bool
                 var total: Int
                 var someWords: Bool
+                var capped: Bool
                 var files: [File]
                 var hits: [Line]
                 var next: String?
             }
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.withoutEscapingSlashes, .sortedKeys]
-            return try encoder.encode(Body(query: query, regex: regex, total: total, someWords: loose,
+            return try encoder.encode(Body(query: query, regex: regex, total: total, someWords: loose, capped: capped,
                                            files: targets.map { File(file: $0.path, pageCount: $0.pageCount, pagesSearched: $0.parsed) },
                                            hits: lines, next: next))
         }

@@ -227,6 +227,9 @@ check "the budget stops a search and says how to go on" "^next: pdf search $pape
 check "words no paragraph holds together give paragraphs that hold some" "hold some of them" "$(reading search $paper influence zebra --top 1)"
 check "the library is searched without a PDF" "^arxiv-2607.16859.pdf p.[0-9]* ¶[0-9]* · " "$(reading search distillation --top 2)"
 check "a search gives JSON" '"pagesSearched":11' "$(reading search $paper influence --top 1 --json)"
+check "a pattern that runs away stops, and says why" "the pattern ran longer than 2 s" \
+    "$(PDF_CLI_HOME=$work/reading PDF_CLI_PAGE_TIME_LIMIT=2 $pdf search $paper --regex '(\w+\s?)+QQQ' 2>&1)"
+check "a lone PDF without words is refused" "give the words to find after the PDF" "$(reading search nope.pdf)"
 
 # The library: pdf add, ls, rm and gc, and a locked file.
 library() { PDF_CLI_HOME=$work/library $pdf "$@" 2>&1; echo "exit $?"; }
