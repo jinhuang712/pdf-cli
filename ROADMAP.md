@@ -1,4 +1,4 @@
-<!-- what-we-build: approved 2026-10-15 -->
+<!-- what-we-build: drafted 2026-10-15 -->
 # Roadmap
 
 **Current milestone:** M1. An agent reads born-digital and scanned PDFs through the cache.
@@ -38,7 +38,7 @@
 | M1.3 | Quality checks on every page, failure blocks with crop commands, and unsure blocks with `pdf pick` (F8) | |
 | M1.4 | Vision OCR for scanned and garbled pages | |
 | M1.5 | `pdf add`, `pdf ls`, `pdf rm` and `pdf gc` (F1, F11) | |
-| M1.6 | `pdf info` from bookmarks, page labels and the text layer (F2) | The figure list needs M2's layout models. |
+| M1.6 | `pdf info` from bookmarks, page labels and the text layer (F2) | The figure list comes with figure detection in M2.6. |
 | M1.7 | `pdf read` by page, printed page and section, with the output basics (F3, F7) | |
 | M1.8 | `pdf search` by keyword and with `--regex` (F4) | Search by meaning comes in M3. |
 | M1.9 | `pdf crop` for pages and regions (F5) | Figure and table crops come in M2. |
