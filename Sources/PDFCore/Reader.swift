@@ -111,8 +111,11 @@ public final class Reader: Sendable {
                 // only after the index could reach it after its first batch had started.
                 let pages = wanted.map { $0.map(String.init).joined(separator: ",") } ?? "all"
                 // Attached with "=", so a list that starts with a negative page is not read as a flag.
+                // An empty list, as `pdf crop` asks for when it needs only the index, is left out:
+                // the parser reads "--pages=" as a flag missing its value.
                 runner = try Processes.spawn(Env.executablePath,
-                                             ["__runner", path, "--pages=" + pages] + (workers.map { ["--workers=\($0)"] } ?? []),
+                                             ["__runner", path] + (pages.isEmpty ? [] : ["--pages=" + pages])
+                                                + (workers.map { ["--workers=\($0)"] } ?? []),
                                              detached: true, captureOutput: false,
                                              environment: password.map { [Env.passwordVariable: $0] } ?? [:]).pid
                 spawns += 1

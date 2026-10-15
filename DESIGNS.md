@@ -440,6 +440,24 @@ Searches took 34–79 ms on cached files. Naming each hit's section costs more o
 | One row per page | Fewer rows. | A hit names only its page, and words from unrelated paragraphs of a page match together. |
 | A scan of the cached text with each query | No index to keep. | Every search decodes every page: about 300 ms for 456 pages, and more across a library. |
 
+## Decision: crops sized to Claude's standard image limits — 2026-10-15
+
+`pdf crop` draws a page or a region at the largest size that fits Claude's standard limits: 1,568 px on the long edge and 1,568 image tokens, where a token is a block of 28×28 px. A crop then costs at most about 1,568 tokens on any model, and no model shrinks it. A whole sample page came to 945×1223 px and about 1,500 tokens; a region comes out enlarged, up to 6 times, 432 dpi, past which a scan gains no detail. The limits come from Claude's vision documentation ([platform.claude.com](https://platform.claude.com/docs/en/build-with-claude/vision)), checked on 2026-10-15: newer models accept up to 2,576 px and 3.75 megapixels, and the rest shrink anything past 1,568 px.
+
+- **Where:** a worker draws the image, since drawing opens PDF content (Principles → Safety), within the page's time and memory limits, in a slot of the shared pool.
+- **Which way up:** a region is given in fractions of the page as stored, before its rotation, the same frame as the positions in `pdf read --json` and the crop commands in failure blocks. The image comes out upright. A test draws a black box and crops it at 0°, 90°, 180° and 270°.
+- **What it shows:** the page as a reader sees it, comments and highlights included. So the image belongs to one version of one file, its path and state, not to the document shared by every copy.
+- **Kept:** in the cache folder for 7 days; the same command within them answers in about 35 ms, and `pdf gc` removes older images.
+- **Locked files:** `--password-stdin` hands the password to the worker in its environment, as `pdf add` does.
+
+Crops took 90–120 ms on cached files with the release build, and 0.84 s for the first crop of an unseen 456-page file, most of it the index.
+
+| Option | For | Against |
+|---|---|---|
+| **Claude's standard limits** | The same cost on every model, about 1,500 tokens for a page; nothing shrinks it. | Small print on a whole page is near the edge of legible; the agent crops a region for it. |
+| The newest models' limits | Sharper pages, 2,576 px. | About 3 times the tokens a page, on the newest models, and shrunk to the standard size on the rest. |
+| A fixed resolution, such as 150 dpi | Simple. | A page's cost varies with its size, and a large page is shrunk by the model anyway. |
+
 ## Decision: each character's glyph box matched to its selection — 2026-10-15
 
 PDFKit's `characterBounds(at:)` counts glyphs, not characters. After a ligature such as "fl", one glyph for two characters, it returns the box of the character after the one asked for, and the shift carries on down the page. On an arXiv title, "Dataset Distillation by Influence Matching", the last letter got the box of the next line's first letter, so the title's box spanned two lines. Task M1.7 found it while building the superscript marks.

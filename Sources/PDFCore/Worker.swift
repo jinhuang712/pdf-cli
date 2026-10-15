@@ -84,6 +84,27 @@ public enum Worker {
         return 0
     }
 
+    /// Draws page `index`, counted from 0, or a region of it, into a PNG at `out`, and reports the
+    /// image's size, or why it could not be drawn.
+    public static func crop(path: String, page index: Int, region: Box?, grid: Bool, out: String) -> Int32 {
+        watchParent()
+        plantedFault(at: index, phase: "crop-")
+        let url = URL(fileURLWithPath: path)
+        func fail(_ reason: String) -> Int32 {
+            emit(WorkerEvent(kind: .result, page: index, reason: reason))
+            return 0
+        }
+        guard let document = PDFDocument(url: url) else { return fail(OpenFailure.classify(url: url)) }
+        guard OpenFailure.unlock(document) else { return fail(OpenFailure.lockedReason) }
+        guard let page = document.page(at: index) else { return fail("PDFKit could not read this page") }
+        guard let image = Crop.render(page, region: region ?? Box(x: 0, y: 0, width: 1, height: 1), grid: grid) else {
+            return fail("the region is too small to draw")
+        }
+        guard Crop.writePNG(image, to: URL(fileURLWithPath: out)) else { return fail("the image could not be written") }
+        emit(WorkerEvent(kind: .result, page: index, text: "\(image.width)x\(image.height)"))
+        return 0
+    }
+
     /// Reports the file's facts. The runner runs it in a worker of its own, so facts that take
     /// too long or crash the reader cost the facts alone, never a page.
     public static func facts(path: String) -> Int32 {
@@ -250,7 +271,7 @@ public enum Worker {
     static func plantedFault(at index: Int, phase: String) {
         guard let fault = Env.testFault, fault.page == index, fault.kind.hasPrefix(phase) else { return }
         let kind = fault.kind.dropFirst(phase.count)
-        if phase.isEmpty && ["index-", "sample-", "facts-"].contains(where: fault.kind.hasPrefix) { return }
+        if phase.isEmpty && ["index-", "sample-", "facts-", "crop-"].contains(where: fault.kind.hasPrefix) { return }
         switch kind {
         case "hang":
             while true { sleep(60) }

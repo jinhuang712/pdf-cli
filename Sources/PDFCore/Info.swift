@@ -428,7 +428,7 @@ public struct Info: Encodable, Sendable {
     }
 
     /// "1.8k" for 1,800, "950" below a thousand.
-    static func thousands(_ value: Int) -> String {
+    public static func thousands(_ value: Int) -> String {
         value < 1_000 ? "\(value)" : String(format: "%.1fk", Double(value) / 1_000)
     }
 }

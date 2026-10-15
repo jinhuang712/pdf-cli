@@ -208,12 +208,13 @@ struct GCCommand: ParsableCommand {
         let gone = try library.entries().filter { FileStat.isGone(path: $0.path) }.map(\.path)
         try library.remove(paths: gone)
         let compacted = store.compact()
+        let crops = Crop.removeOld()
         let bytes = ByteCountFormatter()
         bytes.countStyle = .file
         bytes.allowsNonnumericFormatting = false
         print("removed " + [count(removed.files, "file") + " gone or changed", count(removed.documents, "document"),
                             count(removed.pages, "page result"), count(gone.count, "library entry", "library entries")
-                            + " for files gone"].joined(separator: ", ")
+                            + " for files gone", count(crops, "crop") + " older than 7 days"].joined(separator: ", ")
               + " · freed \(bytes.string(fromByteCount: max(0, before - store.size)))")
         if !compacted { print("a parse is running, so the space returns after the next pdf gc") }
     }

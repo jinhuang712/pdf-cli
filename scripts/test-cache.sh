@@ -231,6 +231,20 @@ check "a pattern that runs away stops, and says why" "the pattern ran longer tha
     "$(PDF_CLI_HOME=$work/reading PDF_CLI_PAGE_TIME_LIMIT=2 $pdf search $paper --regex '(\w+\s?)+QQQ' 2>&1)"
 check "a lone PDF without words is refused" "give the words to find after the PDF" "$(reading search nope.pdf)"
 
+# pdf crop: a page, a region, the grid, a crop command from a warning, and a page that hangs.
+output=$(reading crop $paper --page 2)
+check "a page crop prints its image's path, size and tokens" "^/.*/crops/[0-9a-f]*/p2\.png  (~1\.5k image tokens, 945×1223 px)$" "$output"
+check "the image is there" "yes" "$(test -f "${output%%  (*}" && echo yes)"
+check "a region is enlarged to Claude's long edge" "p2-0\.08,0\.07,0\.85,0\.30\.png  (~1\.5k image tokens, 1568×716 px)$" \
+    "$(reading crop $paper --page 2 --bbox 0.08,0.07,0.85,0.3)"
+check "the grid has an image of its own" "p2-grid\.png" "$(reading crop $paper --page 2 --grid)"
+check "a crop gives JSON" '"tokens":[0-9]*,"width":' "$(reading crop $paper --page 2 --json)"
+check "a page out of range fails" "page 12 is out of range" "$(reading crop $paper --page 12)"
+command=$(quality read $scan --page 1 | grep -o 'pdf crop [^ ]* --page 1[^)]*' | head -1)
+check "a warning's crop command makes an image" "/crops/[0-9a-f]*/p1.*\.png  (~" "$(PDF_CLI_HOME=$work/quality $pdf ${command#pdf } 2>&1)"
+check "a page that hangs while drawn stops at the time limit" "could not be drawn: time limit" \
+    "$(run env PDF_CLI_TEST_FAULT=crop-hang:1 $pdf crop $paper --page 2 2>&1)"
+
 # The library: pdf add, ls, rm and gc, and a locked file.
 library() { PDF_CLI_HOME=$work/library $pdf "$@" 2>&1; echo "exit $?"; }
 output=$(library add testdata/ocr)
@@ -266,6 +280,9 @@ sqlite3 "$work/library/Caches/cache.sqlite" "DELETE FROM page_result"
 check "a missing page of a locked file fails the file, not the page" "^$locked: failed: locked by a password" \
     "$(library read $locked)"
 check "the password still opens it after" "· 1 page · ok" "$(echo "open sesame" | library add $locked --password-stdin)"
+check "a locked PDF crops without its password only to say so" "could not be drawn: locked by a password" "$(library crop $locked --page 1)"
+check "a locked PDF crops with its password on standard input" "/p1\.png  (~" \
+    "$(echo "open sesame" | library crop $locked --page 1 --password-stdin)"
 
 # Pages nobody waits for parse slowly, at background priority, so runners get a minute to finish.
 for _ in $(seq 60); do

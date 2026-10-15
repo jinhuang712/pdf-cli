@@ -57,7 +57,7 @@ The spike shipped no features. It answered the riskiest questions.
   - [x] M1.8 `pdf search` by keyword and with `--regex`
   - Later: search by meaning (M3.1)
 - **Crop** (F5): whole pages and regions
-  - [ ] M1.9 `pdf crop` for pages and regions
+  - [x] M1.9 `pdf crop` for pages and regions
   - Later: figures, tables and equations (M2.6)
 - **Hidden text** (F9)
   - [ ] M1.10 Hidden text replaced by a marker in place, with its words shown on request, text in layers switched off included

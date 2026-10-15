@@ -497,7 +497,8 @@ public enum Output {
 
     // MARK: Formatting
 
-    static func format(_ box: Box) -> String {
+    /// A region as `pdf crop --bbox` takes it, to two decimals.
+    public static func format(_ box: Box) -> String {
         [box.x, box.y, box.width, box.height].map { String(format: "%.2f", $0) }.joined(separator: ",")
     }
 

@@ -3,7 +3,7 @@
 
 ✅ built · 🚧 built with a gap · ⬜ planned
 
-F1 and F11 are ✅ built, F2, F3, F4, F7 and F8 are 🚧 built with a gap, and every other feature is ⬜ planned. The commands and output samples show the intended behavior.
+F1 and F11 are ✅ built, F2, F3, F4, F5, F7 and F8 are 🚧 built with a gap, and every other feature is ⬜ planned. The commands and output samples show the intended behavior.
 
 ## F1 — Add ✅
 
@@ -161,7 +161,7 @@ Gap:
 
 Settings: none.
 
-## F5 — Crop ⬜
+## F5 — Crop 🚧
 
 Turns one part of a page into an image, so the agent can look at it with its own image understanding.
 
@@ -181,6 +181,16 @@ caption: Accuracy vs. dropout rate · mentioned on p.15, p.20
 ```
 
 The image is in color, and it is sized so small text in a chart stays readable. `pdf crop` prints the absolute path of the image file. The file stays for 7 days, and the same command makes it again after that.
+
+```sh
+$ pdf crop paper.pdf --page 2 --bbox 0.08,0.07,0.85,0.3
+/Users/me/Library/Caches/pdf-cli/crops/b430b72936d6cf8b/p2-0.08,0.07,0.85,0.30.png  (~1.5k image tokens, 1568×716 px)
+```
+
+A region uses the same fractions as the positions in `pdf read --json` and the crop commands in failure blocks, taken on the page as stored, before any rotation; the image comes out upright. An image fits Claude's standard limits, 1,568 px on its long edge and about 1,568 image tokens, so a whole page costs about 1,500 tokens and a small region comes out enlarged, up to 6 times. It shows comments and highlights as a reader sees them. The same crop asked again within 7 days comes from the cache folder at once, and `pdf gc` removes older ones. `--password-stdin` opens a locked PDF, and `--json` gives the image's path, size and tokens.
+
+Gap:
+- `--figure`, `--table` and `--equation` come with figure, table and equation detection in M2.6.
 
 Settings: none.
 
