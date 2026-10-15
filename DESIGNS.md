@@ -1,4 +1,4 @@
-<!-- what-we-build: approved 2026-10-15 -->
+<!-- what-we-build: drafted 2026-10-15 -->
 # Designs
 
 PDF files on the user's Mac and commands from an agent go in. Text with page addresses, PNG crops, search hits and failure reports come out, served from a local cache. In between, worker processes parse each page once, in steps that escalate only as far as the page needs, and store the result in SQLite. Behavior is in [FEATURES.md](FEATURES.md).
@@ -255,6 +255,18 @@ The 10 sample papers hold 3.8 KB of text per page, measured with PDFKit. With po
 | A size cap that removes the least recently read PDFs | Disk use stays bounded. | A removed PDF is parsed again. For a 300-page scan, that is about 3 minutes of OCR on one worker, at 0.6 s per page. |
 | One dot-folder, such as `~/.pdf-cli/` or `~/.cache/pdf-cli/` | One place that command-line users know. | Mixes rebuildable data with the agent's own work, and follows Linux's convention instead of macOS's. |
 
+## Decision: macOS updates leave the cache alone — 2026-10-15
+
+The cache key holds the page content and the parser version, and leaves the macOS version out, so a macOS update parses nothing again. Each page records the macOS build it was parsed on, and `pdf reparse` reads a page or a file again on the running macOS. When the test set shows that a macOS release changes the output, a new pdf-cli release raises the parser version, and each page is parsed again on its next read.
+
+This follows "Pay once, read many times" and "Same file, same answer". A document seldom mixes two macOS versions, because a worker parses the whole document right after its first use.
+
+| Option | For | Against |
+|---|---|---|
+| **macOS left out of the key** | Nothing is parsed twice. A cached answer never changes on its own. | Apple's fixes reach a cached file only through `pdf reparse` or a new pdf-cli release. |
+| The macOS major version in the key | Each yearly macOS brings its fixes to every file read again. | Every file is parsed again once a year. A 300-page scan costs about 3 minutes of OCR. |
+| The full macOS build in the key | Every page matches the running macOS. | Every minor update, several a year, parses everything again. |
+
 ## Decision: a worker process per job over a background service — 2026-10-15
 
 Each parse job starts its own worker process, which exits when the job ends. A command that needs only one page returns once that page is ready, and its worker goes on with the rest of the document in the background. The SQLite cache records which pages a worker has claimed, so two commands never parse the same page twice.
@@ -278,6 +290,16 @@ A sample-paper page holds about 950 tokens of text, so 5,000 tokens is about 5 p
 | 2,000 tokens | Cheaper per call. | More calls for the same section. |
 | No default | The agent always gets everything it asked for. | A flagless read of a 300-page book sends about 285,000 tokens, and Claude Code cuts it mid-sentence. |
 
+## Decision: a loud failure for a file PDFKit cannot open — 2026-10-15
+
+When PDFKit cannot open a file, the whole file fails with a reason the agent can act on: not a PDF, locked by a password, or damaged. The tool reads nothing else from it. This follows the PDFKit decision, which keeps PDFium out of the binary, and "Wrong is way worse than missing" in [PHILOSOPHY.md](PHILOSOPHY.md). How often a file fails this way is unmeasured. The safety test set holds broken PDFs, and the decision reopens if daily use or the open test set shows such files are common.
+
+| Option | For | Against |
+|---|---|---|
+| **A loud failure** | Apple-only, with nothing to bundle. The agent learns at once, and can tell the user. | A damaged file that PDFium could read stays unread. |
+| PDFium as a fallback | Opens many damaged files. | A non-Apple library in the binary, which the PDFKit decision keeps out. |
+| A repair tool the user has installed, such as qpdf | Repairs many damaged files. | Depends on what each Mac has, so one file gives different answers on different Macs. |
+
 ## Decision: one Homebrew binary over a Python package — 2026-10-14
 
 The tool installs with one Homebrew command. Models that the base install leaves out download in a separate setup step. A Python package would bring PyTorch, an install measured in gigabytes.
@@ -289,7 +311,5 @@ The tool returns text, crops and failure reports, and the calling agent does all
 ## Open questions
 
 - How to measure reading-order doubt on layouts beyond LaTeX papers, such as Word reports, magazines and textbooks with sidebars. The M0 spike's count of jumps between the left and right halves of a page is a candidate, tested only on two-column LaTeX papers.
-- How the cache handles a macOS update. A key that includes the macOS build parses every page again after each update. A key without it mixes text from two versions of PDFKit.
-- What reads a file that PDFKit cannot open, now that PDFium stays out of the binary.
 - The embedding model for search by meaning: Apple's built-in embeddings, or a small MLX model.
 - The quality thresholds that make a page `low-quality`. They get tuned until goal G11 in [GOALS.md](GOALS.md) passes.

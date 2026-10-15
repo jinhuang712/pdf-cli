@@ -1,4 +1,4 @@
-<!-- what-we-build: approved 2026-10-15 -->
+<!-- what-we-build: drafted 2026-10-15 -->
 # Features
 
 ✅ built · 🚧 built with a gap · ⬜ planned
@@ -173,6 +173,7 @@ When two readings of a passage still differ in words, the block shows both, limi
 
 - The summary line at the top counts every flagged page. An unsure block flags its page.
 - A low-quality page is flagged the same way as a failed one, with its reason and its score.
+- A file that PDFKit cannot open fails as a whole, in one line that names the reason: not a PDF, damaged, or locked by a password. A locked file points to `pdf add <path> --password <pw>`.
 - The exit code tells success from failure:
 
 | Exit code | Meaning |
@@ -213,7 +214,7 @@ Shows and cleans up what the tool has cached.
 | `pdf rm <path or ID>` | Removes one PDF from the library and its results from the cache. |
 | `pdf gc` | Removes cached results for files that no longer exist, and for old parser versions. Prints the space it freed. |
 
-Parse results and crop images live in `~/Library/Caches/pdf-cli/`. The library list, picks and memos live in `~/Library/Application Support/pdf-cli/`. The cache keeps every parse result until `pdf rm` or `pdf gc` removes it, and `pdf doctor` shows its size.
+Parse results and crop images live in `~/Library/Caches/pdf-cli/`. The library list, picks and memos live in `~/Library/Application Support/pdf-cli/`. The cache keeps every parse result until `pdf rm` or `pdf gc` removes it, and `pdf doctor` shows its size. A macOS update leaves cached results as they are, and `pdf reparse` reads a file again on the running macOS.
 
 Settings: none.
 
