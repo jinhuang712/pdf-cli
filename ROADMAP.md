@@ -1,4 +1,4 @@
-<!-- what-we-build: drafted 2026-10-15 -->
+<!-- what-we-build: approved 2026-10-15 -->
 # Roadmap
 
 **Current milestone:** M1. An agent reads born-digital and scanned PDFs through the cache.
