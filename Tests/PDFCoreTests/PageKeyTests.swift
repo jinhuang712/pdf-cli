@@ -37,8 +37,8 @@ func pdfKitKeys(_ url: URL) throws -> [String] {
 
     /// A PDFKit save rewrites every page and damages its text: on this paper, "∗" comes back
     /// as "→" and the math letter "𝑒" as "!". The keys change because the text changed. If
-    /// this test fails, Apple has fixed the damage, and DESIGNS.md → Principles → Cache can
-    /// count on keys that survive a PDFKit save.
+    /// this test fails, Apple has fixed the damage, and DESIGNS.md → Decision: a file that
+    /// PDFKit saved counts as a new file, with a warning, can be revisited.
     @Test func aPDFKitSaveChangesTheTextSoTheKeysChange() throws {
         let document = try #require(PDFDocument(url: samplePaper))
         let page = try #require(document.page(at: 0))

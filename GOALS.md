@@ -1,4 +1,4 @@
-<!-- what-we-build: approved 2026-10-15 -->
+<!-- what-we-build: drafted 2026-10-15 -->
 # Goals
 
 Each goal is a check with a number. Unless a row says otherwise, goals are measured on an M3 MacBook with 24 GB, against two sets the project builds: the open test set (60 open-access PDFs: 20 journal papers, 10 textbook chapters, 10 reports, 10 essays or articles, 10 scans) and the question set (200 questions, each with a known answer and the page that holds it). The open test set includes Word-made files, pages with dense tables, and scans that carry an old OCR text layer.
@@ -15,7 +15,7 @@ Every goal is measured in three setups and reported side by side: **Base** (the 
 | G6 | Text and reading order | Accurate | Score ≥ Docling's score, with a wrong block weighted 3× a missing one | A scorer script, with Docling run on the same Mac | OmniDocBench and the open test set | ⬜ Open |
 | G7 | Footnotes | Accurate | ≥ 95% of footnotes kept out of the body text | Compare the output with the labelled footnotes | Open test set | ⬜ Open |
 | G8 | Figures and tables | Sees figures | ≥ 95% of figures and tables found, vector charts included, each crop holding the whole figure or table and its caption | Compare the crops with the labelled figures and tables | Open test set | ⬜ Open |
-| G9 | Reuse | Reusable | 0 pages parsed again when a file is read again unchanged, or with only new highlights | A script counts parse jobs | Open test set | ⬜ Open |
+| G9 | Reuse | Reusable | 0 pages parsed again when a file is read again unchanged, or with only new highlights appended to it. A file that macOS Preview or another PDFKit app saved counts as a new file | A script counts parse jobs | Open test set | ⬜ Open |
 | G10 | Search | Searchable | The right page in the top 5 results for ≥ 90% of queries, Chinese queries included | Run the question set's queries through `pdf search` | Question set | ⬜ Open |
 | G11 | Flags | Honest | ≥ 95% of bad pages flagged, and ≤ 10% of good pages flagged | Compare the flags with the pages labelled bad | Open test set | ⬜ Open |
 | G12 | Addresses | Traceable | 100% of output blocks carry a page and a position | A schema check in CI | Open test set | ⬜ Open |

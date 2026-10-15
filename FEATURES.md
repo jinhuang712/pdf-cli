@@ -1,4 +1,4 @@
-<!-- what-we-build: approved 2026-10-15 -->
+<!-- what-we-build: drafted 2026-10-15 -->
 # Features
 
 ✅ built · 🚧 built with a gap · ⬜ planned
@@ -15,7 +15,7 @@ Adds PDFs to the library once, so every later command reads from the cache.
 | `pdf add <paths…> -j N` | Parses with N workers in parallel. By default, the tool runs one worker per performance core. |
 | `pdf add <path> --password <pw>` | Opens a password-protected PDF. |
 
-Any other command adds a PDF it has not seen before, on first use, and parses the requested page first. Adding an unchanged file again does nothing, and so does adding a file whose only change is new highlights.
+Any other command adds a PDF it has not seen before, on first use, and parses the requested page first. Adding an unchanged file again does nothing, and so does adding a file whose only change is highlights appended to it. A file that macOS Preview or another app saved through PDFKit counts as a new file (see F7).
 
 Settings: none.
 
@@ -162,6 +162,7 @@ Every command follows the same rules, so an agent learns them once.
 - Superscripts and subscripts keep a mark, as in `10^{-5}` and `x_{2}`. Footnote markers and citation numbers have their own marks (see F14 and F15).
 - Every command accepts `--json`.
 - Output starts with a one-line summary: the pages read, the pages flagged and what normal output set aside.
+- A file that macOS Preview or another app saved through PDFKit carries a warning in its summary line: such a save can damage the text, and an earlier copy may read better.
 - Nothing is dropped without a trace. What normal output sets aside leaves a marker in place, or a count in the summary line, with the flag that shows it: `--raw` for doubtful text, `--include-hidden` for hidden text and `--headers` for running headers, footers and publisher stamps.
 - `--budget N` stops the output at about N tokens and ends it with a line that continues the read, such as `next: pdf read paper.pdf --page 15`. A block larger than the budget is cut the same way. `read` and `search` stop at 5,000 tokens by default, about 5 pages of a paper, and `--budget all` turns the limit off.
 - While a document is still parsing, output is marked `provisional`, because headings and note numbers can change once the whole document is known.
