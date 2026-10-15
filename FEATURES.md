@@ -3,15 +3,15 @@
 
 ✅ built · 🚧 built with a gap · ⬜ planned
 
-Every feature below is ⬜ planned, except F8, which is 🚧 built with a gap. The commands and output samples show the intended behavior.
+F1 and F11 are ✅ built, F8 is 🚧 built with a gap, and every other feature is ⬜ planned. The commands and output samples show the intended behavior.
 
-## F1 — Add ⬜
+## F1 — Add ✅
 
 Adds PDFs to the library once, so every later command reads from the cache.
 
 | Command | What happens |
 |---|---|
-| `pdf add <paths…>` | Parses each PDF and caches it. Accepts files, folders and globs. Prints each PDF's ID, title, page count and status. |
+| `pdf add <paths…>` | Parses each PDF and caches it. Accepts files, folders and globs. A folder adds every PDF in it and in its subfolders. Prints each PDF's ID, title, page count and status, such as `1f9472ae · Dataset Distillation by Influence Matching · 11 pages · ok · paper.pdf`. |
 | `pdf add <paths…> -j N` | Parses with up to N workers in parallel. By default, every parse on the Mac shares a pool of half the performance cores, at least 2, and pages nobody waits for parse at the lowest priority, so the Mac stays responsive. |
 | `pdf add <path> --password <pw>` | Opens a password-protected PDF. |
 
@@ -254,15 +254,15 @@ Reads pages again, with the usual method on the running macOS or with a stronger
 
 Settings: none.
 
-## F11 — Library ⬜
+## F11 — Library ✅
 
 Shows and cleans up what the tool has cached.
 
 | Command | What happens |
 |---|---|
-| `pdf ls` | Lists every PDF in the library, with its ID, title, page count and flagged pages. |
-| `pdf rm <path or ID>` | Removes one PDF from the library and its results from the cache. |
-| `pdf gc` | Removes cached results for files that no longer exist, and for old parser versions. Prints the space it freed. |
+| `pdf ls` | Lists every PDF in the library, with its ID, title, page count, flagged pages and path. A PDF not fully parsed shows how far it is, and one whose file is gone shows `file missing`. |
+| `pdf rm <path or ID>` | Removes one PDF from the library and its results from the cache. Results that another copy of the file still uses stay, and so do the agent's picks, which show again if the PDF comes back. |
+| `pdf gc` | Removes cached results for files that no longer exist or have changed, and for old parser versions, and the library entries of files that no longer exist. Prints the space it freed. |
 
 Parse results and crop images live in `~/Library/Caches/pdf-cli/`. The library list, picks and memos live in `~/Library/Application Support/pdf-cli/`. The cache keeps every parse result until `pdf rm` or `pdf gc` removes it, and `pdf doctor` shows its size. A macOS update leaves cached results as they are, and `pdf reparse` reads a file again on the running macOS.
 

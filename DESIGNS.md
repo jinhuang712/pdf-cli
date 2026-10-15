@@ -281,6 +281,27 @@ The 10 sample papers hold 3.8 KB of text per page, measured with PDFKit. With po
 | A size cap that removes the least recently read PDFs | Disk use stays bounded. | A removed PDF is parsed again. For a 300-page scan, that is about 3 minutes of OCR on one worker, at 0.6 s per page. |
 | One dot-folder, such as `~/.pdf-cli/` or `~/.cache/pdf-cli/` | One place that command-line users know. | Mixes rebuildable data with the agent's own work, and follows Linux's convention instead of macOS's. |
 
+## Decision: the library lists files by path, with their document's ID — 2026-10-15
+
+The library list holds one entry per file path, with the file's document and its title. Every command that reads a file adds it, or points it at its new document when the file changed. A file already listed as it is costs one read of the list and no write, so a cached read stays fast. The ID that commands show and accept is the first 8 hex digits of the document's ID, which hashes the page keys, so two copies of one file share an ID.
+
+`pdf rm` forgets the file and drops every document and page result that no other file still uses. Picks stay: they are the agent's work, kept apart from the cache, and a file added again shows them again. `pdf gc` also forgets files that are gone or changed since they were indexed, results of older parser versions, and the locks of runners that are gone. It then rebuilds the database to give the space back, and empties SQLite's write-ahead log after the rebuild, since the rebuild writes through it: without that, a trial freed nothing. A runner saves a document and its file in one transaction, so a parse in progress keeps its rows through a cleanup.
+
+| Option | For | Against |
+|---|---|---|
+| **One entry per path** | A moved or deleted file shows as such, and `pdf rm` takes the path the agent knows. | Two copies of a file are two entries with one ID. |
+| One entry per document | One line per PDF, however many copies. | The list cannot say which path to read, and loses track of a moved file. |
+
+## Decision: a password reaches the workers in their environment — 2026-10-15
+
+`pdf add --password` hands the password to the runner it starts, and the runner's workers inherit it, in an environment variable. Any user on the Mac can read another user's command lines with `ps`, and only the same user can read a process's environment. The password is not stored: a later read of the file comes from the cache, and a file that changes needs `pdf add --password` again. A file the cache knows as locked is indexed again when a password comes.
+
+| Option | For | Against |
+|---|---|---|
+| **The environment** | Hidden from other users. Nothing stored. | Visible to the user's own processes while the parse runs. |
+| A command-line argument | Simple. | Every user on the Mac can see it in `ps`. |
+| The macOS keychain | Stored safely, so a changed file opens without asking again. | A keychain prompt in the middle of an agent's work, and a secret kept after the agent is done. |
+
 ## Decision: macOS updates leave the cache alone — 2026-10-15
 
 The cache key holds the page content and the parser version, and leaves the macOS version out, so a macOS update parses nothing again. Each page records the macOS build it was parsed on, and `pdf reparse` reads a page or a file again on the running macOS. When the test set shows that a macOS release changes the output, a new pdf-cli release raises the parser version, and each page is parsed again on its next read.

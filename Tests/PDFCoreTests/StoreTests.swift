@@ -18,6 +18,44 @@ import Testing
         #expect(try store.pageKeys(docID: id) == ["k1", "k2"])
     }
 
+    func result(_ text: String) -> PageResult {
+        PageResult(status: .ok, method: "pdfkit", text: text, reason: "", parseMillis: 1)
+    }
+
+    @Test func removingAFileKeepsThePagesAnotherFileStillUses() throws {
+        let store = try makeStore()
+        let first = try store.saveIndex(path: "/a.pdf", stat: stat, pageKeys: ["k1", "k2"])
+        try store.saveIndex(path: "/b.pdf", stat: stat, pageKeys: ["k2", "k3"])
+        for key in ["k1", "k2", "k3"] { try store.saveResult(key: key, result(key)) }
+        let removed = try store.remove(paths: ["/a.pdf"])
+        #expect(removed == Store.Removed(files: 1, documents: 1, pages: 1))
+        #expect(try store.pageKeys(docID: first).isEmpty)
+        #expect(Set(try store.results(keys: ["k1", "k2", "k3"]).keys) == ["k2", "k3"])
+    }
+
+    @Test func garbageIsWhatNoReadCanReach() throws {
+        let store = try makeStore()
+        // The file is gone: its entry, its document and its pages go.
+        try store.saveIndex(path: "/gone-\(UUID()).pdf", stat: stat, pageKeys: ["gone"])
+        try store.saveResult(key: "gone", result("gone"))
+        // The file is here and unchanged: its pages stay, except results of an older parser.
+        let here = FileManager.default.temporaryDirectory.appendingPathComponent("pdf-cli-here-\(UUID()).pdf").path
+        FileManager.default.createFile(atPath: here, contents: Data("%PDF-".utf8))
+        defer { try? FileManager.default.removeItem(atPath: here) }
+        try store.saveIndex(path: here, stat: try #require(FileStat(path: here)), pageKeys: ["here"])
+        try store.saveResult(key: "here", result("here"))
+        try store.write { db in
+            try db.execute(sql: """
+                INSERT INTO page_result (page_key, parser_version, status, method, text, reason, macos_build, parse_ms, parsed_at)
+                VALUES ('here', ?, 'ok', 'pdfkit', 'old', '', '', 0, 0)
+                """, arguments: [Env.parserVersion - 1])
+        }
+        let removed = try store.collectGarbage()
+        #expect(removed == Store.Removed(files: 1, documents: 1, pages: 2))
+        #expect(try store.results(keys: ["here"])["here"]?.text == "here")
+        #expect(try store.knows(path: here))
+    }
+
     @Test func twoCopiesShareADocument() throws {
         let store = try makeStore()
         let first = try store.saveIndex(path: "/a.pdf", stat: stat, pageKeys: ["k1", "k2"])

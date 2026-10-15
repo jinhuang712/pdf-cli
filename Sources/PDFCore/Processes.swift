@@ -11,9 +11,10 @@ enum Processes {
     /// Starts `executable`. A detached process gets its own session, so it keeps running after
     /// the command that started it returns. With `captureOutput`, the child's standard output
     /// comes back as a readable file descriptor. The child inherits no other open files. With
-    /// `qos`, the child runs at that quality of service.
+    /// `qos`, the child runs at that quality of service. `environment` adds to the variables
+    /// the child inherits.
     static func spawn(_ executable: String, _ arguments: [String], detached: Bool, captureOutput: Bool,
-                      qos: qos_class_t? = nil) throws -> (pid: pid_t, output: Int32?) {
+                      qos: qos_class_t? = nil, environment: [String: String] = [:]) throws -> (pid: pid_t, output: Int32?) {
         var pipeEnds: [Int32] = [-1, -1]
         if captureOutput {
             guard pipe(&pipeEnds) == 0 else { throw SpawnError(code: errno) }
@@ -45,15 +46,16 @@ enum Processes {
         if let qos { posix_spawnattr_set_qos_class_np(&attributes, qos) }
 
         let argv: [UnsafeMutablePointer<CChar>?] = ([executable] + arguments).map { strdup($0) } + [nil]
-        let environment: [UnsafeMutablePointer<CChar>?] =
-            ProcessInfo.processInfo.environment.map { strdup("\($0.key)=\($0.value)") } + [nil]
+        let variables: [UnsafeMutablePointer<CChar>?] = ProcessInfo.processInfo.environment
+            .merging(environment) { $1 }
+            .map { strdup("\($0.key)=\($0.value)") } + [nil]
         defer {
             argv.forEach { free($0) }
-            environment.forEach { free($0) }
+            variables.forEach { free($0) }
         }
 
         var pid: pid_t = 0
-        let result = posix_spawn(&pid, executable, &actions, &attributes, argv, environment)
+        let result = posix_spawn(&pid, executable, &actions, &attributes, argv, variables)
         if captureOutput { close(pipeEnds[1]) }
         guard result == 0 else {
             if captureOutput { close(pipeEnds[0]) }

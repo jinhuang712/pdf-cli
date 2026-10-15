@@ -111,7 +111,7 @@ public final class Store: Sendable {
         }
     }
 
-    static let schemaVersion = 4
+    static let schemaVersion = 5
 
     static func createSchema(_ db: Database) throws {
         let version = try Int.fetchOne(db, sql: "PRAGMA user_version") ?? 0
@@ -120,10 +120,12 @@ public final class Store: Sendable {
         // Version 2: the text layer of each page, and the font check of each document.
         // Version 3: the sample check of each document.
         // Version 4: whether PDFKit saved the document.
+        // Version 5: the document's title.
         for (table, column, type) in [("page_result", "data", "TEXT NOT NULL DEFAULT ''"),
                                       ("document", "spaces_at_risk", "INTEGER NOT NULL DEFAULT 0"),
                                       ("document", "needs_ocr", "INTEGER NOT NULL DEFAULT 0"),
-                                      ("document", "saved_by_pdfkit", "INTEGER NOT NULL DEFAULT 0")]
+                                      ("document", "saved_by_pdfkit", "INTEGER NOT NULL DEFAULT 0"),
+                                      ("document", "title", "TEXT NOT NULL DEFAULT ''")]
         where try !db.columns(in: table).contains(where: { $0.name == column }) {
             try db.execute(sql: "ALTER TABLE \(table) ADD COLUMN \(column) \(type)")
         }
@@ -203,18 +205,20 @@ public final class Store: Sendable {
     /// Records a file's pages. The document's ID hashes its page keys, so two copies of one
     /// file, or one file with new highlights, share a document.
     /// `spacesAtRisk` is the font check's verdict for the whole file, `needsOCR` the sample
-    /// check's, and `savedByPDFKit` says the file's producer is macOS's PDFKit.
+    /// check's, and `savedByPDFKit` says the file's producer is macOS's PDFKit. `title` is the
+    /// title the file names in its metadata, or empty.
     @discardableResult
     public func saveIndex(path: String, stat: FileStat, pageKeys: [String], spacesAtRisk: Bool = false,
-                          needsOCR: Bool = false, savedByPDFKit: Bool = false) throws -> String {
+                          needsOCR: Bool = false, savedByPDFKit: Bool = false, title: String = "") throws -> String {
         let id = Store.documentID(pageKeys: pageKeys)
         try write { db in
             try db.execute(sql: """
-                INSERT INTO document (id, page_count, created_at, spaces_at_risk, needs_ocr, saved_by_pdfkit)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO document (id, page_count, created_at, spaces_at_risk, needs_ocr, saved_by_pdfkit, title)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (id) DO UPDATE SET spaces_at_risk = excluded.spaces_at_risk, needs_ocr = excluded.needs_ocr,
-                    saved_by_pdfkit = excluded.saved_by_pdfkit
-                """, arguments: [id, pageKeys.count, Date().timeIntervalSince1970, spacesAtRisk, needsOCR, savedByPDFKit])
+                    saved_by_pdfkit = excluded.saved_by_pdfkit, title = excluded.title
+                """, arguments: [id, pageKeys.count, Date().timeIntervalSince1970, spacesAtRisk, needsOCR, savedByPDFKit,
+                                 title])
             for (index, key) in pageKeys.enumerated() {
                 try db.execute(sql: """
                     INSERT OR REPLACE INTO document_page (doc_id, page_index, page_key) VALUES (?, ?, ?)
@@ -227,6 +231,20 @@ public final class Store: Sendable {
 
     public func saveFailure(path: String, stat: FileStat, reason: String) throws {
         try write { db in try saveEntry(db, path: path, stat: stat, docID: nil, failure: reason) }
+    }
+
+    /// Forgets how the cache knows a file, so the next read indexes it again, as after a
+    /// password that opens a file cached as locked.
+    public func forgetEntry(path: String) throws {
+        try write { db in try db.execute(sql: "DELETE FROM file_entry WHERE path = ?", arguments: [path]) }
+    }
+
+    /// The title the document's file names, empty when it names none, and its page count.
+    public func documentInfo(docID: String) throws -> (title: String, pageCount: Int)? {
+        try pool.read { db in
+            try Row.fetchOne(db, sql: "SELECT title, page_count FROM document WHERE id = ?", arguments: [docID])
+                .map { ($0["title"], $0["page_count"]) }
+        }
     }
 
     func saveEntry(_ db: Database, path: String, stat: FileStat, docID: String?, failure: String?) throws {
@@ -305,6 +323,108 @@ public final class Store: Sendable {
                 """, arguments: [key, Env.parserVersion, result.status.rawValue, result.method,
                                  result.text, result.reason, result.macOSBuild, result.parseMillis,
                                  Date().timeIntervalSince1970, result.data])
+        }
+    }
+
+    // MARK: Cleanup
+
+    /// What a cleanup removed.
+    public struct Removed: Equatable, Sendable {
+        public var files = 0
+        public var documents = 0
+        public var pages = 0
+    }
+
+    /// Whether the cache knows a file at this path, changed since or not.
+    public func knows(path: String) throws -> Bool {
+        try pool.read { db in
+            try Bool.fetchOne(db, sql: "SELECT 1 FROM file_entry WHERE path = ?", arguments: [path]) ?? false
+        }
+    }
+
+    /// The paths the cache knows for a document.
+    public func paths(docID: String) throws -> [String] {
+        try pool.read { db in
+            try String.fetchAll(db, sql: "SELECT path FROM file_entry WHERE doc_id = ? ORDER BY path", arguments: [docID])
+        }
+    }
+
+    /// Forgets the files at these paths, and every document and page result that no other file
+    /// still uses. Picks are the agent's work, kept apart, and stay.
+    @discardableResult
+    public func remove(paths: [String]) throws -> Removed {
+        try write { db in
+            var removed = Removed()
+            for path in paths {
+                try db.execute(sql: "DELETE FROM file_entry WHERE path = ?", arguments: [path])
+                removed.files += db.changesCount
+            }
+            try Store.dropUnused(db, into: &removed)
+            return removed
+        }
+    }
+
+    /// Removes what no read can reach any more: files gone or changed since they were indexed,
+    /// the documents and pages only they used, results of older parser versions, and the locks
+    /// of runners that are gone.
+    public func collectGarbage() throws -> Removed {
+        let entries = try pool.read { db in
+            try Row.fetchAll(db, sql: "SELECT path, size, modified_ns, inode, device FROM file_entry")
+        }
+        let stale: [String] = entries.compactMap { row in
+            let cached = FileStat(size: row["size"], modifiedNanos: row["modified_ns"], inode: row["inode"],
+                                  device: row["device"])
+            return FileStat(path: row["path"]) == cached ? nil : row["path"]
+        }
+        return try write { db in
+            var removed = Removed()
+            for path in stale {
+                try db.execute(sql: "DELETE FROM file_entry WHERE path = ?", arguments: [path])
+                removed.files += db.changesCount
+            }
+            try db.execute(sql: "DELETE FROM page_result WHERE parser_version <> ?", arguments: [Env.parserVersion])
+            removed.pages += db.changesCount
+            try Store.dropUnused(db, into: &removed)
+            for row in try Row.fetchAll(db, sql: "SELECT lock_key, pid, heartbeat_at FROM runner_lock")
+            where !Store.isAlive(pid: row["pid"], heartbeat: row["heartbeat_at"]) {
+                try db.execute(sql: "DELETE FROM runner_lock WHERE lock_key = ?", arguments: [row["lock_key"] as String])
+            }
+            return removed
+        }
+    }
+
+    /// Drops documents no file uses, and page results no document uses. A runner saves a
+    /// document and its file in one transaction, so a parse in progress keeps its rows.
+    static func dropUnused(_ db: Database, into removed: inout Removed) throws {
+        try db.execute(sql: "DELETE FROM document WHERE id NOT IN (SELECT doc_id FROM file_entry WHERE doc_id IS NOT NULL)")
+        removed.documents += db.changesCount
+        try db.execute(sql: "DELETE FROM document_page WHERE doc_id NOT IN (SELECT id FROM document)")
+        try db.execute(sql: "DELETE FROM page_request WHERE doc_id NOT IN (SELECT id FROM document)")
+        try db.execute(sql: "DELETE FROM page_result WHERE page_key NOT IN (SELECT page_key FROM document_page)")
+        removed.pages += db.changesCount
+    }
+
+    /// Gives the space of removed rows back to the disk. False when another process holds the
+    /// database too long, as a runner can while it parses. VACUUM writes the rebuilt database
+    /// through the write-ahead log, so the log is emptied again after it.
+    public func compact() -> Bool {
+        do {
+            try pool.writeWithoutTransaction { db in
+                try db.execute(sql: "PRAGMA wal_checkpoint(TRUNCATE)")
+                try db.execute(sql: "VACUUM")
+                try db.execute(sql: "PRAGMA wal_checkpoint(TRUNCATE)")
+            }
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    /// The bytes the cache's database takes on disk, its write-ahead log included.
+    public var size: Int64 {
+        ["", "-wal", "-shm"].reduce(Int64(0)) { total, suffix in
+            let attributes = try? FileManager.default.attributesOfItem(atPath: pool.path + suffix)
+            return total + ((attributes?[.size] as? NSNumber)?.int64Value ?? 0)
         }
     }
 

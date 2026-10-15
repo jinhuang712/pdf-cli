@@ -58,13 +58,14 @@ struct RunnerCommand: ParsableCommand {
 
     @Argument var path: String
     @Option(help: "The pages, counted from 0, that the command waits on, or \"all\".") var pages = ""
+    @Option(help: "How many workers to run at once, from pdf add -j.") var workers: Int?
 
     func run() throws {
         let store = try Store()
         let waited: Runner.Waited = pages == "all"
             ? .all
             : .pages(pages.split(separator: ",").compactMap { Int($0) })
-        throw ExitCode(Runner(path: path, store: store, waited: waited).run())
+        throw ExitCode(Runner(path: path, store: store, waited: waited, workers: workers).run())
     }
 }
 

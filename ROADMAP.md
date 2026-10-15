@@ -44,7 +44,7 @@ The spike shipped no features. It answered the riskiest questions.
   - [x] M1.3 Quality checks on every page, failure blocks with crop commands, unsure blocks with `pdf pick`, and `--raw` for the text they set aside, the old OCR layer of a scan included, plus the warning on files that PDFKit saved
   - Later: thresholds tuned on the open test set (M2.12)
 - **Add** (F1) and **Library** (F11): adding, listing and cleaning up
-  - [ ] M1.5 `pdf add`, `pdf ls`, `pdf rm` and `pdf gc`
+  - [x] M1.5 `pdf add`, `pdf ls`, `pdf rm` and `pdf gc`
 - **Info** (F2): the outline, page labels and section sizes
   - [ ] M1.6 `pdf info` from bookmarks, page labels and the text layer, with the counts of comments, highlights and form fields, and the list of attachments and scripts
   - Later: the figure list, with figure detection (M2.6), and the running headers, footers and publisher stamps (M2.5)

@@ -35,21 +35,11 @@ public enum Output {
         var holdsText = false
 
         for page in pages {
-            var quality = Quality.judge(page.result)
+            let (quality, picked) = judge(page, picks: picks)
             let layer = page.result.pageText
             let number = page.index + 1
             var lines = ["## p.\(number)"]
-
-            // Picks resolve the unsure words of their blocks. Words with no second reading stay
-            // in doubt.
             let unsureByBlock = Dictionary(grouping: quality.unsure, by: \.block)
-            var picked: [Int: Pick] = [:]
-            for pick in picks[page.key] ?? [] {
-                let choices = unsureByBlock[pick.block]?.filter(\.pickable) ?? []
-                if !choices.isEmpty, Picks.readings(of: choices) == pick.readings { picked[pick.block] = pick }
-            }
-            let resolved = unsureByBlock.allSatisfy { block, spans in spans.allSatisfy(\.pickable) && picked[block] != nil }
-            if quality.status == .unsure && resolved { quality.status = .ok }
             if quality.status != .ok { flagged.append((number, quality.status)) }
 
             if let whole = quality.doubts.first(where: { $0.blocks == nil }) {
@@ -88,7 +78,7 @@ public enum Output {
             body.append(lines.joined(separator: "\n\n"))
         }
 
-        var summary = ["\(file) · \(pageCount) pages · read \(ranges(pages.map { $0.index + 1 }))"]
+        var summary = ["\(file) · \(pageCount) page\(pageCount == 1 ? "" : "s") · read \(ranges(pages.map { $0.index + 1 }))"]
         summary.append(flagged.isEmpty ? "flagged: none"
                        : "flagged: " + flagged.map { "p.\($0.page) (\($0.status.rawValue))" }.joined(separator: ", "))
         var aside: [String] = []
@@ -107,6 +97,38 @@ public enum Output {
         let exitCode: Int32 = flagged.isEmpty ? 0 : holdsText || pages.isEmpty ? 2 : 3
         return Report(text: ([summary.joined(separator: " · ")] + body).joined(separator: "\n\n") + "\n",
                       exitCode: exitCode)
+    }
+
+    /// A page's verdict with the agent's picks applied, and the picks that apply, by block.
+    /// Picks resolve the unsure words of their blocks; words with no second reading stay in
+    /// doubt.
+    public static func judge(_ page: Page, picks: [String: [Pick]]) -> (quality: PageQuality, picked: [Int: Pick]) {
+        var quality = Quality.judge(page.result)
+        let unsureByBlock = Dictionary(grouping: quality.unsure, by: \.block)
+        var picked: [Int: Pick] = [:]
+        for pick in picks[page.key] ?? [] {
+            let choices = unsureByBlock[pick.block]?.filter(\.pickable) ?? []
+            if !choices.isEmpty, Picks.readings(of: choices) == pick.readings { picked[pick.block] = pick }
+        }
+        let resolved = unsureByBlock.allSatisfy { block, spans in spans.allSatisfy(\.pickable) && picked[block] != nil }
+        if quality.status == .unsure && resolved { quality.status = .ok }
+        return (quality, picked)
+    }
+
+    /// The flagged pages, as the summary line lists them: "p.2 (unsure), p.7 (low-quality)".
+    public static func flagged(_ pages: [Page], picks: [String: [Pick]]) -> String? {
+        let flags = pages.compactMap { page -> String? in
+            let status = judge(page, picks: picks).quality.status
+            return status == .ok ? nil : "p.\(page.index + 1) (\(status.rawValue))"
+        }
+        return flags.isEmpty ? nil : flags.joined(separator: ", ")
+    }
+
+    /// Why a file failed, with the command that opens a locked one.
+    public static func failure(_ reason: String, file: String) -> String {
+        reason.hasPrefix(OpenFailure.locked)
+            ? "\(reason) · open it with: pdf add \(quoted(file)) --password <password>"
+            : reason
     }
 
     // MARK: Blocks

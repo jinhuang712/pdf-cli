@@ -36,8 +36,9 @@ struct WorkerEvent: Codable, Equatable {
     var risky: Int?
     /// From the sample check: the share of characters the text layer and OCR agree on.
     var agreement: Double?
-    /// From an index job: the file's producer, such as "pdfTeX-1.40.25".
+    /// From an index job: the file's producer, such as "pdfTeX-1.40.25", and its title.
     var producer: String?
+    var title: String?
 }
 
 /// The only kind of process that opens PDF content (DESIGNS.md → Principles → Safety).
@@ -51,16 +52,20 @@ public enum Worker {
             emit(WorkerEvent(kind: .openFailed, reason: OpenFailure.classify(url: url)))
             return 0
         }
-        if document.isEncrypted && !document.isUnlocked { _ = document.unlockWithPassword("") }
+        if document.isEncrypted && !document.isUnlocked {
+            _ = document.unlockWithPassword("") || document.unlockWithPassword(Env.password)
+        }
         guard document.isUnlocked else {
-            emit(WorkerEvent(kind: .openFailed, reason: OpenFailure.locked))
+            emit(WorkerEvent(kind: .openFailed, reason: OpenFailure.lockedReason))
             return 0
         }
         let count = document.numberOfPages
-        var producer: CGPDFStringRef?
-        let named = document.info.map { CGPDFDictionaryGetString($0, "Producer", &producer) } ?? false
-        emit(WorkerEvent(kind: .opened, pageCount: count,
-                         producer: named ? producer.flatMap { CGPDFStringCopyTextString($0) as String? } : nil))
+        func info(_ key: String) -> String? {
+            var value: CGPDFStringRef?
+            guard let dictionary = document.info, CGPDFDictionaryGetString(dictionary, key, &value), let value else { return nil }
+            return CGPDFStringCopyTextString(value) as String?
+        }
+        emit(WorkerEvent(kind: .opened, pageCount: count, producer: info("Producer"), title: info("Title")))
         var keyer = PageKeyer()
         for index in max(start, 0)..<max(count, start) {
             emit(WorkerEvent(kind: .start, page: index))
@@ -81,9 +86,7 @@ public enum Worker {
         watchParent()
         plantedFault(at: 0, phase: "sample-")
         let url = URL(fileURLWithPath: path)
-        guard let document = PDFDocument(url: url) else { return 0 }
-        if document.isLocked { _ = document.unlock(withPassword: "") }
-        guard !document.isLocked else { return 0 }
+        guard let document = PDFDocument(url: url), OpenFailure.unlock(document) else { return 0 }
         let started = DispatchTime.now().uptimeNanoseconds
         if let sample = await OCR.sampleAgreement(document) {
             emit(WorkerEvent(kind: .sample, page: sample.page, agreement: sample.agreement))
@@ -103,9 +106,8 @@ public enum Worker {
             emit(WorkerEvent(kind: .openFailed, reason: OpenFailure.classify(url: url)))
             return 0
         }
-        if document.isLocked { _ = document.unlock(withPassword: "") }
-        guard !document.isLocked else {
-            emit(WorkerEvent(kind: .openFailed, reason: OpenFailure.locked))
+        guard OpenFailure.unlock(document) else {
+            emit(WorkerEvent(kind: .openFailed, reason: OpenFailure.lockedReason))
             return 0
         }
         var keyer = PageKeyer()
@@ -279,6 +281,18 @@ enum OpenFailure {
     static let notPDF = "not a PDF"
     static let locked = "locked by a password"
     static let damaged = "damaged: PDFKit could not open it"
+
+    /// Why a locked file stays locked: no password was given, or the one given does not open it.
+    static var lockedReason: String {
+        Env.password.isEmpty ? locked : locked + ", and the password given does not open it"
+    }
+
+    /// Opens a locked file with an empty password, as a file locked only against changes
+    /// opens, or with the password the agent gave. True when the file is open.
+    static func unlock(_ document: PDFDocument) -> Bool {
+        if document.isLocked { _ = document.unlock(withPassword: "") || document.unlock(withPassword: Env.password) }
+        return !document.isLocked
+    }
 
     static func classify(url: URL) -> String {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return damaged }

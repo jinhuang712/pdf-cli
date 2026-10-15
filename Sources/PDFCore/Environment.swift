@@ -3,7 +3,8 @@ import Foundation
 
 /// Settings that every process reads the same way: the CLI, the runner and the workers.
 ///
-/// The `PDF_CLI_*` environment variables exist for tests. They are not a user setting.
+/// The `PDF_CLI_*` environment variables exist for tests, apart from the password that `pdf add`
+/// hands to its runner. None is a user setting.
 public enum Env {
     /// Part of every cache key. Raise it when a change alters what a parse produces, so each
     /// page is parsed again on its next read (DESIGNS.md → Decision: macOS updates leave the
@@ -42,6 +43,12 @@ public enum Env {
         let megabytes = variables["PDF_CLI_MEMORY_LIMIT_MB"].flatMap(UInt64.init) ?? 2048
         return megabytes << 20
     }
+
+    /// The password that `pdf add --password` gives for a locked file. It reaches the runner
+    /// and its workers in their environment, which other users cannot read, unlike a command
+    /// line.
+    public static var password: String { variables[passwordVariable] ?? "" }
+    public static let passwordVariable = "PDF_CLI_PASSWORD"
 
     /// How many workers run at once on this Mac, across every parse: half the performance
     /// cores, and at least 2, so the user's own work stays responsive (see `WorkerPool`).

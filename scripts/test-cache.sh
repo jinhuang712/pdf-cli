@@ -183,6 +183,36 @@ check "a page that ran out of time in the background reads at full speed" "p.6 o
 
 check "page 0 is out of range" "page 0 is out of range" "$(run $pdf debug-pages $paper --page 0)"
 
+# The library: pdf add, ls, rm and gc, and a locked file.
+library() { PDF_CLI_HOME=$work/library $pdf "$@" 2>&1; echo "exit $?"; }
+output=$(library add testdata/ocr)
+check "pdf add takes a folder" "added 3 of 3 PDFs" "$output"
+check "each PDF shows its ID, title, pages and status" "^[0-9a-f]\{8\} · scan-no-text · 2 pages · ok · " "$output"
+output=$(library add $paper)
+check "a PDF's own title shows" "Dataset Distillation by Influence Matching · 11 pages · ok" "$output"
+check "every page of an added PDF is cached" "11 read" "$(PDF_CLI_HOME=$work/library $pdf debug-pages $paper 2>&1)"
+check "pdf ls lists the library" "Dataset Distillation by Influence Matching" "$(library ls)"
+id=$(library ls | grep scan-wrong-layer | cut -d' ' -f1)
+check "pdf rm takes an ID" "removed $id · scan-wrong-layer · 2 cached pages" "$(library rm "$id")"
+check "pdf rm takes a path" "removed .* · scan-no-text" "$(library rm testdata/ocr/scan-no-text.pdf)"
+check "pdf rm of an unknown PDF exits 1" "exit 1" "$(library rm nothing-here)"
+check "removed PDFs leave the list" "^1$" "$(library ls | grep -c 'testdata/ocr')"
+cp testdata/smoke/arxiv-2609.22884.pdf "$work/temporary.pdf"
+library add "$work/temporary.pdf" >/dev/null
+rm "$work/temporary.pdf"
+output=$(library gc)
+check "pdf gc removes a file that is gone" "removed 1 file gone or changed, 1 document, 15 page results, 1 library entry" "$output"
+check "pdf gc frees space" "freed [1-9]" "$output"
+check "the rest of the library stays" "Dataset Distillation" "$(library ls)"
+
+locked=testdata/locked/locked.pdf
+output=$(library add $locked)
+check "a locked PDF fails and names the password flag" "locked by a password · open it with: pdf add $locked --password" "$output"
+check "a locked PDF exits 3" "exit 3" "$output"
+check "a wrong password says so" "the password given does not open it" "$(library add $locked --password wrong)"
+check "the right password opens it" "· 1 page · ok" "$(library add $locked --password "open sesame")"
+check "later reads come from the cache" "p.1 ok" "$(PDF_CLI_HOME=$work/library $pdf debug-pages $locked 2>&1)"
+
 # Pages nobody waits for parse slowly, at background priority, so runners get a minute to finish.
 for _ in $(seq 60); do
     pgrep -f 'pdf __' >/dev/null || break

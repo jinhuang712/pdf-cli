@@ -23,9 +23,9 @@ struct PickCommand: ParsableCommand {
             throw ValidationError("pick a or b")
         }
         let store = try Store()
-        switch try Reader(store: store).read(path: path, pages: [page]) {
+        switch try Reader(store: store, library: try Library()).read(path: path, pages: [page]) {
         case .fileFailed(let reason):
-            print("\(path): failed: \(reason)")
+            print("\(path): failed: \(Output.failure(reason, file: path))")
             throw ExitCode(3)
         case .pages(let docID, _, let results):
             let spans = Quality.judge(results[0].result).unsure.filter { $0.block == index && $0.pickable }
@@ -67,9 +67,9 @@ struct DebugRead: ParsableCommand {
     func run() throws {
         let store = try Store()
         let wanted = pageNumbers.isEmpty ? nil : pageNumbers.map { $0 - 1 }
-        switch try Reader(store: store).read(path: path, pages: wanted) {
+        switch try Reader(store: store, library: try Library()).read(path: path, pages: wanted) {
         case .fileFailed(let reason):
-            print("\(path): failed: \(reason)")
+            print("\(path): failed: \(Output.failure(reason, file: path))")
             throw ExitCode(3)
         case .pages(let docID, let pageCount, let results):
             let keys = try store.pageKeys(docID: docID)

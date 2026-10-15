@@ -35,25 +35,41 @@ public enum ReadOutcome: Sendable {
 /// a runner when pages are missing (DESIGNS.md → Principles → Safety).
 public final class Reader: Sendable {
     let store: Store
+    let library: Library?
 
-    public init(store: Store) {
+    /// With a `library`, every file read joins the library list (FEATURES.md → F1).
+    public init(store: Store, library: Library? = nil) {
         self.store = store
+        self.library = library
+    }
+
+    /// The path the cache knows a file by: absolute, with symbolic links resolved.
+    public static func resolve(_ path: String) -> String {
+        URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path
     }
 
     /// Returns the pages, counted from 0, once each one is cached. Nil means every page.
-    public func read(path rawPath: String, pages wanted: [Int]?) throws -> ReadOutcome {
-        let path = URL(fileURLWithPath: rawPath).standardizedFileURL.resolvingSymlinksInPath().path
+    /// `workers` and `password` come from `pdf add`, for the runner this read starts.
+    public func read(path rawPath: String, pages wanted: [Int]?, workers: Int? = nil,
+                     password: String? = nil) throws -> ReadOutcome {
+        let path = Reader.resolve(rawPath)
         var requested = false
         var lastSpawn: Date?
         var spawns = 0
         var pause = 0.005
         var runner: pid_t?
+        var retriedLocked = false
         defer { if let runner { _ = Processes.reap(runner) } }
 
         while true {
             guard let stat = FileStat(path: path) else { throw ReadError.notFound(rawPath) }
             var locks = ["path:" + path]
             switch try store.entry(path: path, stat: stat) {
+            case .failed(let reason)? where password != nil && reason.hasPrefix(OpenFailure.locked) && !retriedLocked:
+                // A password may open a file the cache knows as locked: it is indexed again.
+                try store.forgetEntry(path: path)
+                retriedLocked = true
+                continue
             case .failed(let reason)?:
                 return .fileFailed(reason: reason)
             case .document(let id)?:
@@ -65,6 +81,10 @@ public final class Reader: Sendable {
                 let results = try store.results(keys: pages.map { keys[$0] })
                 let missing = pages.filter { results[keys[$0]] == nil }
                 if missing.isEmpty {
+                    if let library {
+                        let title = try store.documentInfo(docID: id)?.title ?? ""
+                        try library.register(path: path, docID: id, title: title, pageCount: keys.count)
+                    }
                     return .pages(docID: id, pageCount: keys.count,
                                   results: pages.map { ($0, results[keys[$0]]!) })
                 }
@@ -87,8 +107,10 @@ public final class Reader: Sendable {
                 // only after the index could reach it after its first batch had started.
                 let pages = wanted.map { $0.map(String.init).joined(separator: ",") } ?? "all"
                 // Attached with "=", so a list that starts with a negative page is not read as a flag.
-                runner = try Processes.spawn(Env.executablePath, ["__runner", path, "--pages=" + pages],
-                                             detached: true, captureOutput: false).pid
+                runner = try Processes.spawn(Env.executablePath,
+                                             ["__runner", path, "--pages=" + pages] + (workers.map { ["--workers=\($0)"] } ?? []),
+                                             detached: true, captureOutput: false,
+                                             environment: password.map { [Env.passwordVariable: $0] } ?? [:]).pid
                 spawns += 1
                 lastSpawn = Date()
             }

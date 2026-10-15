@@ -32,11 +32,18 @@ public final class Runner: @unchecked Sendable {
     }
 
     let waited: Waited
+    /// The worker slots this runner may use: the shared pool's, or more when `pdf add -j` asks.
+    let poolSize: Int
 
-    public init(path: String, store: Store, waited: Waited = .pages([])) {
+    public init(path: String, store: Store, waited: Waited = .pages([]), workers: Int? = nil) {
         self.path = path
         self.store = store
         self.waited = waited
+        self.poolSize = max(1, workers ?? Env.workerCount)
+    }
+
+    func acquireSlot(foreground: Bool) -> WorkerPool.Slot? {
+        WorkerPool.acquire(foreground: foreground, size: poolSize)
     }
 
     public func run() -> Int32 {
@@ -100,6 +107,7 @@ public final class Runner: @unchecked Sendable {
             guard let before = FileStat(path: path) else { return .unavailable }
             var pageCount: Int?
             var producer: String?
+            var title: String?
             var keys: [Int: String] = [:]
             var checks: [Int: FontCheck] = [:]
             var agreement: Double?
@@ -113,7 +121,7 @@ public final class Runner: @unchecked Sendable {
             guard indexSlot != nil else { return .unavailable }
             // The sample check runs in a worker of its own, beside the index, when the pool has a
             // second slot free. Otherwise it runs once the index is done.
-            var sampler = WorkerPool.acquire(foreground: true).flatMap {
+            var sampler = acquireSlot(foreground: true).flatMap {
                 startWorker(["sample", path], pages: [], slot: $0, foreground: true)
             }
             let handle = { (_: Supervised, event: WorkerEvent) in
@@ -121,6 +129,7 @@ public final class Runner: @unchecked Sendable {
                 case .opened:
                     pageCount = event.pageCount
                     producer = event.producer
+                    title = event.title
                 case .openFailed: fileFailure = event.reason ?? OpenFailure.damaged
                 case .key:
                     guard let page = event.page, let key = event.key else { break }
@@ -217,8 +226,9 @@ public final class Runner: @unchecked Sendable {
             // A PDFKit save, as Preview makes one, can damage the text (DESIGNS.md → Decision: a
             // file that PDFKit saved counts as a new file, with a warning).
             let savedByPDFKit = producer?.contains("Quartz PDFContext") ?? false
+            let named = TextCleanup.line(title ?? "")
             guard let id = try? store.saveIndex(path: path, stat: before, pageKeys: ordered, spacesAtRisk: atRisk,
-                                                needsOCR: needsOCR, savedByPDFKit: savedByPDFKit) else {
+                                                needsOCR: needsOCR, savedByPDFKit: savedByPDFKit, title: named) else {
                 return .unavailable
             }
             return .document(id: id, stat: before)
@@ -268,7 +278,7 @@ public final class Runner: @unchecked Sendable {
         var workers: [Supervised] = []
         var changed = false
         var failedSpawns = 0
-        let capacity = max(1, Env.workerCount)
+        let capacity = poolSize
         let readAllByOCR = (try? store.needsOCR(docID: docID)) ?? false
         let repair = !readAllByOCR && ((try? store.spacesAtRisk(docID: docID)) ?? false)
         let parseArguments = readAllByOCR ? ["--read-all-by-ocr"] : repair ? ["--repair-spaces"] : []
@@ -315,7 +325,7 @@ public final class Runner: @unchecked Sendable {
                 func putBack() {
                     if fromAlone { alone.insert(batch.pages[0], at: 0) } else { pending.insert(contentsOf: batch.pages, at: 0) }
                 }
-                guard let slot = WorkerPool.acquire(foreground: foreground) else {
+                guard let slot = acquireSlot(foreground: foreground) else {
                     putBack()
                     waitingForSlot = true
                     break
@@ -524,7 +534,7 @@ public final class Runner: @unchecked Sendable {
     func waitForSlot(foreground: Bool, supervising workers: [Supervised] = [],
                      handle: (Supervised, WorkerEvent) -> Void = { _, _ in }) -> WorkerPool.Slot? {
         while !mutex.locked({ lostLock }) {
-            if let slot = WorkerPool.acquire(foreground: foreground) { return slot }
+            if let slot = acquireSlot(foreground: foreground) { return slot }
             if workers.contains(where: { !$0.finished }) {
                 step(workers, handle: handle)
             } else {
