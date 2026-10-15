@@ -3,9 +3,9 @@ import PackageDescription
 
 let package = Package(
     name: "pdf-cli",
-    // The oldest supported macOS is still open (DESIGNS.md → Open questions).
-    // The spike builds against macOS 14 and gates newer APIs with availability checks.
-    platforms: [.macOS(.v14)],
+    // macOS 11 is the oldest supported version (DESIGNS.md → Decision: macOS 11 as the oldest
+    // supported version). Newer APIs are gated with availability checks.
+    platforms: [.macOS(.v11)],
     products: [
         .executable(name: "pdf", targets: ["pdf"]),
     ],

@@ -7,8 +7,8 @@ set -eu
 
 cd "$(dirname "$0")/.."
 
-swift build -c release --triple arm64-apple-macosx14.0
-swift build -c release --triple x86_64-apple-macosx14.0
+swift build -c release --triple arm64-apple-macosx11.0
+swift build -c release --triple x86_64-apple-macosx11.0
 
 mkdir -p .build/universal
 lipo -create \

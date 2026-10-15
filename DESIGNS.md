@@ -1,4 +1,4 @@
-<!-- what-we-build: approved 2026-10-15 -->
+<!-- what-we-build: drafted 2026-10-15 -->
 # Designs
 
 PDF files on the user's Mac and commands from an agent go in. Text with page addresses, PNG crops, search hits and failure reports come out, served from a local cache. In between, worker processes parse each page once, in steps that escalate only as far as the page needs, and store the result in SQLite. Behavior is in [FEATURES.md](FEATURES.md).
@@ -126,6 +126,26 @@ Existing Swift projects show the pieces work: mac-ocr and vision-book-digitizer 
 
 The tool supports macOS and no other platform. The reason lives in [PROPOSAL.md → What we don't want](PROPOSAL.md#what-we-dont-want): Apple's PDF, OCR and Neural Engine frameworks are the project's main advantage.
 
+## Decision: macOS 11 as the oldest supported version — 2026-10-15
+
+The tool supports macOS 11 and newer, on Apple Silicon and Intel. macOS 11 is the oldest version that ships every engine the base tool needs. A feature that needs a newer macOS checks the version when it runs and turns off below it, and `pdf doctor` names what an upgrade would unlock.
+
+| Feature | Needs |
+|---|---|
+| PDFKit text, figures from drawing commands, and OCR in English, Chinese, French, German, Italian, Portuguese and Spanish | macOS 11 |
+| Layout models on Core ML, if a goal needs one | macOS 12, because the models convert to Core ML's ML Program format |
+| OCR in Japanese and Korean | macOS 13 |
+| The local vision model through MLX Swift | macOS 14 on Apple Silicon. MLX Swift declares macOS 14 as its minimum, and a Swift package cannot depend on a package with a higher minimum, so the vision model runs in a helper binary of its own. |
+| Scan structure: paragraphs, tables and lists | macOS 26 |
+
+| Option | For | Against |
+|---|---|---|
+| **macOS 11** | Every base engine is there, including Chinese OCR. Inside the range Apple's current compiler supports (macOS 11–26), and Homebrew still runs on it. | Homebrew serves macOS 11–14 at its lowest support tier. Only macOS 26 is tested, so bugs on older versions reach users first. |
+| macOS 10.15 | Reaches Intel Macs that stop at Catalina. | Apple's OCR reads English only. Homebrew no longer runs on it. Below the compiler's supported range. |
+| macOS 26 | Every feature works, and the tested version is the only supported one. | Leaves out every Mac that cannot run macOS 26, most Intel Macs among them. |
+
+The universal binary builds for macOS 11 on both architectures, checked with `scripts/build-universal.sh` on 2026-10-15.
+
 ## Decision: Apple PDFKit over PDFium and a parser of our own — 2026-10-14
 
 PDFKit and Core Graphics parse and render, and PDFKit is the only text source in the binary. PDFium stays out of the binary, and the test scripts use it to cross-check PDFKit. The decision is provisional: it reopens if Apple's engines fail a goal on the open test set.
@@ -235,7 +255,6 @@ The tool returns text, crops and failure reports, and the calling agent does all
 - How the cache handles a macOS update. A key that includes the macOS build parses every page again after each update. A key without it mixes text from two versions of PDFKit.
 - What reads a file that PDFKit cannot open, now that PDFium stays out of the binary.
 - The embedding model for search by meaning: Apple's built-in embeddings, or a small MLX model.
-- The oldest supported macOS version.
 - How worker processes start and stop: started per command, or kept running while idle.
 - Where the cache lives, and its size limit.
 - The quality thresholds that make a page `low-quality`. They get tuned until goal G11 in [GOALS.md](GOALS.md) passes.

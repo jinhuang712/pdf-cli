@@ -1,4 +1,4 @@
-<!-- what-we-build: approved 2026-10-15 -->
+<!-- what-we-build: drafted 2026-10-15 -->
 # pdf-cli
 
 > A PDF CLI tool that lets you read fast, cheap and accurately.
@@ -35,9 +35,10 @@ The commands below are planned, and none is built yet.
 ## Known limits
 
 - Nothing is built yet, and every target in [GOALS.md](GOALS.md) is still unmeasured.
-- It runs on macOS only.
+- It supports macOS 11 and newer, and no other platform.
 - The document structure of scanned pages needs macOS 26.
-- The optional local vision model for hard pages needs Apple Silicon.
+- Scanned pages in Japanese or Korean need macOS 13.
+- The optional local vision model for hard pages needs Apple Silicon and macOS 14.
 - It returns text, crops and failure reports. The agent does the reasoning, so pdf-cli answers no questions by itself.
 
 ## Documents

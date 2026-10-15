@@ -1,4 +1,4 @@
-<!-- what-we-build: approved 2026-10-15 -->
+<!-- what-we-build: drafted 2026-10-15 -->
 # pdf-cli — Proposal
 
 > A macOS command-line tool that helps coding agents read PDFs.
@@ -125,7 +125,7 @@ Coding agents such as Claude Code and Codex, and the people who use them to read
 
 ## Approach
 
-- **Platform:** macOS only. The newest features need macOS 26. The oldest supported version is open.
+- **Platform:** macOS 11 and newer. A few features need a newer version, such as the document structure of scanned pages, which needs macOS 26.
 - **Language:** Swift, confirmed by the M0 spike.
 - **Parsing and rendering:** Apple's PDFKit and Core Graphics. PDFium cross-checks them in tests.
 - **OCR and document structure:** Apple's Vision framework.
