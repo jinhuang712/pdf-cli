@@ -409,7 +409,7 @@ On the ten arXiv samples, the full address on every block, as in `p.2 ¶5 · 0.1
 
 ## Decision: a 5,000-token default budget over no default — 2026-10-15
 
-`read` and `search` stop at 5,000 tokens unless the agent passes `--budget`. The default keeps the stance "No whole document by default" in [PHILOSOPHY.md](PHILOSOPHY.md) true for an agent that passes no flags. Search has no default result count, so the budget alone decides how many hits fit, about 60 by estimate.
+`read` and `search` stop at 5,000 tokens unless the agent passes `--budget`. The default keeps the stance "No whole document by default" in [PHILOSOPHY.md](PHILOSOPHY.md) true for an agent that passes no flags. Search has no default result count, so the budget alone decides how many hits fit: about 130, measured on a sample paper when task M1.8 built search, against 60 estimated before.
 
 A sample-paper page holds about 950 tokens of text, so 5,000 tokens is about 5 pages, or 20,000 characters. Claude Code shows a command's output in full up to about 30,000 characters and moves the rest to a file, according to third-party reports. Our cut lands between blocks and ends with the command that continues. Claude Code's cut lands anywhere.
 
@@ -420,6 +420,24 @@ Task M1.7 built it. Tokens are estimated as one per four characters of Latin tex
 | **5,000 tokens** | A typical paper section in one call, inside Claude Code's 30,000 characters. | A long section takes two calls. |
 | 2,000 tokens | Cheaper per call. | More calls for the same section. |
 | No default | The agent always gets everything it asked for. | A flagless read of a 300-page book sends about 285,000 tokens, and Claude Code cuts it mid-sentence. |
+
+## Decision: a keyword index of every paragraph, kept with the page's result — 2026-10-15
+
+`pdf search` finds words with SQLite's FTS5, one row per text block, so a hit names its paragraph and `pdf read --from` goes straight there. The row joins the index in the same transaction that caches the page, and deleting a page's result deletes its rows, by a trigger, so the index never disagrees with the cache. Pages cached before the index existed join it the first time a search looks at their document: 290 ms for the 456-page file, about 0.6 ms a page.
+
+- **Words:** the tokenizer is `porter unicode61 remove_diacritics 2`: "dropouts" finds "dropout", and "cafe" finds "café". Every word of a query must be in the same paragraph; when none holds them all, paragraphs that hold some of them follow, marked as such. Each word is quoted, so no query is read as FTS5 syntax.
+- **Scripts without spaces:** the tokenizer reads a run of Chinese or Japanese characters as one word, so the index splits each such character apart, with a thin space that snippets take out again, and a query's run becomes a phrase. "深度学习" then finds "基于深度学习的方法".
+- **Rank:** SQLite's BM25, best first. It favors short paragraphs, so a heading that names the words can come before the paragraph that discusses them.
+- **Patterns:** `--regex` runs over each file's text with a line break between paragraphs and pages, so a match can cross a line, a column or a page.
+- **Waiting:** a search of one PDF that is new to the cache waits up to 10 s for its pages, then searches those that are parsed and says how many. A search of the library starts no parse: a library of hundreds of PDFs would otherwise parse them all.
+
+Searches took 34–79 ms on cached files. Naming each hit's section costs more on a file without bookmarks, whose headings need every page decoded: 307 ms on the 456-page file (TODO.md).
+
+| Option | For | Against |
+|---|---|---|
+| **One row per paragraph** | A hit names its paragraph, and the agent reads from there. | More rows: 12,846 for 456 pages. |
+| One row per page | Fewer rows. | A hit names only its page, and words from unrelated paragraphs of a page match together. |
+| A scan of the cached text with each query | No index to keep. | Every search decodes every page: about 300 ms for 456 pages, and more across a library. |
 
 ## Decision: each character's glyph box matched to its selection — 2026-10-15
 

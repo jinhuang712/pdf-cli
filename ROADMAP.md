@@ -54,7 +54,7 @@ The spike shipped no features. It answered the riskiest questions.
   - [ ] M1.14 Every image and drawing marked in place, with its crop command
   - Later: cleaner column order, with running headers and footers set aside (M2.5)
 - **Search** (F4): by keyword and by pattern
-  - [ ] M1.8 `pdf search` by keyword and with `--regex`
+  - [x] M1.8 `pdf search` by keyword and with `--regex`
   - Later: search by meaning (M3.1)
 - **Crop** (F5): whole pages and regions
   - [ ] M1.9 `pdf crop` for pages and regions

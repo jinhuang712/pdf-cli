@@ -224,13 +224,18 @@ public struct Info: Encodable, Sendable {
     /// stands, since the text's reading order can put a right column's heading before the left
     /// column's.
     static func sections(outline: [FileFacts.Section], pages: [Output.Page], pageCount: Int, complete: Bool) -> [Section] {
+        measure(starts(outline: outline, pages: pages, pageCount: pageCount), pages: pages, pageCount: pageCount, complete: complete)
+    }
+
+    /// Where each bookmark's section starts, without its size: it needs only the pages the
+    /// bookmarks point at, so a search can name a hit's section without decoding every page.
+    public static func starts(outline: [FileFacts.Section], pages: [Output.Page], pageCount: Int) -> [Section] {
         let byIndex = Dictionary(pages.map { ($0.index, $0) }, uniquingKeysWith: { first, _ in first })
         let placed = outline.filter { $0.page >= 0 && $0.page < pageCount }.enumerated().map { position, item in
             let block = byIndex[item.page]?.result.pageText.map { place(item, in: $0) }
             return (section: Section(title: item.title, level: item.level, page: item.page + 1, block: block), position: position)
         }
-        let ordered = placed.sorted { ($0.section.page, $0.position) < ($1.section.page, $1.position) }
-        return measure(ordered.map(\.section), pages: pages, pageCount: pageCount, complete: complete)
+        return placed.sorted { ($0.section.page, $0.position) < ($1.section.page, $1.position) }.map(\.section)
     }
 
     /// The block a bookmark points at, counted from 1: a short block that spells the bookmark's
@@ -319,6 +324,20 @@ public struct Info: Encodable, Sendable {
         if let index = titles.firstIndex(where: { $0.hasPrefix(wanted) }) { return sections[index] }
         if let index = titles.firstIndex(where: { $0.contains(wanted) }) { return sections[index] }
         return nil
+    }
+
+    /// The section a block falls in: the one that starts last at or before it, the deeper one
+    /// when two start at the same block. `page` counts from 1.
+    public static func section(at page: Int, block: Int, in sections: [Section]) -> Section? {
+        var best: Section?
+        for section in sections where (section.page, section.block ?? 1) <= (page, block) {
+            guard let current = best else {
+                best = section
+                continue
+            }
+            if (section.page, section.block ?? 1) >= (current.page, current.block ?? 1) { best = section }
+        }
+        return best
     }
 
     /// The section at which `section` ends: the next one at its level or above.

@@ -3,7 +3,7 @@
 
 ✅ built · 🚧 built with a gap · ⬜ planned
 
-F1 and F11 are ✅ built, F2, F3, F7 and F8 are 🚧 built with a gap, and every other feature is ⬜ planned. The commands and output samples show the intended behavior.
+F1 and F11 are ✅ built, F2, F3, F4, F7 and F8 are 🚧 built with a gap, and every other feature is ⬜ planned. The commands and output samples show the intended behavior.
 
 ## F1 — Add ✅
 
@@ -124,7 +124,7 @@ The rest of the page reaches the text too, at its position:
 
 Settings: none.
 
-## F4 — Search ⬜
+## F4 — Search 🚧
 
 Finds the right page, in one PDF or across the whole library.
 
@@ -140,6 +140,24 @@ Finds the right page, in one PDF or across the whole library.
 A query in another language finds matches by meaning, for example a Chinese query on an English paper.
 
 A hit inside a table names the table and the command that crops it. A hit inside hidden text shows as a marker, without the hidden words. While a PDF is still parsing, every result says how many of its pages were searched, so an empty result reads as partial.
+
+```sh
+$ pdf search paper.pdf influence matching
+"influence matching" in paper.pdf · 16 hits · all 11 pages searched
+
+p.3 ¶19 · Method · …our proposed dataset distillation framework, **Influence** **Matching** (Inf-**Match**). We…
+p.2 ¶28 · Introduction · …can we directly distill data by **matching** its outcome **influence** on the final model…
+
+read a hit: pdf read paper.pdf --from p3.19
+next: pdf search paper.pdf 'influence matching' --from 11
+```
+
+A keyword finds its other forms, as "dropouts" finds "dropout", and ignores accents. Every word must be in the same paragraph; when no paragraph holds them all, the result lists paragraphs that hold some of them, and says so. A search of one PDF that is new to the cache waits up to 10 s for its pages to parse. A search of the library searches the pages parsed so far and starts no parse. `--json` gives every hit with its file, page, paragraph, section and snippet. A hit on a flagged page names the page's status.
+
+Gap:
+- Search by meaning, and so queries in another language, come with M3.1.
+- `--in` comes with notes, references and memos in M2.7, M2.8 and M3.4; search covers all the text until then.
+- Hits name tables with M2.6 and hidden text with M1.10.
 
 Settings: none.
 

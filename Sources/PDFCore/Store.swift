@@ -125,7 +125,7 @@ public final class Store: Sendable {
         }
     }
 
-    static let schemaVersion = 6
+    static let schemaVersion = 7
 
     static func createSchema(_ db: Database) throws {
         let version = try Int.fetchOne(db, sql: "PRAGMA user_version") ?? 0
@@ -149,6 +149,9 @@ public final class Store: Sendable {
         // Entries indexed before version 5 get checks 0, so the next read indexes their files
         // again. Earlier versions deleted every entry instead, which let `pdf gc` drop every
         // document before its file was read again.
+        // Version 7: the keyword index. Pages cached before it join the index when a search
+        // first looks at their document.
+        try createSearchIndex(db)
         try db.execute(sql: "PRAGMA user_version = \(schemaVersion)")
     }
 
@@ -381,6 +384,9 @@ public final class Store: Sendable {
             """, arguments: [key, Env.parserVersion, result.status.rawValue, result.method,
                              result.text, result.reason, result.macOSBuild, result.parseMillis,
                              Date().timeIntervalSince1970, result.data])
+        // The page joins the keyword index in the same transaction, so a search never sees a
+        // cached page that it cannot find.
+        if db.changesCount > 0 { try indexForSearch(db, key: key, version: Env.parserVersion, result: result) }
     }
 
     // MARK: Cleanup

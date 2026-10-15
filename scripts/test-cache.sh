@@ -216,6 +216,18 @@ check "a section by its number finds the heading in the text" "^¶[0-9]* 2. Rela
 check "a printed page" "^## p.3" "$(reading read $paper --printed-page 3)"
 check "an unknown section names the known ones" "no section matches nothing; sections: .*Introduction" "$(reading read $paper --section nothing)"
 
+# pdf search: one PDF, a pattern across a line break, the library, the budget and JSON.
+output=$(reading search $paper influence matching)
+check "a search names its words, its hits and how much it searched" '^"influence matching" in .* · 16 hits · all 11 pages searched' "$output"
+check "each hit gives its page, paragraph, section and the words around it" "^p.3 ¶19 · Method · .*\*\*Influence\*\* \*\*Matching\*\*" "$output"
+check "a search says how to read a hit" "^read a hit: pdf read $paper --from p" "$output"
+check "a pattern matches across a break" "^p.1 ¶8 · .*\*\*dataset distillation\*\*" "$(reading search $paper --regex 'dataset\s+distillation' --top 3)"
+check "the budget stops a search and says how to go on" "^next: pdf search $paper 'influence matching' --budget 200 --from [0-9]*$" \
+    "$(reading search $paper influence matching --budget 200)"
+check "words no paragraph holds together give paragraphs that hold some" "hold some of them" "$(reading search $paper influence zebra --top 1)"
+check "the library is searched without a PDF" "^arxiv-2607.16859.pdf p.[0-9]* ¶[0-9]* · " "$(reading search distillation --top 2)"
+check "a search gives JSON" '"pagesSearched":11' "$(reading search $paper influence --top 1 --json)"
+
 # The library: pdf add, ls, rm and gc, and a locked file.
 library() { PDF_CLI_HOME=$work/library $pdf "$@" 2>&1; echo "exit $?"; }
 output=$(library add testdata/ocr)

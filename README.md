@@ -23,7 +23,7 @@ Not available yet. The spike is done, and the first usable version is milestone 
 
 ## Use
 
-The commands below are planned, and none is built yet.
+The first three work today, built from source. Cropping a figure and reading footnotes and references are planned.
 
 | When the agent wants to | It runs |
 |---|---|
@@ -35,7 +35,7 @@ The commands below are planned, and none is built yet.
 
 ## Known limits
 
-- Only `pdf add`, `pdf info`, `pdf read`, `pdf pick`, `pdf ls`, `pdf rm` and `pdf gc` are built so far, from source, and every target in [GOALS.md](GOALS.md) is still unmeasured.
+- Only `pdf add`, `pdf info`, `pdf read`, `pdf search`, `pdf pick`, `pdf ls`, `pdf rm` and `pdf gc` are built so far, from source, and every target in [GOALS.md](GOALS.md) is still unmeasured.
 - It supports macOS 11 and newer, and no other platform.
 - The document structure of scanned pages needs macOS 26.
 - Scanned pages in Japanese or Korean need macOS 13.
