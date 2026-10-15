@@ -46,6 +46,11 @@ public struct PageText: Codable, Equatable, Sendable {
     public var words: Int
     /// Letter runs longer than 25 characters, a sign of lost spaces.
     public var runTogether: Int
+    /// The mean confidence of OCR's lines, from 0 to 1. Nil for a page read from its text layer.
+    public var confidence: Double? = nil
+    /// The text layer that OCR replaced, kept so `--raw` can show it. Nothing goes missing
+    /// without a trace (PHILOSOPHY.md).
+    public var replacedText: String? = nil
 
     public var text: String { blocks.map(\.text).joined(separator: "\n\n") }
 }

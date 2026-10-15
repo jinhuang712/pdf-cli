@@ -1,4 +1,4 @@
-<!-- what-we-build: approved 2026-10-15 -->
+<!-- what-we-build: drafted 2026-10-15 -->
 # Features
 
 ✅ built · 🚧 built with a gap · ⬜ planned
@@ -69,6 +69,8 @@ Prints text in reading order. Every block shows its page and its position on the
 | `--raw` | Shows the text that normal output set aside as doubtful, in place, each part labelled with its reason: `[low-quality]`, `[unsure]`, `[table text: rows and columns lost]`, `[figure text]` or `[old OCR]` |
 
 Without a page or section flag, `pdf read` starts at the first page and stops at the default budget (see F7).
+
+Apple OCR reads a scanned page, a page whose text layer is stray marks or broken characters, and every page of a file whose text layer disagrees with its own image. Its blocks carry addresses like any other, and the text layer it replaced shows with `--raw`, labelled `[old OCR]`.
 
 A table appears as a table block in place of its cells: its number, its caption, its notes and the command that crops it. The agent reads the cells from the image, and `--raw` shows the table's flat text.
 

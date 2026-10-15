@@ -15,6 +15,9 @@ struct WorkerEvent: Codable, Equatable {
         case key
         /// A page's result, from a parse job. A `reason` means the page failed.
         case result
+        /// The sample check's result, from an index job: how far the text layer of `page`
+        /// agrees with OCR.
+        case sample
     }
 
     var kind: Kind
@@ -31,6 +34,8 @@ struct WorkerEvent: Codable, Equatable {
     /// From the font check: the page's body-font word gaps, and the ones PDFKit would drop.
     var gaps: Int?
     var risky: Int?
+    /// From the sample check: the share of characters the text layer and OCR agree on.
+    var agreement: Double?
 }
 
 /// The only kind of process that opens PDF content (DESIGNS.md → Principles → Safety).
@@ -65,9 +70,27 @@ public enum Worker {
         return 0
     }
 
+    /// Reports the file's sample check. The runner runs it in a worker of its own, beside the
+    /// index, so a new file waits for the slower of the two, not for both.
+    public static func sample(path: String) async -> Int32 {
+        watchParent()
+        let url = URL(fileURLWithPath: path)
+        guard let document = PDFDocument(url: url) else { return 0 }
+        if document.isLocked { _ = document.unlock(withPassword: "") }
+        guard !document.isLocked else { return 0 }
+        let started = DispatchTime.now().uptimeNanoseconds
+        if let sample = await OCR.sampleAgreement(document) {
+            emit(WorkerEvent(kind: .sample, page: sample.page, agreement: sample.agreement))
+        }
+        Env.log("sample check took \((DispatchTime.now().uptimeNanoseconds - started) / 1_000_000) ms")
+        return 0
+    }
+
     /// Reports the text layer of each page in `pages`, in that order, with the page's key.
+    /// A page with no usable text layer is read by OCR, and so is every page with `readAllByOCR`.
     /// With `repairSpaces`, each page's word breaks come from Apple OCR.
-    public static func parse(path: String, pages: [Int], repairSpaces: Bool = false) async -> Int32 {
+    public static func parse(path: String, pages: [Int], repairSpaces: Bool = false,
+                             readAllByOCR: Bool = false) async -> Int32 {
         watchParent()
         let url = URL(fileURLWithPath: path)
         guard let document = PDFDocument(url: url) else {
@@ -90,13 +113,30 @@ public enum Worker {
                 continue
             }
             let key = keyer.key(for: reference)
-            let repair = repairSpaces || FontCheck(page: reference).pageAtRisk
-            let spaces = repair ? await SpaceRepair.spacesBefore(page) : []
-            let layer = TextLayer.read(page, spacesBefore: spaces)
+            let check = FontCheck(page: reference)
+            let layer: PageText
+            let method: String
+            if readAllByOCR || OCR.needed(text: page.string ?? "", images: check.images) {
+                guard var read = await OCR.pageText(page) else {
+                    emit(WorkerEvent(kind: .result, page: index, key: key,
+                                     reason: "Apple OCR could not read this page", millis: 0))
+                    continue
+                }
+                let replaced = (page.string ?? "").split(whereSeparator: \.isNewline)
+                    .map { TextCleanup.line(String($0)) }.filter { !$0.isEmpty }.joined(separator: "\n")
+                if !replaced.isEmpty { read.replacedText = replaced }
+                layer = read
+                method = "ocr"
+            } else {
+                let repair = repairSpaces || check.pageAtRisk
+                let spaces = repair ? await SpaceRepair.spacesBefore(page) : []
+                layer = TextLayer.read(page, spacesBefore: spaces)
+                method = repair ? "pdfkit+ocr-spaces" : "pdfkit"
+            }
             let data = (try? JSONEncoder().encode(layer)).map { String(decoding: $0, as: UTF8.self) }
             let millis = Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000
             emit(WorkerEvent(kind: .result, page: index, key: key, text: layer.text, millis: millis,
-                             data: data, method: repair ? "pdfkit+ocr-spaces" : "pdfkit"))
+                             data: data, method: method))
         }
         return 0
     }
@@ -161,6 +201,12 @@ enum PageKeys {
     /// risk: a cached page never depends on which file was read first.
     static func repaired(_ key: String) -> String {
         key == missing || key.hasPrefix("unreadable-") ? key : key + "+spaces"
+    }
+
+    /// The key of a page in a file whose text layer failed the sample check. OCR reads it, so
+    /// its result is cached apart too.
+    static func ocr(_ key: String) -> String {
+        key == missing || key.hasPrefix("unreadable-") ? key : key + "+ocr"
     }
 }
 

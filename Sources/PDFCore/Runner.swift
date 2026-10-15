@@ -87,26 +87,32 @@ public final class Runner: @unchecked Sendable {
             var pageCount: Int?
             var keys: [Int: String] = [:]
             var checks: [Int: FontCheck] = [:]
+            var agreement: Double?
             var failedPages: [Int: String] = [:]
             var fileFailure: String?
             var retried: Set<Int> = []
             var start = 0
             var stops = 0
+            // The sample check runs in a worker of its own, beside the index.
+            let sampler = startWorker(["sample", path], pages: [])
+            let handle = { (_: Supervised, event: WorkerEvent) in
+                switch event.kind {
+                case .opened: pageCount = event.pageCount
+                case .openFailed: fileFailure = event.reason ?? OpenFailure.damaged
+                case .key:
+                    guard let page = event.page, let key = event.key else { break }
+                    keys[page] = key
+                    checks[page] = FontCheck(gaps: event.gaps ?? 0, risky: event.risky ?? 0)
+                case .sample: agreement = event.agreement
+                default: break
+                }
+            }
             while fileFailure == nil {
                 guard let worker = startWorker(["index", path, "--from", String(start)], pages: []) else {
+                    if let sampler { stop(sampler, reason: "the index could not start", kind: .runner) }
                     return .unavailable
                 }
-                run([worker]) { _, event in
-                    switch event.kind {
-                    case .opened: pageCount = event.pageCount
-                    case .openFailed: fileFailure = event.reason ?? OpenFailure.damaged
-                    case .key:
-                        guard let page = event.page, let key = event.key else { break }
-                        keys[page] = key
-                        checks[page] = FontCheck(gaps: event.gaps ?? 0, risky: event.risky ?? 0)
-                    default: break
-                    }
-                }
+                while !worker.finished { step([worker] + [sampler].compactMap { $0 }, handle: handle) }
                 if fileFailure != nil || worker.endedCleanly { break }
                 guard let count = pageCount else {
                     stops += 1
@@ -134,6 +140,11 @@ public final class Runner: @unchecked Sendable {
                 }
                 if start >= count { break }
             }
+            if let sampler {
+                // A file that cannot be read needs no verdict on its text layer.
+                if fileFailure != nil { stop(sampler, reason: "the file cannot be read", kind: .runner) }
+                while !sampler.finished { step([sampler], handle: handle) }
+            }
             guard FileStat(path: path) == before else { continue }
             if let fileFailure {
                 try? store.saveFailure(path: path, stat: before, reason: fileFailure)
@@ -148,13 +159,17 @@ public final class Runner: @unchecked Sendable {
                     try? store.saveResult(key: key, .failed(reason))
                 }
             }
-            let atRisk = FontCheck.atRisk(gaps: checks.values.reduce(0) { $0 + $1.gaps },
-                                          risky: checks.values.reduce(0) { $0 + $1.risky })
+            // A text layer that fails the sample check is not read at all, so its fonts no longer
+            // matter: OCR reads every page.
+            let needsOCR = agreement.map { $0 < OCR.sampleThreshold } ?? false
+            let atRisk = !needsOCR && FontCheck.atRisk(gaps: checks.values.reduce(0) { $0 + $1.gaps },
+                                                       risky: checks.values.reduce(0) { $0 + $1.risky })
             let ordered = (0..<count).map { page -> String in
                 let key = keys[page] ?? PageKeys.missing
-                return atRisk ? PageKeys.repaired(key) : key
+                return needsOCR ? PageKeys.ocr(key) : atRisk ? PageKeys.repaired(key) : key
             }
-            guard let id = try? store.saveIndex(path: path, stat: before, pageKeys: ordered, spacesAtRisk: atRisk) else {
+            guard let id = try? store.saveIndex(path: path, stat: before, pageKeys: ordered, spacesAtRisk: atRisk,
+                                                needsOCR: needsOCR) else {
                 return .unavailable
             }
             return .document(id: id, stat: before)
@@ -202,11 +217,13 @@ public final class Runner: @unchecked Sendable {
         var changed = false
         var failedSpawns = 0
         let capacity = max(1, Env.workerCount)
-        // A file at risk reads every page through OCR, about 0.6 s a page, so its batches are
-        // small: a page a command asks for waits for one batch at most.
-        let repair = (try? store.spacesAtRisk(docID: docID)) ?? false
-        let batchSize = repair ? 2 : Runner.batchSize
-        let parseArguments = repair ? ["--repair-spaces"] : []
+        let readAllByOCR = (try? store.needsOCR(docID: docID)) ?? false
+        let repair = !readAllByOCR && ((try? store.spacesAtRisk(docID: docID)) ?? false)
+        let parseArguments = readAllByOCR ? ["--read-all-by-ocr"] : repair ? ["--repair-spaces"] : []
+        // A page through OCR takes about 0.7 s, so batches shrink once pages turn out slow, as
+        // in a scan: a page a command asks for waits for one batch at most.
+        var slow = readAllByOCR || repair
+        var batchSize: Int { slow ? 2 : Runner.batchSize }
 
         func unchanged() -> Bool { FileStat(path: path) == stat }
 
@@ -263,6 +280,7 @@ public final class Runner: @unchecked Sendable {
                     worker.openFailure = event.reason ?? OpenFailure.damaged
                 case .result:
                     guard let page = event.page, keys.indices.contains(page) else { return }
+                    if (event.millis ?? 0) > 300 { slow = true }
                     if let reason = event.reason {
                         save(page, .failed(reason))
                     } else {

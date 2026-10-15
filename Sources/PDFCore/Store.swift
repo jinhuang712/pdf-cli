@@ -111,22 +111,23 @@ public final class Store: Sendable {
         }
     }
 
-    static let schemaVersion = 2
+    static let schemaVersion = 3
 
     static func createSchema(_ db: Database) throws {
         let version = try Int.fetchOne(db, sql: "PRAGMA user_version") ?? 0
         guard version < schemaVersion else { return }
         try createVersion1(db)
         // Version 2: the text layer of each page, and the font check of each document.
-        if try !db.columns(in: "page_result").contains(where: { $0.name == "data" }) {
-            try db.execute(sql: "ALTER TABLE page_result ADD COLUMN data TEXT NOT NULL DEFAULT ''")
+        // Version 3: the sample check of each document.
+        for (table, column, type) in [("page_result", "data", "TEXT NOT NULL DEFAULT ''"),
+                                      ("document", "spaces_at_risk", "INTEGER NOT NULL DEFAULT 0"),
+                                      ("document", "needs_ocr", "INTEGER NOT NULL DEFAULT 0")]
+        where try !db.columns(in: table).contains(where: { $0.name == column }) {
+            try db.execute(sql: "ALTER TABLE \(table) ADD COLUMN \(column) \(type)")
         }
-        if try !db.columns(in: "document").contains(where: { $0.name == "spaces_at_risk" }) {
-            try db.execute(sql: "ALTER TABLE document ADD COLUMN spaces_at_risk INTEGER NOT NULL DEFAULT 0")
-        }
-        if version == 1 {
-            // Files indexed before the font check existed have no verdict. Forgetting their
-            // entries makes the next read index them again, and run the check.
+        if version >= 1 {
+            // Files indexed before a check existed have no verdict from it. Forgetting their
+            // entries makes the next read index them again, and run every check.
             try db.execute(sql: "DELETE FROM file_entry")
         }
         try db.execute(sql: "PRAGMA user_version = \(schemaVersion)")
@@ -199,15 +200,17 @@ public final class Store: Sendable {
 
     /// Records a file's pages. The document's ID hashes its page keys, so two copies of one
     /// file, or one file with new highlights, share a document.
-    /// `spacesAtRisk` is the font check's verdict for the whole file.
+    /// `spacesAtRisk` is the font check's verdict for the whole file, and `needsOCR` the
+    /// sample check's.
     @discardableResult
-    public func saveIndex(path: String, stat: FileStat, pageKeys: [String], spacesAtRisk: Bool = false) throws -> String {
+    public func saveIndex(path: String, stat: FileStat, pageKeys: [String], spacesAtRisk: Bool = false,
+                          needsOCR: Bool = false) throws -> String {
         let id = Store.documentID(pageKeys: pageKeys)
         try write { db in
             try db.execute(sql: """
-                INSERT INTO document (id, page_count, created_at, spaces_at_risk) VALUES (?, ?, ?, ?)
-                ON CONFLICT (id) DO UPDATE SET spaces_at_risk = excluded.spaces_at_risk
-                """, arguments: [id, pageKeys.count, Date().timeIntervalSince1970, spacesAtRisk])
+                INSERT INTO document (id, page_count, created_at, spaces_at_risk, needs_ocr) VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT (id) DO UPDATE SET spaces_at_risk = excluded.spaces_at_risk, needs_ocr = excluded.needs_ocr
+                """, arguments: [id, pageKeys.count, Date().timeIntervalSince1970, spacesAtRisk, needsOCR])
             for (index, key) in pageKeys.enumerated() {
                 try db.execute(sql: """
                     INSERT OR REPLACE INTO document_page (doc_id, page_index, page_key) VALUES (?, ?, ?)
@@ -239,6 +242,13 @@ public final class Store: Sendable {
     public func spacesAtRisk(docID: String) throws -> Bool {
         try pool.read { db in
             try Bool.fetchOne(db, sql: "SELECT spaces_at_risk FROM document WHERE id = ?", arguments: [docID]) ?? false
+        }
+    }
+
+    /// The sample check's verdict for a document: OCR reads every page.
+    public func needsOCR(docID: String) throws -> Bool {
+        try pool.read { db in
+            try Bool.fetchOne(db, sql: "SELECT needs_ocr FROM document WHERE id = ?", arguments: [docID]) ?? false
         }
     }
 

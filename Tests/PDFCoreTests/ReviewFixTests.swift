@@ -27,9 +27,9 @@ import Testing
     @Test func aRotatedPageRendersUpright() throws {
         let document = try #require(PDFDocument(url: samplePaper))
         let page = try #require(document.page(at: 0))
-        let upright = try #require(SpaceRepair.render(page, dpi: 72))
+        let upright = try #require(OCR.render(page, dpi: 72))
         page.rotation = 90
-        let turned = try #require(SpaceRepair.render(page, dpi: 72))
+        let turned = try #require(OCR.render(page, dpi: 72))
         #expect(upright.height > upright.width)
         #expect(turned.width == upright.height && turned.height == upright.width)
     }

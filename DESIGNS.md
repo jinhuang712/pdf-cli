@@ -1,4 +1,4 @@
-<!-- what-we-build: approved 2026-10-15 -->
+<!-- what-we-build: drafted 2026-10-15 -->
 # Designs
 
 PDF files on the user's Mac and commands from an agent go in. Text with page addresses, PNG crops, search hits and failure reports come out, served from a local cache. In between, worker processes parse each page once, in steps that escalate only as far as the page needs, and store the result in SQLite. Behavior is in [FEATURES.md](FEATURES.md).
@@ -75,7 +75,7 @@ A page can read wrong while it looks right, and the agent believes what it is ha
 
 - **Table regions replace their text.** PDFKit turns a table into a stream of numbers without rows or columns, as the M0 spike showed. The text inside a detected table stays out of normal output, and the table goes out as an image (see the decision on tables below). `--raw` shows the text in place, labelled as flat text that lost its rows and columns. The words inside a figure, such as a chart's axis labels, follow the same rule. Cost: a table the detector misses still leaks its flat numbers. Holds as: the output writer moves every text block inside a table or figure region behind `--raw` and emits one table or figure block in its place, and goal G8 in [GOALS.md](GOALS.md) scores table detection.
 - **Raised and lowered characters are found from their boxes.** Plain text turns 10⁻⁵ into "10−5", as the M0 spike showed. A character set smaller and above or below its line's baseline is a superscript or a subscript. Cost: a font that reports odd boxes gets wrong marks. Holds as: every character set smaller and off the baseline leaves the text layer with a superscript or subscript mark, or as a footnote or citation marker.
-- **One sample page per file is checked against its image.** A broken font table can map shapes to wrong letters, and an old OCR layer in a scan can hold misreads. Both look like real words. Apple OCR reads one sample page, and its words are compared with the text layer's words. Cost: about 0.6 s per file. Holds as: a file whose sample page disagrees beyond the threshold has every page escalate to OCR, and its old text layer stays behind `--raw`, labelled `[old OCR]`.
+- **One sample page per file is checked against its image.** A broken font table can map shapes to wrong letters, and an old OCR layer in a scan can hold misreads. Both look like real words. Apple OCR reads a band around the densest paragraph of the first page among the first ten with at least 300 letters, and the check counts the share of OCR's words, four letters or longer, that the text layer spells the same, with spaces left out so a layer that lost its spaces still matches. A share under 0.7 fails. On the eleven samples it was 0.90–0.99, the scan's old OCR layer 0.94 included, and a layer with every letter shifted by one scored 0.00. Cost: 0.35–0.6 s per new file, in a worker of its own beside the index. Holds as: a file whose sample fails has every page read by OCR and cached apart, and its old text layer stays behind `--raw`, labelled `[old OCR]`.
 - **Spaces are checked before and after reading.** A font that declares character 32 wider than a normal space makes PDFKit drop the spaces between words, as the M0 spike found. A Word-made spike paper also loses 1–2 spaces per page, for a reason still unknown. Before reading, the font check measures each word gap in a page's text operations against half its font's declared width for character 32, counting only body fonts, the fonts that hold at least a quarter of the page's gaps: a maths font can declare a wide character 32 harmlessly. A file with at least 5% risky gaps, and at least 20, is "at risk", and so is a page with at least 10%, and at least 10, for a file that mixes papers. On the eleven samples, the paper that loses its spaces had 29%, and the ten others had none on any page. After reading, a count of run-together words checks every page. Cost: about 0.3 ms per page for the check. Holds as: every page record stores its run-together word count, and a page above the threshold gets the status `low-quality`.
 
 ### Cache
@@ -209,6 +209,13 @@ Vision reads scanned pages and garbled pages.
 Tesseract and RapidOCR would each add an install and a model to ship. On older macOS versions, Vision falls back to plain text recognition, without the document structure.
 
 The document recognizer reads scans and repairs spaces, and PDFKit sets the reading order of born-digital pages. On 36 born-digital two-column pages in the M0 spike, the recognizer mixed the two columns badly on 2 pages and took a median 0.67 s per page ([spike/M0.3-reading-order.md](spike/M0.3-reading-order.md)).
+
+Task M1.4 sends a page to OCR when its text layer is unusable:
+- the page draws an image and has fewer than 10 letters and digits, or letters and digits make up under 30% of its characters, as in an old OCR layer of stray marks;
+- at least a tenth of its characters, and at least 10, are replacement characters, private-use characters or controls;
+- or its file failed the sample check (see Silent errors).
+
+On the samples, no page of the ten born-digital papers went to OCR, and 3 of the scan's 30 pages did, one of them an old layer of 44 stray marks where OCR read 287 words. An OCR'd page took 0.4–1.0 s. Its boxes map back to the unrotated page: on a page turned 90°, 180° or 270°, OCR's blocks sat within 2.3% of the page from the text layer's.
 
 ## Decision: Core ML on the Neural Engine over a Python Docling worker — 2026-10-14
 
@@ -354,4 +361,4 @@ The tool returns text, crops and failure reports, and the calling agent does all
 - How to measure reading-order doubt on layouts beyond LaTeX papers, such as Word reports, magazines and textbooks with sidebars. The M0 spike's count of jumps between the left and right halves of a page is a candidate, tested only on two-column LaTeX papers.
 - The embedding model for search by meaning: Apple's built-in embeddings, or a small MLX model.
 - The quality thresholds that make a page `low-quality`. They get tuned until goal G11 in [GOALS.md](GOALS.md) passes.
-- How to serve the first page of a very long file within goal G2. The runner reads every page's key before it parses any page, at about 1.3 ms per page, so a file of more than about 1,400 pages likely misses G2's 2 s.
+- How to serve the first page of a very long file within goal G2. The runner reads every page's key and font check before it parses any page, at about 2.4 ms per page, so a file of more than about 700 pages likely misses G2's 2 s. A 456-page file gave its first page in 1.52 s.

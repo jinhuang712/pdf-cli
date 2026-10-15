@@ -35,6 +35,15 @@ output=$(run $pdf debug-pages testdata/smoke/arxiv-2609.23257.pdf --page 2)
 check "a paper whose fonts hide spaces gets the repair" "p.2 ok: pdfkit+ocr-spaces" "$output"
 check "the repaired page has no run-together words" "0 run together" "$output"
 
+output=$(run $pdf debug-pages testdata/ocr/scan-no-text.pdf --page 1)
+check "a scan with no text is read by OCR" "p.1 ok: ocr" "$output"
+
+output=$(run $pdf debug-pages testdata/ocr/scan-right-layer.pdf --page 1)
+check "a scan with a right text layer keeps it" "p.1 ok: pdfkit" "$output"
+
+output=$(run $pdf debug-pages testdata/ocr/scan-wrong-layer.pdf --page 2)
+check "a file whose text layer fails the sample check is read by OCR" "p.2 ok: ocr" "$output"
+
 output=$(run env PDF_CLI_TEST_FAULT=hang:3 $pdf debug-pages $paper)
 check "a hanging page fails at the time limit" "p.4 failed: time limit" "$output"
 check "the page after a hang still reads" "p.5 ok" "$output"

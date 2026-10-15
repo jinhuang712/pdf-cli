@@ -16,6 +16,8 @@ public struct FontCheck: Sendable, Equatable {
     public var gaps = 0
     /// The ones PDFKit would drop.
     public var risky = 0
+    /// Images the page draws, inline or as objects. A page with an image and no text is a scan.
+    public var images = 0
 
     /// A file is at risk when at least 5% of its body-font gaps, and at least 20 of them, are
     /// risky. Then every page gets the space repair.
@@ -39,6 +41,7 @@ public struct FontCheck: Sendable, Equatable {
         var forms: [UnsafeRawPointer: [UnsafeRawPointer: (gaps: Int, risky: Int)]] = [:]
         /// Text and form operations counted, against `operationLimit`.
         var operations = 0
+        var images = 0
 
         func add(_ counts: [UnsafeRawPointer: (gaps: Int, risky: Int)]) {
             for (font, entry) in counts {
@@ -106,8 +109,9 @@ public struct FontCheck: Sendable, Equatable {
                 return
             }
             var subtype: UnsafePointer<CChar>?
-            guard CGPDFDictionaryGetName(dictionary, "Subtype", &subtype), let subtype,
-                  String(cString: subtype) == "Form" else { return }
+            guard CGPDFDictionaryGetName(dictionary, "Subtype", &subtype), let subtype else { return }
+            if String(cString: subtype) == "Image" { scan.images += 1 }
+            guard String(cString: subtype) == "Form" else { return }
             // A form without its own resources is rare, and old: the check skips it.
             var resources: CGPDFDictionaryRef?
             guard CGPDFDictionaryGetDictionary(dictionary, "Resources", &resources), let resources else { return }
@@ -126,6 +130,10 @@ public struct FontCheck: Sendable, Equatable {
                 if after.gaps > earlier.gaps { added[key] = (after.gaps - earlier.gaps, after.risky - earlier.risky) }
             }
             scan.forms[identity] = added
+        }
+        // The end of an image drawn inline in the content stream.
+        CGPDFOperatorTableSetCallback(table, "EI") { _, info in
+            Unmanaged<Scan>.fromOpaque(info!).takeUnretainedValue().images += 1
         }
         return table
     }()
@@ -156,6 +164,7 @@ public struct FontCheck: Sendable, Equatable {
         let stream = CGPDFContentStreamCreateWithPage(page)
         defer { CGPDFContentStreamRelease(stream) }
         FontCheck.run(stream, scan)
+        images = scan.images
         let total = scan.byFont.values.reduce(0) { $0 + $1.gaps }
         for (_, entry) in scan.byFont where entry.gaps * 4 >= max(total, 1) {
             gaps += entry.gaps

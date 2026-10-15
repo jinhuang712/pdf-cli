@@ -2,6 +2,50 @@ import ArgumentParser
 import Foundation
 import PDFCore
 
+/// Measures the OCR checks on a file. A developer's tool, hidden from `pdf --help`: it opens
+/// the PDF in this process, outside a worker.
+struct DebugOCR: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "debug-ocr",
+        abstract: "Print the sample check, or one page read through OCR.",
+        shouldDisplay: false
+    )
+
+    @Argument(help: "Paths to PDF files.") var paths: [String]
+    @Option(help: "Read this page, counted from 1, through OCR instead.") var page: Int?
+    @Option(help: "Turn the page by this many degrees first.") var rotation = 0
+
+    func run() async throws {
+        for path in paths {
+            let name = URL(fileURLWithPath: path).lastPathComponent
+            guard let page else {
+                if let sample = await OCRDiagnostics.sampleAgreement(path: path) {
+                    print("\(name): page \(sample.page + 1) agrees \(String(format: "%.3f", sample.agreement))")
+                } else {
+                    print("\(name): no page to sample")
+                }
+                continue
+            }
+            guard let result = await OCRDiagnostics.page(path: path, index: page - 1, rotation: rotation),
+                  let ocr = result.ocr else {
+                print("\(name): OCR failed")
+                continue
+            }
+            print("\(name) p.\(page): \(ocr.blocks.count) blocks, \(ocr.words) words, confidence "
+                  + String(format: "%.2f", ocr.confidence ?? 0))
+            // How far each OCR block's center lies from the nearest text-layer block's center.
+            let centers = result.layer.blocks.map { ($0.box.x + $0.box.width / 2, $0.box.y + $0.box.height / 2) }
+            let distances = ocr.blocks.map { block -> Double in
+                let x = block.box.x + block.box.width / 2, y = block.box.y + block.box.height / 2
+                return centers.map { hypot($0.0 - x, $0.1 - y) }.min() ?? 1
+            }.sorted()
+            if !distances.isEmpty {
+                print("  block centers off by: median \(String(format: "%.3f", distances[distances.count / 2])) of the page")
+            }
+        }
+    }
+}
+
 /// The runner that a command starts in the background. Hidden: only `pdf` itself calls it.
 struct RunnerCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
@@ -26,18 +70,24 @@ struct WorkerCommand: AsyncParsableCommand {
         shouldDisplay: false
     )
 
-    enum Mode: String, ExpressibleByArgument { case index, parse }
+    enum Mode: String, ExpressibleByArgument { case index, sample, parse }
 
     @Argument var mode: Mode
     @Argument var path: String
     @Option var from: Int = 0
     @Option(transform: { $0.split(separator: ",").compactMap { Int($0) } }) var pages: [Int] = []
     @Flag var repairSpaces = false
+    @Flag var readAllByOCR = false
 
     func run() async throws {
         switch mode {
-        case .index: throw ExitCode(Worker.index(path: path, from: from))
-        case .parse: throw ExitCode(await Worker.parse(path: path, pages: pages, repairSpaces: repairSpaces))
+        case .index:
+            throw ExitCode(Worker.index(path: path, from: from))
+        case .sample:
+            throw ExitCode(await Worker.sample(path: path))
+        case .parse:
+            throw ExitCode(await Worker.parse(path: path, pages: pages, repairSpaces: repairSpaces,
+                                              readAllByOCR: readAllByOCR))
         }
     }
 }
