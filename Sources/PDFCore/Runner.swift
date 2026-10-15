@@ -99,6 +99,7 @@ public final class Runner: @unchecked Sendable {
             downloadIfInCloud()
             guard let before = FileStat(path: path) else { return .unavailable }
             var pageCount: Int?
+            var producer: String?
             var keys: [Int: String] = [:]
             var checks: [Int: FontCheck] = [:]
             var agreement: Double?
@@ -117,7 +118,9 @@ public final class Runner: @unchecked Sendable {
             }
             let handle = { (_: Supervised, event: WorkerEvent) in
                 switch event.kind {
-                case .opened: pageCount = event.pageCount
+                case .opened:
+                    pageCount = event.pageCount
+                    producer = event.producer
                 case .openFailed: fileFailure = event.reason ?? OpenFailure.damaged
                 case .key:
                     guard let page = event.page, let key = event.key else { break }
@@ -211,8 +214,11 @@ public final class Runner: @unchecked Sendable {
                 let key = keys[page] ?? PageKeys.missing
                 return needsOCR ? PageKeys.ocr(key) : atRisk ? PageKeys.repaired(key) : key
             }
+            // A PDFKit save, as Preview makes one, can damage the text (DESIGNS.md → Decision: a
+            // file that PDFKit saved counts as a new file, with a warning).
+            let savedByPDFKit = producer?.contains("Quartz PDFContext") ?? false
             guard let id = try? store.saveIndex(path: path, stat: before, pageKeys: ordered, spacesAtRisk: atRisk,
-                                                needsOCR: needsOCR) else {
+                                                needsOCR: needsOCR, savedByPDFKit: savedByPDFKit) else {
                 return .unavailable
             }
             return .document(id: id, stat: before)

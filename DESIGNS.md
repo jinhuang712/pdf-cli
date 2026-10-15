@@ -24,10 +24,12 @@ WORKER: a child process with time and memory limits, page by page
    │                     wide character 32 → file marked "at risk"
    │
    ├─ 2. Text ────────── PDFKit: characters, their boxes, their fonts
-   │      ├─ at risk ──► Apple OCR reads the page image, and only
-   │      │              its word breaks are kept  (*)
+   │      ├─ at risk, or ► Apple OCR reads the page image, and only
+   │      │  words run   its word breaks are kept  (*)
+   │      │  together
    │      └─ scan or ──► Apple OCR document recognizer:
-   │         garbled     text, paragraphs, tables, lists
+   │         garbled     text, paragraphs, tables, lists,
+   │                     read a second time to check the first
    │
    ├─ 3. Structure ───── simple rules, no model
    │      figures ◄───── drawing commands + "Figure N" captions
@@ -37,7 +39,7 @@ WORKER: a child process with time and memory limits, page by page
    │              ◄───── font sizes and positions
    │      hidden text ─► a marker in place, its words only with a flag
    │
-   └─ 4. Quality check, then every result is cached
+   └─ 4. Quality measures, cached with every result, judged when read
           ok ──────────► agent reads the text
           unsure ──────► two readings + `pdf pick` (words only)
           doubtful ────► failure block + `pdf crop` command
@@ -63,11 +65,11 @@ The "at risk" check comes from the M0 spike: a font that declares character 32 t
 
 ### Failure
 
-- **A failed page always holds a failure block.** A page that fails to parse, or reads below the quality bar, gets a failure block in its place: the page, the reason and the quality score. Cost: output on hard documents gets noisy, and agents must handle failure blocks. Holds as: every page record has a status (`ok`, `low-quality` or `failed`) with its reasons, and the output writer turns every page that is not `ok` into a failure block.
+- **A failed page always holds a failure block.** A page that fails to parse, or reads below the quality bar, gets a failure block in its place: the page, the reason and the quality score. Cost: output on hard documents gets noisy, and agents must handle failure blocks. Holds as: every page read gets a status (`ok`, `unsure`, `low-quality` or `failed`) with its reasons, and the output writer turns every failed or low-quality page or block into a failure block.
 - **Every failure names its way out.** The way out is the agent's own image understanding: each failure block carries the ready-to-run `pdf crop` command for the smallest region that holds the doubt, with the lines around it. Each failure block also names `--raw`, which shows the doubtful text it replaced, labelled with its reason. Cost: the agent pays image tokens for each crop it reads, and a region found too small hides context. Holds as: the output writer emits no failure block without a crop command and a `--raw` line, and the crop covers the block's own region, or its page when the whole page is in doubt.
 - **The agent judges what language can show.** When two readings of a passage differ in words, such as spacing or a sentence spliced across columns, the block shows both readings, and the agent picks one with `pdf pick`. Readings that differ in digits, table cells or formulas go out as a crop, with both readings behind `--raw`. Cost: extra tokens for the words that differ, and a wrong pick lasts until `reparse`. Holds as: `pdf pick` accepts only one of the tool's own readings, picks live in their own table apart from the parsed pages, and every picked span carries a `[picked]` label in the output.
 - **Failure is reported three times.** It appears in place, in the summary line at the top of the output, and in the exit code, so an agent that reads only one of them still sees it. Cost: the same failure shows up in three places. Holds as: the exit code for partial failure differs from the codes for success and total failure, and the summary counts every page that is not `ok`.
-- **Doubt counts as failure.** A garbled text layer, an uncertain reading order or a low OCR confidence gives the page the status `low-quality`, reported like a failure. Cost: more warnings on hard documents. Holds as: each quality check has a threshold, and a page below any threshold gets the status `low-quality`.
+- **Doubt counts as failure.** A garbled text layer, an uncertain reading order or OCR readings that disagree give the page, or the block, the status `low-quality`, reported like a failure. Cost: more warnings on hard documents. Holds as: each quality check has a threshold, and a page or block below any threshold gets the status `low-quality`.
 
 ### Silent errors
 
@@ -76,7 +78,7 @@ A page can read wrong while it looks right, and the agent believes what it is ha
 - **Table regions replace their text.** PDFKit turns a table into a stream of numbers without rows or columns, as the M0 spike showed. The text inside a detected table stays out of normal output, and the table goes out as an image (see the decision on tables below). `--raw` shows the text in place, labelled as flat text that lost its rows and columns. The words inside a figure, such as a chart's axis labels, follow the same rule. Cost: a table the detector misses still leaks its flat numbers. Holds as: the output writer moves every text block inside a table or figure region behind `--raw` and emits one table or figure block in its place, and goal G8 in [GOALS.md](GOALS.md) scores table detection.
 - **Raised and lowered characters are found from their boxes.** Plain text turns 10⁻⁵ into "10−5", as the M0 spike showed. A character set smaller and above or below its line's baseline is a superscript or a subscript. Cost: a font that reports odd boxes gets wrong marks. Holds as: every character set smaller and off the baseline leaves the text layer with a superscript or subscript mark, or as a footnote or citation marker.
 - **One sample page per file is checked against its image.** A broken font table can map shapes to wrong letters, and an old OCR layer in a scan can hold misreads. Both look like real words. Apple OCR reads a band around the densest paragraph of the first page among the first ten with at least 300 letters, and the check counts the share of OCR's words, four letters or longer, that the text layer spells the same, with spaces left out so a layer that lost its spaces still matches. A share under 0.7 fails. On the eleven samples it was 0.90–0.99, the scan's old OCR layer 0.94 included, and a layer with every letter shifted by one scored 0.00. Cost: 0.35–0.6 s per new file, in a worker of its own beside the index. Holds as: a file whose sample fails has every page read by OCR and cached apart, and its old text layer stays behind `--raw`, labelled `[old OCR]`.
-- **Spaces are checked before and after reading.** A font that declares character 32 wider than a normal space makes PDFKit drop the spaces between words, as the M0 spike found. A Word-made spike paper also loses 1–2 spaces per page, for a reason still unknown. Before reading, the font check measures each word gap in a page's text operations against half its font's declared width for character 32, counting only body fonts, the fonts that hold at least a quarter of the page's gaps: a maths font can declare a wide character 32 harmlessly. A file with at least 5% risky gaps, and at least 20, is "at risk", and so is a page with at least 10%, and at least 10, for a file that mixes papers. On the eleven samples, the paper that loses its spaces had 29%, and the ten others had none on any page. After reading, a count of run-together words checks every page. Cost: about 0.3 ms per page for the check. Holds as: every page record stores its run-together word count, and a page above the threshold gets the status `low-quality`.
+- **Spaces are checked before and after reading.** A font that declares character 32 wider than a normal space makes PDFKit drop the spaces between words, as the M0 spike found. A Word-made spike paper also loses 1–2 spaces per page, for a reason still unknown. Before reading, the font check measures each word gap in a page's text operations against half its font's declared width for character 32, counting only body fonts, the fonts that hold at least a quarter of the page's gaps: a maths font can declare a wide character 32 harmlessly. A file with at least 5% risky gaps, and at least 20, is "at risk", and so is a page with at least 10%, and at least 10, for a file that mixes papers. On the eleven samples, the paper that loses its spaces had 29%, and the ten others had none on any page. After reading, a count of run-together words, letter runs longer than 25, checks every page, and a page with any gets the space repair too: the Word-made paper had 1–2 on four pages. A word still in doubt after the repair gets a second reading (see the decision on second readings). Cost: about 0.3 ms per page for the check, and 0.7 s of OCR for each page with run-together words. Holds as: every page record stores its run-together word count, and every page with run-together words goes through the space repair.
 
 ### Cache
 
@@ -372,11 +374,54 @@ A PDFKit save, the way macOS Preview saves a highlight, rewrites every page. Tas
 
 Such a file gets new page keys and is parsed again, as a new file. Its summary line warns that a PDFKit save can damage the text, and that an earlier copy may read better. The tool recognizes the save by the file's producer, "Quartz PDFContext". A highlight that an app appends without rewriting the file, as Acrobat saves one, still leaves every page key unchanged.
 
+Task M1.3 checked what a PDFKit save writes: it sets the producer to "macOS Version … Quartz PDFContext", keeps the creator, such as "arXiv GenPDF" or "Microsoft Word", and sets both dates to the time of the save. A file that macOS made in the first place, as the print dialog's "Save as PDF" makes one, carries the same producer, and nothing in the file tells the two apart. So the warning says "made or last saved by macOS PDFKit", and it also shows on files that no save damaged.
+
 | Option | For | Against |
 |---|---|---|
 | **A new file, with a warning** | Nothing wrong is ever served, and the agent learns why the text may be poor. | The file is parsed again, and its damaged text is what the agent reads. |
 | The earlier copy's pages, reused while the character positions line up | The agent keeps the good text. | A real edit that keeps the positions would be served stale, and wrong is way worse than missing. |
 | The earlier copy's reading offered beside the new one, to pick with `pdf pick` | Nothing lost and nothing silently wrong. | Needs a history of each file's earlier copies. |
+
+## Decision: two OCR readings compared, over OCR's own confidence — 2026-10-15
+
+Every page that OCR reads is read a second time, and the share of the first reading's words that the second also finds is the page's OCR score. Under 0.85, the page, or a block with at least 20 words, is `low-quality`. On macOS 26 the second reading comes from the older text recognizer. Before macOS 26 that recognizer is the only one, so it reads the image again at 70% of its size. Words of four letters or more are compared, and in Chinese, Japanese and Korean text, pairs of neighbouring characters.
+
+Task M1.3 made 33 scans from three pages, two arXiv papers and the 1951 NACA report, at 40–200 dpi, some blurred or noisy, and compared each signal with the share of OCR's words that were right:
+
+| Signal | Pages with at least 90% right | Pages under 80% right | Verdict |
+|---|---|---|---|
+| **Two engines' word agreement (macOS 26)** | 0.89–1.00 | 0.83 or less | Separates them |
+| **The older recognizer against itself at 70% size** | 0.89–1.00 | 0.83 or less | Separates them |
+| The older recognizer's confidence | 0.97–1.00 | up to 0.99 | Overlaps: 0.94 at 47% right |
+| The document recognizer's confidence | 0.51–0.62 | 0.18–0.73 | Overlaps: 0.52 at 15% right |
+| Share of words in macOS's word list | 0.74–0.94 | up to 0.82 | Overlaps, and favours English |
+| The older recognizer, accurate against fast | 0.14–0.97 | 0.00–0.01 | The fast mode fails good pages |
+
+Pages between 80% and 90% right fell on either side. On the real samples, the two synthetic scans scored 0.98–1.00, and two NACA pages 0.91. The NACA cover scored 0.78: its small print had come back as "Corernment Printing Ofice.-Wathingion", and the check flagged it. Its blocks are too short to judge one by one, so the whole page went out as a failure block. The second reading costs about 0.8 s per page: a scan's first page came back in 1.74 s, against 0.90 s without it. Scans are outside goals G2 and G3.
+
+The quality is judged when a page is read, from the measures the parse stored, so a threshold tuned later applies to every cached page without parsing it again.
+
+| Option | For | Against |
+|---|---|---|
+| **A second reading compared with the first** | Tracks accuracy on every macOS version, in any script. | About 0.8 s more per page read by OCR. |
+| OCR's own confidence | Free. | Does not track accuracy, as the table shows. |
+| The share of dictionary words | Cheap. | Overlaps, and flags every page that is not in English. |
+
+## Decision: second readings from OCR's breaks and common words, shown as unsure blocks — 2026-10-15
+
+Where the space repair leaves a word in doubt, the output shows the text layer's reading and a second one, and the agent picks with `pdf pick`. The second reading never changes a letter, only where words break, so the agent judges by language alone. It comes from three sources, each tried on the samples:
+
+- **OCR's breaks just after a misread.** The repair skips a break at the start of a run where PDFKit and OCR agree, because the alignment there may be a character off. On the paper that loses its spaces, 53 such words were offered, and most were wrong, as "T able" and "syste m". A break now counts only where macOS's word list backs it: the letters on each side form words and the letters across it do not, as in "overall shift", or it separates a maths letter from a word, as in "𝑁 test". The 20 words left were all right.
+- **The same letters elsewhere in OCR's text.** PDFKit and OCR can put a line in different places in the page's order, and the alignment then leaves it unmatched. A word that is still run together, with more than 25 letters in a row, takes OCR's breaks where its letters occur exactly once in OCR's text. It fixed "nineALW/WOAHeditionsviatheACLAnthology" on the Word-made paper.
+- **Common English words.** Where OCR runs the letters together too, they are split into the fewest common words, from the word embedding macOS ships (about 57,000 words, loaded in 73 ms), as "single dataset per condition and should be treated". The full word list holds rare words, such as "sare" and "ora", which split "datasetsare" wrongly. A word with no clean split stays, such as a German compound or a word cut at a line end.
+
+On the eleven samples, nine papers got no unsure block, and the two that lose spaces got 29 readings over 13 pages. All 29 were right when checked by eye. A pick lives apart from the cache and applies only while the page offers the same readings, so a page parsed differently never takes a pick made for other words.
+
+| Option | For | Against |
+|---|---|---|
+| **A second reading where a word list backs it, picked by the agent** | Fixes what the repair leaves, without a guess in the text. | English only, and an unsure block costs about 60 tokens. |
+| Every OCR break applied | No agent step. | Wrong breaks in plain words, such as "T able". |
+| Words left run together, unflagged | No noise. | Search misses the merged words, silently. |
 
 ## Decision: one Homebrew binary over a Python package — 2026-10-14
 
@@ -390,5 +435,7 @@ The tool returns text, crops and failure reports, and the calling agent does all
 
 - How to measure reading-order doubt on layouts beyond LaTeX papers, such as Word reports, magazines and textbooks with sidebars. The M0 spike's count of jumps between the left and right halves of a page is a candidate, tested only on two-column LaTeX papers.
 - The embedding model for search by meaning: Apple's built-in embeddings, or a small MLX model.
-- The quality thresholds that make a page `low-quality`. They get tuned until goal G11 in [GOALS.md](GOALS.md) passes.
+- The quality thresholds that make a page `low-quality`. They get tuned until goal G11 in [GOALS.md](GOALS.md) passes. The OCR agreement's 0.85 rests on 33 scans made from three pages.
+- How to find the lines in doubt on a scan whose blocks are too short to judge alone, so the failure block covers less than the whole page.
+- How to check, page by page, a scan's old OCR text layer that passed the sample check. The NACA report's third page reads "TECH LM3ARY" from its old layer, unflagged.
 - How to serve the first page of a very long file within goal G2. The runner reads every page's key and font check before it parses any page, at about 2.4 ms per page, so a file of more than about 700 pages likely misses G2's 2 s. A 456-page file gave its first page in 1.52 s.

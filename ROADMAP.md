@@ -41,7 +41,7 @@ The spike shipped no features. It answered the riskiest questions.
   - [x] M1.4 Apple OCR for scanned and garbled pages
   - [x] M1.15 One pool of worker slots for the whole Mac, with pages nobody waits for parsed in the background
 - **Failure reports** (F8): every bad page says so
-  - [ ] M1.3 Quality checks on every page, failure blocks with crop commands, unsure blocks with `pdf pick`, and `--raw` for the text they set aside, the old OCR layer of a scan included, plus the warning on files that PDFKit saved
+  - [x] M1.3 Quality checks on every page, failure blocks with crop commands, unsure blocks with `pdf pick`, and `--raw` for the text they set aside, the old OCR layer of a scan included, plus the warning on files that PDFKit saved
   - Later: thresholds tuned on the open test set (M2.12)
 - **Add** (F1) and **Library** (F11): adding, listing and cleaning up
   - [ ] M1.5 `pdf add`, `pdf ls`, `pdf rm` and `pdf gc`

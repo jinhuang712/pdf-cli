@@ -133,6 +133,8 @@ struct DebugPages: ParsableCommand {
                     : result.reason
                 if let unsure = layer?.unsure { detail += " · \(unsure.count) unsure" }
                 if let agreement = layer?.agreement { detail += " · OCR readings agree \(String(format: "%.2f", agreement))" }
+                let judged = Quality.judge(result).status
+                if result.status == .ok && judged != .ok { detail += " · judged \(judged.rawValue)" }
                 print("p.\(page + 1) \(result.status.rawValue): \(detail)")
                 if text && result.status == .ok { print(result.text) }
             }

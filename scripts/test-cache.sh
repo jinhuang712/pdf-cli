@@ -27,25 +27,38 @@ run() {
     PDF_CLI_HOME=$home PDF_CLI_PAGE_TIME_LIMIT=2 PDF_CLI_MEMORY_LIMIT_MB=300 "$@" 2>&1
 }
 
+# Pages read by OCR, twice to check the reading, can pass the 2 s limit that the fault checks use.
+slow() { run env PDF_CLI_PAGE_TIME_LIMIT=10 "$@"; }
+
+# Waits until the parses that earlier checks left running in the background end, so they do not
+# slow the checks that count time.
+settle() {
+    for _ in $(seq 120); do
+        pgrep -f 'pdf __' >/dev/null || return
+        sleep 1
+    done
+}
+
 output=$(run $pdf debug-pages $paper --page 3)
 check "a first read returns the page" "p.3 ok" "$output"
 check "a good paper reads without the space repair" "p.3 ok: pdfkit ·" "$output"
 
-output=$(run $pdf debug-pages testdata/smoke/arxiv-2609.23257.pdf --page 2)
+output=$(slow $pdf debug-pages testdata/smoke/arxiv-2609.23257.pdf --page 2)
 check "a paper whose fonts hide spaces gets the repair" "p.2 ok: pdfkit+ocr-spaces" "$output"
 check "the repaired page has no run-together words" "0 run together" "$output"
 
-output=$(run $pdf debug-pages testdata/ocr/scan-no-text.pdf --page 1)
+output=$(slow $pdf debug-pages testdata/ocr/scan-no-text.pdf --page 1)
 check "a scan with no text is read by OCR" "p.1 ok: ocr" "$output"
 
-output=$(run $pdf debug-pages testdata/ocr/scan-right-layer.pdf --page 1)
+output=$(slow $pdf debug-pages testdata/ocr/scan-right-layer.pdf --page 1)
 check "a scan with a right text layer keeps it" "p.1 ok: pdfkit" "$output"
 
-output=$(run $pdf debug-pages testdata/ocr/scan-wrong-layer.pdf --page 2)
+output=$(slow $pdf debug-pages testdata/ocr/scan-wrong-layer.pdf --page 2)
 check "a file whose text layer fails the sample check is read by OCR" "p.2 ok: ocr" "$output"
 
-output=$(run env PDF_CLI_TEST_FAULT=sample-crash:0 $pdf debug-pages testdata/ocr/scan-right-layer.pdf --page 1)
+output=$(slow env PDF_CLI_TEST_FAULT=sample-crash:0 $pdf debug-pages testdata/ocr/scan-right-layer.pdf --page 1)
 check "a file whose sample check keeps crashing is read by OCR" "p.1 ok: ocr" "$output"
+settle
 
 output=$(run env PDF_CLI_TEST_FAULT=hang:3 $pdf debug-pages $paper)
 check "a hanging page fails at the time limit" "p.4 failed: time limit" "$output"
@@ -62,6 +75,29 @@ check "the page after a crash still reads" "p.7 ok" "$output"
 output=$(run env PDF_CLI_TEST_FAULT=index-hang:3 $pdf debug-pages $paper)
 check "a page that hangs while keys are read fails" "p.4 failed: time limit" "$output"
 check "the other pages still read" "p.5 ok" "$output"
+
+# Quality checks: failure blocks, unsure blocks and picks, --raw, the exit codes and the PDFKit
+# warning.
+quality() { PDF_CLI_HOME=$work/quality $pdf "$@" 2>&1; echo "exit $?"; }
+spaces=testdata/smoke/arxiv-2609.23257.pdf
+output=$(quality debug-read $spaces --page 2)
+check "a word two readers break differently gets an unsure block" "p.2 ¶5 unsure: two readings differ" "$output"
+check "the unsure block shows both readings" "\[b\] CTRL performs" "$output"
+check "an unsure page exits 2" "exit 2" "$output"
+check "a pick needs a block with unsure words" "has no unsure words" "$(quality pick $spaces p2.1 a)"
+check "a pick is saved" "picked b for p.2 ¶5: CTRL performs" "$(quality pick $spaces p2.5 b)"
+check "a later read shows the picked words" "CTRL performs \[picked" "$(quality debug-read $spaces --page 2)"
+
+scan=testdata/smoke/scan-naca-report-1034.pdf
+output=$(quality debug-read $scan --page 1)
+check "a scan page whose two OCR readings disagree is low-quality" "p.1 low-quality: two OCR readings of the page disagree" "$output"
+check "its failure block crops the page" "read it as an image: pdf crop $scan --page 1" "$output"
+check "--raw shows its text, labelled" "\[low-quality\] TECH LIBRARY" "$(quality debug-read $scan --page 1 --raw)"
+check "a file that PDFKit made carries the warning" "made or last saved by macOS PDFKit" \
+    "$(quality debug-read testdata/ocr/scan-no-text.pdf --page 1)"
+check "the text layer OCR replaced shows with --raw" "\[old OCR\]" "$(quality debug-read testdata/ocr/scan-wrong-layer.pdf --page 1 --raw)"
+check "a read whose every page failed exits 3" "exit 3" \
+    "$(PDF_CLI_HOME=$work/failed PDF_CLI_PAGE_TIME_LIMIT=2 PDF_CLI_TEST_FAULT=hang:3 $pdf debug-read $paper --page 4 2>&1; echo "exit $?")"
 
 # A file that moves away mid-parse must leave no failure in the cache: its results are keyed
 # by content, so a cached failure would follow every copy of the document.
@@ -134,6 +170,7 @@ check "a full read brings the rest to full speed too" "18 read" "$(promote)"
 
 # A page that runs out of time in the background, as a throttled worker can, gets one more try
 # at full speed before it fails for good.
+settle
 home=$work/background-hang
 PDF_CLI_HOME=$home PDF_CLI_PAGE_TIME_LIMIT=2 PDF_CLI_TEST_FAULT=background-hang:5 \
     $pdf debug-pages $paper --page 1 >/dev/null 2>&1

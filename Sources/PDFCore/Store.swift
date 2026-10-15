@@ -111,7 +111,7 @@ public final class Store: Sendable {
         }
     }
 
-    static let schemaVersion = 3
+    static let schemaVersion = 4
 
     static func createSchema(_ db: Database) throws {
         let version = try Int.fetchOne(db, sql: "PRAGMA user_version") ?? 0
@@ -119,9 +119,11 @@ public final class Store: Sendable {
         try createVersion1(db)
         // Version 2: the text layer of each page, and the font check of each document.
         // Version 3: the sample check of each document.
+        // Version 4: whether PDFKit saved the document.
         for (table, column, type) in [("page_result", "data", "TEXT NOT NULL DEFAULT ''"),
                                       ("document", "spaces_at_risk", "INTEGER NOT NULL DEFAULT 0"),
-                                      ("document", "needs_ocr", "INTEGER NOT NULL DEFAULT 0")]
+                                      ("document", "needs_ocr", "INTEGER NOT NULL DEFAULT 0"),
+                                      ("document", "saved_by_pdfkit", "INTEGER NOT NULL DEFAULT 0")]
         where try !db.columns(in: table).contains(where: { $0.name == column }) {
             try db.execute(sql: "ALTER TABLE \(table) ADD COLUMN \(column) \(type)")
         }
@@ -200,17 +202,19 @@ public final class Store: Sendable {
 
     /// Records a file's pages. The document's ID hashes its page keys, so two copies of one
     /// file, or one file with new highlights, share a document.
-    /// `spacesAtRisk` is the font check's verdict for the whole file, and `needsOCR` the
-    /// sample check's.
+    /// `spacesAtRisk` is the font check's verdict for the whole file, `needsOCR` the sample
+    /// check's, and `savedByPDFKit` says the file's producer is macOS's PDFKit.
     @discardableResult
     public func saveIndex(path: String, stat: FileStat, pageKeys: [String], spacesAtRisk: Bool = false,
-                          needsOCR: Bool = false) throws -> String {
+                          needsOCR: Bool = false, savedByPDFKit: Bool = false) throws -> String {
         let id = Store.documentID(pageKeys: pageKeys)
         try write { db in
             try db.execute(sql: """
-                INSERT INTO document (id, page_count, created_at, spaces_at_risk, needs_ocr) VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT (id) DO UPDATE SET spaces_at_risk = excluded.spaces_at_risk, needs_ocr = excluded.needs_ocr
-                """, arguments: [id, pageKeys.count, Date().timeIntervalSince1970, spacesAtRisk, needsOCR])
+                INSERT INTO document (id, page_count, created_at, spaces_at_risk, needs_ocr, saved_by_pdfkit)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT (id) DO UPDATE SET spaces_at_risk = excluded.spaces_at_risk, needs_ocr = excluded.needs_ocr,
+                    saved_by_pdfkit = excluded.saved_by_pdfkit
+                """, arguments: [id, pageKeys.count, Date().timeIntervalSince1970, spacesAtRisk, needsOCR, savedByPDFKit])
             for (index, key) in pageKeys.enumerated() {
                 try db.execute(sql: """
                     INSERT OR REPLACE INTO document_page (doc_id, page_index, page_key) VALUES (?, ?, ?)
@@ -249,6 +253,13 @@ public final class Store: Sendable {
     public func needsOCR(docID: String) throws -> Bool {
         try pool.read { db in
             try Bool.fetchOne(db, sql: "SELECT needs_ocr FROM document WHERE id = ?", arguments: [docID]) ?? false
+        }
+    }
+
+    /// Whether macOS's PDFKit saved the document, as Preview saves a file.
+    public func savedByPDFKit(docID: String) throws -> Bool {
+        try pool.read { db in
+            try Bool.fetchOne(db, sql: "SELECT saved_by_pdfkit FROM document WHERE id = ?", arguments: [docID]) ?? false
         }
     }
 

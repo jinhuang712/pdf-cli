@@ -80,6 +80,9 @@ public struct PageText: Codable, Equatable, Sendable {
     /// For a text layer that looked garbled, so OCR was asked to read the page and could not:
     /// the share of the layer's characters that are letters or digits.
     public var layerScore: Double? = nil
+    /// The page's fonts hide the spaces between words, and OCR could not read the page to
+    /// restore them.
+    public var spacesLost: Bool? = nil
 
     public var text: String { blocks.map(\.text).joined(separator: "\n\n") }
 }

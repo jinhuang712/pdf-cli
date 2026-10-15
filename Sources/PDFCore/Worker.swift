@@ -36,6 +36,8 @@ struct WorkerEvent: Codable, Equatable {
     var risky: Int?
     /// From the sample check: the share of characters the text layer and OCR agree on.
     var agreement: Double?
+    /// From an index job: the file's producer, such as "pdfTeX-1.40.25".
+    var producer: String?
 }
 
 /// The only kind of process that opens PDF content (DESIGNS.md → Principles → Safety).
@@ -55,7 +57,10 @@ public enum Worker {
             return 0
         }
         let count = document.numberOfPages
-        emit(WorkerEvent(kind: .opened, pageCount: count))
+        var producer: CGPDFStringRef?
+        let named = document.info.map { CGPDFDictionaryGetString($0, "Producer", &producer) } ?? false
+        emit(WorkerEvent(kind: .opened, pageCount: count,
+                         producer: named ? producer.flatMap { CGPDFStringCopyTextString($0) as String? } : nil))
         var keyer = PageKeyer()
         for index in max(start, 0)..<max(count, start) {
             emit(WorkerEvent(kind: .start, page: index))
@@ -163,7 +168,10 @@ public enum Worker {
         let plain = atRisk ? nil : TextLayer.read(page)
         if let plain, plain.runTogether == 0 { return (plain, "pdfkit") }
         guard let breaks = await SpaceRepair.breaks(page) else {
-            return (plain ?? TextLayer.read(page), "pdfkit+ocr-failed")
+            var served = plain ?? TextLayer.read(page)
+            // A page whose fonts hide spaces loses them all over, so the page is in doubt.
+            if atRisk { served.spacesLost = true }
+            return (served, "pdfkit+ocr-failed")
         }
         var repaired = TextLayer.read(page, spacesBefore: breaks.spaces)
         if !breaks.unsure.isEmpty {

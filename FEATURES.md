@@ -3,7 +3,7 @@
 
 ✅ built · 🚧 built with a gap · ⬜ planned
 
-Every feature below is ⬜ planned. The commands and output samples show the intended behavior.
+Every feature below is ⬜ planned, except F8, which is 🚧 built with a gap. The commands and output samples show the intended behavior.
 
 ## F1 — Add ⬜
 
@@ -172,33 +172,43 @@ Every command follows the same rules, so an agent learns them once.
 
 Settings: none.
 
-## F8 — Failure reports ⬜
+## F8 — Failure reports 🚧
 
 Makes every failure loud, and tells the agent how to read the page instead.
 
 When a page fails to parse, or reads below the quality bar, its text is replaced by a failure block:
 
 ```text
-⚠ p.7 low-quality: garbled text layer (score 0.41)
-  read it as an image: pdf crop paper.pdf --page 7
-  raw: pdf read paper.pdf --page 7 --raw
+⚠ p.1 low-quality: two OCR readings of the page disagree (score 0.78)
+  read it as an image: pdf crop scan.pdf --page 1
+  raw: pdf read scan.pdf --page 1 --raw
 ```
 
-The crop command covers the smallest region that holds the doubt, with the lines around it: a few lines, a paragraph, a table or the whole page. A small crop costs the agent fewer image tokens and stays sharp.
+A page reads below the quality bar when:
 
-When two readings of a passage still differ in words, the block shows both, limited to the words that differ:
+| Reason | Score |
+|---|---|
+| A scan's two OCR readings disagree, on the whole page or in one block | The share of words the readings share |
+| The text layer looks garbled or disagrees with the page image, and OCR could not read the page | The share of the layer's characters that are letters or digits |
+| The fonts hide the spaces between words, and OCR could not read the page to restore them | None |
+
+When only one block is in doubt, only that block is replaced, and the rest of the page reads normally. The crop command covers the smallest region that holds the doubt, with the lines around it: a few lines, a paragraph, a table or the whole page. A small crop costs the agent fewer image tokens and stays sharp.
+
+When two readings of a word differ in where its words break, the paragraph keeps the text layer's reading, and an unsure block after it shows both, limited to the words that differ:
 
 ```text
-⚠ p.2 ¶3 unsure: two readings differ
-  [a] time series are inherently non-stationary
-  [b] timeseriesareinherentlynon-stationary
-  pick: pdf pick paper.pdf p2.3 a
-  look: pdf crop paper.pdf --page 2 --bbox 0.09,0.31,0.40,0.04
+⚠ p.2 ¶5 unsure: two readings differ
+  [a] CTRLperforms … overallshift
+  [b] CTRL performs … overall shift
+  pick: pdf pick paper.pdf p2.5 a  (or b)
+  look: pdf crop paper.pdf --page 2 --bbox 0.11,0.40,0.39,0.06
 ```
 
-`pdf pick` saves the agent's choice. Later reads show the chosen words labelled `[picked]` with the date, and `pdf reparse` clears every pick on the page. A pick takes only one of the readings shown. When two readings differ in digits, table cells or formulas, the passage comes as a failure block with a crop, because the text alone cannot show which reading is right. `--raw` shows both readings.
+Reading [a] is the text layer's. Reading [b] breaks the words where Apple OCR does, or splits letters that both readers run together into common English words, as in "single dataset per condition".
 
-- The summary line at the top counts every flagged page. An unsure block flags its page.
+`pdf pick paper.pdf p2.5 b` saves the agent's choice for page 2, paragraph 5. Later reads show the chosen words in place, labelled `[picked 2026-10-15]`, and `pdf reparse` clears every pick on the page. A pick takes only one of the readings shown, for every unsure word of its paragraph. When two readings differ in digits, table cells or formulas, the passage comes as a failure block with a crop, because the text alone cannot show which reading is right. `--raw` shows both readings.
+
+- The summary line at the top counts every flagged page, with its status: `failed`, `low-quality` or `unsure`. It also counts what normal output set aside, such as doubtful blocks and a scan's replaced text layer, with the flag that shows them.
 - A low-quality page is flagged the same way as a failed one, with its reason and its score.
 - A file that PDFKit cannot open fails as a whole, in one line that names the reason: not a PDF, damaged, or locked by a password. A locked file points to `pdf add <path> --password <pw>`.
 - The exit code tells success from failure:
@@ -207,8 +217,13 @@ When two readings of a passage still differ in words, the block shows both, limi
 |---|---|
 | 0 | Every requested page read well. |
 | 1 | The command was used wrongly, such as an unknown flag. |
-| 2 | Some pages failed or are low-quality. The rest of the output is valid. |
-| 3 | Every requested page failed. |
+| 2 | Some pages failed, are low-quality or hold unsure words. The rest of the output is valid. |
+| 3 | No requested page holds text to show: each one failed or is in doubt as a whole. |
+
+Gap:
+- The blocks reach the agent once `pdf read` is built (M1.7). Until then, the hidden `pdf debug-read` shows them. Their crop commands work once `pdf crop` is built (M1.9), and `pdf reparse` comes later (F10).
+- An uncertain reading order is not checked yet (M2.5).
+- The word lists that back second readings are English, so words in other languages get none.
 
 Settings: none.
 
