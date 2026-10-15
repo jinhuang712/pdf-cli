@@ -91,7 +91,13 @@ struct ReadCommand: ParsableCommand {
         var index = 0
         reading: while index < numbers.count {
             let chunk = Array(numbers[index..<min(index + batch, numbers.count)])
-            guard case .pages(_, _, let results) = try reader.read(path: path, pages: chunk.map { $0 - 1 }) else { break }
+            // The file can change or go away between chunks. Pages of another version must not
+            // join this read, so the read stops there, loudly, with the command that goes on.
+            let outcome = try? reader.read(path: path, pages: chunk.map { $0 - 1 })
+            guard case .pages(let id, _, let results)? = outcome, id == docID else {
+                document.stop(at: chunk[0], because: "the file changed or could not be read; the command below reads on from here")
+                break
+            }
             for (page, result) in results {
                 let resume = index == 0 && page + 1 == start?.page
                 let added = document.add(Output.Page(index: page, result: result, key: keys[page]),
@@ -120,12 +126,14 @@ struct ReadCommand: ParsableCommand {
         return .some(value)
     }
 
-    /// Page numbers from "3", "3-5" or "3,7-9", counted from 1.
+    /// Page numbers from "3", "3-5" or "3,7-9", counted from 1. A page past 100,000 is refused
+    /// before any range is spelled out, since no PDF has that many.
     static func pages(_ text: String) -> [Int]? {
         var numbers: [Int] = []
         for part in text.split(separator: ",") {
             let ends = part.split(separator: "-", omittingEmptySubsequences: false).map { Int($0.trimmingCharacters(in: .whitespaces)) }
-            guard (1...2).contains(ends.count), let low = ends[0], let high = ends.last!, low >= 1, high >= low else { return nil }
+            guard (1...2).contains(ends.count), let low = ends[0], let high = ends.last!, low >= 1, high >= low,
+                  high <= 100_000 else { return nil }
             numbers += Array(low...high)
         }
         return numbers.isEmpty ? nil : numbers

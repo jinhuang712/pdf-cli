@@ -169,17 +169,18 @@ public enum Worker {
     /// the layer serves as it is, and its run-together words get their spans from the word
     /// lists alone (see `SpaceRepair.splitSpans`).
     static func readTextLayer(_ page: PDFPage, atRisk: Bool) async -> (PageText, String) {
-        let plain = atRisk ? nil : TextLayer.read(page)
+        let glyphs = Glyphs(page, (page.string ?? "") as NSString)
+        let plain = atRisk ? nil : TextLayer.read(page, glyphs: glyphs)
         if let plain, plain.runTogether == 0 { return (plain, "pdfkit") }
         guard let breaks = await SpaceRepair.breaks(page) else {
-            var served = plain ?? TextLayer.read(page)
+            var served = plain ?? TextLayer.read(page, glyphs: glyphs)
             // A page whose fonts hide spaces loses them all over, so the page is in doubt.
             if atRisk { served.spacesLost = true }
             return (served, "pdfkit+ocr-failed")
         }
-        var repaired = TextLayer.read(page, spacesBefore: breaks.spaces)
+        var repaired = TextLayer.read(page, spacesBefore: breaks.spaces, glyphs: glyphs)
         if !breaks.unsure.isEmpty {
-            let relaxed = TextLayer.read(page, spacesBefore: breaks.spaces.union(breaks.unsure))
+            let relaxed = TextLayer.read(page, spacesBefore: breaks.spaces.union(breaks.unsure), glyphs: glyphs)
             let spans = SpaceRepair.unsureSpans(strict: repaired, relaxed: relaxed)
             if !spans.isEmpty { repaired.unsure = spans }
         }

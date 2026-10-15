@@ -131,33 +131,68 @@ struct Glyphs {
     /// The boxes of a page's characters. PDFKit's `characterBounds(at:)` counts glyphs, not
     /// characters, so after a ligature such as "fl", one glyph for two characters, it returns
     /// the box of the next character: on an arXiv title, the last letter of a line got the box
-    /// of the next line's first. A selection of one character lands in the right place across
-    /// the line, but spans the line's full height, so each character takes the glyph box that
-    /// sits where its selection does, and the offset carries on to the next character.
+    /// of the next line's first. A selection lands in the right place across the line, but spans
+    /// the line's full height.
+    ///
+    /// So each line is checked first: when the glyph boxes for its first and last characters,
+    /// at the offset carried from the lines before, sit inside the line's selection, the line
+    /// takes its glyph boxes at that offset. A ligature on the line moves its last character's
+    /// box off the line, and only then does each character take the glyph box that sits where
+    /// its own selection does. One selection per line costs far less than one per character.
     static func boxes(_ page: PDFPage, _ text: NSString) -> [CGRect?] {
         var boxes = [CGRect?](repeating: nil, count: text.length)
         var shift = 0
-        var index = 0
-        while index < text.length {
-            let unit = text.character(at: index)
-            let paired = UTF16.isLeadSurrogate(unit) && index + 1 < text.length
-                && UTF16.isTrailSurrogate(text.character(at: index + 1))
-            let width = paired ? 2 : 1
-            defer { index += width }
-            guard !TextLayer.isSpace(unit),
-                  let selected = page.selection(for: NSRange(location: index, length: width))?.bounds(for: page),
-                  !selected.isEmpty else { continue }
-            var found: CGRect?
-            for candidate in [index - shift, index - shift - 1, index - shift + 1, index - shift - 2, index - shift + 2]
-            where candidate >= 0 && candidate < text.length {
-                let box = page.characterBounds(at: candidate)
-                if abs(box.midX - selected.midX) <= max(1, selected.width / 2) && abs(box.midY - selected.midY) <= selected.height {
-                    found = box
-                    shift = index - candidate
-                    break
-                }
+        var misses = 0
+        func glyph(_ index: Int) -> CGRect? {
+            index >= 0 && index < text.length ? page.characterBounds(at: index) : nil
+        }
+        func inside(_ box: CGRect?, _ line: CGRect) -> Bool {
+            guard let box, box.width > 0 || box.height > 0 else { return false }
+            return line.insetBy(dx: -1, dy: -1).contains(CGPoint(x: box.midX, y: box.midY))
+        }
+        var start = 0
+        while start < text.length {
+            var end = start
+            while end < text.length, !TextLayer.isLineBreak(text.character(at: end)) { end += 1 }
+            defer { start = end + 1 }
+            var characters: [(index: Int, width: Int)] = []
+            var index = start
+            while index < end {
+                let unit = text.character(at: index)
+                let paired = UTF16.isLeadSurrogate(unit) && index + 1 < end && UTF16.isTrailSurrogate(text.character(at: index + 1))
+                if !TextLayer.isSpace(unit) { characters.append((index, paired ? 2 : 1)) }
+                index += paired ? 2 : 1
             }
-            boxes[index] = found ?? selected
+            guard let first = characters.first, let last = characters.last else { continue }
+            if let line = page.selection(for: NSRange(location: first.index, length: last.index + last.width - first.index))?
+                .bounds(for: page), !line.isEmpty,
+               inside(glyph(first.index - shift), line), inside(glyph(last.index - shift), line) {
+                for character in characters { boxes[character.index] = glyph(character.index - shift) }
+                continue
+            }
+            for (index, width) in characters {
+                guard let selected = page.selection(for: NSRange(location: index, length: width))?.bounds(for: page),
+                      !selected.isEmpty else { continue }
+                // The nearest glyphs first. The search widens at the first character the nearest
+                // ones miss, and again every eighth miss in a row, so the walk picks its place up
+                // after a jump without searching wide for every letter of a line it cannot match,
+                // such as arXiv's sideways margin stamp.
+                let reach = misses % 8 == 0 ? 400 : 2
+                var found: CGRect?
+                search: for distance in 0...reach {
+                    for candidate in distance == 0 ? [index - shift] : [index - shift - distance, index - shift + distance] {
+                        guard let box = glyph(candidate) else { continue }
+                        if abs(box.midX - selected.midX) <= max(1, selected.width / 2)
+                            && abs(box.midY - selected.midY) <= selected.height {
+                            found = box
+                            shift = index - candidate
+                            break search
+                        }
+                    }
+                }
+                misses = found == nil ? misses + 1 : 0
+                boxes[index] = found ?? selected
+            }
         }
         return boxes
     }
@@ -165,7 +200,11 @@ struct Glyphs {
     /// The marks for a line's characters: "^" for one set smaller and raised against the line's
     /// main text, "_" for one set smaller and lowered. A run of the main size that PDFKit
     /// reports a little raised, as in a table cell, keeps no mark.
-    func marks(_ indices: [Int]) -> [Int: Character] {
+    ///
+    /// `words` groups the line's characters into words. A mark sits on part of a word, as in
+    /// `10^{-5}` or `LLM_{tea}`: a whole word set smaller and lower, as an old OCR layer sets
+    /// some words of a scan, or an axis label beside a chart, keeps none.
+    func marks(_ indices: [Int], words: [[Int]] = []) -> [Int: Character] {
         var counts: [CGFloat: Int] = [:]
         for index in indices where sizes[index] > 0 { counts[(sizes[index] * 2).rounded() / 2, default: 0] += 1 }
         guard let main = counts.max(by: { ($0.value, $0.key) < ($1.value, $1.key) })?.key else { return [:] }
@@ -174,7 +213,10 @@ struct Glyphs {
         var marks: [Int: Character] = [:]
         for index in indices where sizes[index] > 0 && sizes[index] <= 0.85 * main {
             let lift = raises[index] - baseline
-            if lift >= 0.1 * main { marks[index] = "^" } else if lift <= -0.04 * main { marks[index] = "_" }
+            if lift >= 0.1 * main { marks[index] = "^" } else if lift <= -0.08 * main { marks[index] = "_" }
+        }
+        for word in words where word.allSatisfy({ marks[$0] != nil }) {
+            for index in word { marks[index] = nil }
         }
         return marks
     }
@@ -191,13 +233,16 @@ enum TextLayer {
         var softBreak: Bool
     }
 
-    /// - Parameter spacesBefore: UTF-16 offsets in `page.string` where a space belongs, from
-    ///   the space repair. Empty when the page needs none.
-    static func read(_ page: PDFPage, spacesBefore: Set<Int> = []) -> PageText {
+    /// - Parameters:
+    ///   - spacesBefore: UTF-16 offsets in `page.string` where a space belongs, from the space
+    ///     repair. Empty when the page needs none.
+    ///   - glyphs: the page's characters, when a caller reads the page more than once: they
+    ///     cost about 20 ms a page.
+    static func read(_ page: PDFPage, spacesBefore: Set<Int> = [], glyphs known: Glyphs? = nil) -> PageText {
         let raw = page.string ?? ""
         let text = raw as NSString
         let crop = page.bounds(for: .cropBox)
-        let glyphs = Glyphs(page, text)
+        let glyphs = known ?? Glyphs(page, text)
         var lines: [RawLine] = []
 
         var start = 0
@@ -244,7 +289,14 @@ enum TextLayer {
             }
             index += width
         }
-        let marks = glyphs.marks(characters.filter { !$0.isSpace }.map(\.index))
+        // Words as the line will show them: a space in the text or one the repair puts back
+        // ends a word.
+        var words: [[Int]] = [[]]
+        for character in characters {
+            if character.isSpace || spacesBefore.contains(character.index) { words.append([]) }
+            if !character.isSpace { words[words.count - 1].append(character.index) }
+        }
+        let marks = glyphs.marks(characters.filter { !$0.isSpace }.map(\.index), words: words.filter { !$0.isEmpty })
         var piece = ""
         var open: Character?
         for character in characters {

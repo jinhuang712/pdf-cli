@@ -232,6 +232,15 @@ import Testing
         #expect(marks == [1: "_", 4: "^"])
     }
 
+    @Test func aWholeWordSetSmallerAndLowerKeepsNoMark() {
+        // "title 50, sec.": an old OCR layer sets "50," and "sec." smaller and a little lower.
+        let sizes: [CGFloat] = [10, 10, 10, 10, 10, 8, 8, 8, 8, 8, 8, 8]
+        let raises: [CGFloat] = [0, 0, 0, 0, 0, -1, -1, -1, -1, -1, -1, -1]
+        let glyphs = Glyphs(boxes: Array(repeating: nil, count: 12), sizes: sizes, raises: raises)
+        let marks = glyphs.marks(Array(0..<12), words: [[0, 1, 2, 3, 4], [5, 6, 7], [8, 9, 10, 11]])
+        #expect(marks.isEmpty)
+    }
+
     @Test func marksWrapTheirCharactersInTheLine() throws {
         let url = repoRoot.appendingPathComponent("testdata/smoke/arxiv-2607.16859.pdf")
         let text = TextLayer.read(try #require(PDFDocument(url: url)?.page(at: 0))).text

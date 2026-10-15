@@ -75,15 +75,24 @@ public enum Output {
         var box: Box { Box(x: bbox[0], y: bbox[1], width: bbox[2], height: bbox[3]) }
     }
 
+    /// Blocks that go out together: a text block with the doubts that follow it, or a block that
+    /// reports a doubt with the text it set aside. A budget cuts the output between units.
+    struct Unit {
+        var blocks: [Block]
+        /// What the unit flags its page as, if anything.
+        var flag: PageQuality.Status? = nil
+        /// How many blocks of text the unit sets aside as doubtful.
+        var doubtful = 0
+        /// The unit shows text the agent can read.
+        var holdsText = false
+    }
+
     /// What one page contributes to the output.
     struct PageBlocks {
-        /// The page heading, then units of blocks: a text block with the doubts that follow it.
-        /// A budget cuts the output between units.
-        var units: [[Block]]
-        var status: PageQuality.Status
-        var doubtful = 0
+        /// The page heading, then the page's units.
+        var units: [Unit]
+        /// The page carries a text layer that OCR replaced, which only `--raw` shows.
         var oldLayers = 0
-        var holdsText = false
     }
 
     /// The blocks of one page, with the agent's picks applied.
@@ -94,53 +103,60 @@ public enum Output {
         let (quality, picked) = judge(page, picks: picks)
         let layer = page.result.pageText
         let number = page.index + 1
-        var result = PageBlocks(units: [[Block(kind: .page, page: number, printed: layer?.label)]], status: quality.status)
+        var result = PageBlocks(units: [Unit(blocks: [Block(kind: .page, page: number, printed: layer?.label)])])
         let unsureByBlock = Dictionary(grouping: quality.unsure, by: \.block)
+        func status(_ doubt: Doubt) -> PageQuality.Status { doubt.kind == .failed ? .failed : .lowQuality }
 
         if let whole = quality.doubts.first(where: { $0.blocks == nil }) {
-            var unit = [failureBlock(whole, page: number, block: nil, region: nil, path: path, raw: raw)]
+            var unit = Unit(blocks: [failureBlock(whole, page: number, block: nil, region: nil, path: path, raw: raw)],
+                            flag: status(whole))
             if whole.kind == .lowQuality, let layer {
                 if raw {
-                    unit += layer.blocks.enumerated().map { index, block in
+                    unit.blocks += layer.blocks.enumerated().map { index, block in
                         Block(kind: .doubtful, page: number, block: index + 1, box: block.box, text: block.text, status: whole.kind.rawValue)
                     }
                 } else {
-                    result.doubtful += layer.blocks.count
+                    unit.doubtful = layer.blocks.count
                 }
             }
             result.units.append(unit)
         } else if let layer {
             for (index, block) in layer.blocks.enumerated() {
                 if let doubt = quality.doubts.first(where: { $0.blocks?.contains(index) == true }) {
-                    var unit = [failureBlock(doubt, page: number, block: index + 1, region: expanded(block.box, lines: block.lines),
-                                             path: path, raw: raw)]
+                    var unit = Unit(blocks: [failureBlock(doubt, page: number, block: index + 1,
+                                                          region: expanded(block.box, lines: block.lines), path: path, raw: raw)],
+                                    flag: status(doubt))
                     if raw {
-                        unit.append(Block(kind: .doubtful, page: number, block: index + 1, box: block.box, text: block.text,
-                                          status: doubt.kind.rawValue))
+                        unit.blocks.append(Block(kind: .doubtful, page: number, block: index + 1, box: block.box, text: block.text,
+                                                 status: doubt.kind.rawValue))
                     } else {
-                        result.doubtful += 1
+                        unit.doubtful = 1
                     }
                     result.units.append(unit)
                     continue
                 }
-                result.holdsText = true
                 let spans = unsureByBlock[index] ?? []
                 let choices = spans.filter(\.pickable), looks = spans.filter { !$0.pickable }
                 let text = picked[index].map { applying($0, to: block.text, spans: choices) } ?? block.text
-                var unit = [Block(kind: .text, page: number, block: index + 1, box: block.box, text: text)]
+                var unit = Unit(blocks: [Block(kind: .text, page: number, block: index + 1, box: block.box, text: text)],
+                                holdsText: true)
                 if !choices.isEmpty && picked[index] == nil {
-                    unit.append(unsureBlock(choices, block: block, page: number, index: index, path: path))
+                    unit.blocks.append(unsureBlock(choices, block: block, page: number, index: index, path: path))
+                    unit.flag = .unsure
                 }
-                if !looks.isEmpty { unit.append(lookBlock(looks, block: block, page: number, index: index, path: path)) }
+                if !looks.isEmpty {
+                    unit.blocks.append(lookBlock(looks, block: block, page: number, index: index, path: path))
+                    unit.flag = .unsure
+                }
                 result.units.append(unit)
             }
         }
         if let old = layer?.replacedText {
             if raw {
                 // Numbered after the page's last block, so a read that goes on from it skips them.
-                result.units.append([Block(kind: .oldOCR, page: number, block: (layer?.blocks.count ?? 0) + 1, text: old)])
+                result.units.append(Unit(blocks: [Block(kind: .oldOCR, page: number, block: (layer?.blocks.count ?? 0) + 1, text: old)]))
             } else {
-                result.oldLayers += 1
+                result.oldLayers = 1
             }
         }
         return result
@@ -168,6 +184,8 @@ public enum Output {
         var holdsText = false
         /// The command that continues the read, once the budget stopped it.
         public private(set) var next: String?
+        /// Why the read stopped before the budget did, if it did.
+        var stopped: String?
 
         /// - Parameter continuation: the full command that goes on from a page, a block and a
         ///   character in the block's text, such as `pdf read paper.pdf --page 4-9 --from p4.7`.
@@ -188,53 +206,72 @@ public enum Output {
 
         /// Adds a page, from `block` and `offset` within it when a read goes on from there.
         /// Returns false when the budget stopped the read, which leaves `next` set.
+        ///
+        /// Every read moves on: the first unit after a page's heading goes out even when it
+        /// alone is larger than the budget, cut inside after a word when it starts with text.
+        /// Counts and flags come only from the units that go out.
         public mutating func add(_ page: Page, from block: Int? = nil, offset: Int? = nil) -> Bool {
             let content = pageBlocks(page, picks: picks, path: path, raw: raw)
             let number = page.index + 1
             for (position, var unit) in content.units.enumerated() {
-                let first = unit[0]
+                let first = unit.blocks[0]
                 if position > 0, let block, (first.block ?? Int.max) < block { continue }
-                if let offset, let block, first.block == block, first.kind == .text, let text = first.text {
-                    unit[0].text = "…" + String(text.dropFirst(offset))
-                }
-                let cost = unit.reduce(0) { $0 + tokens(render($1, style: style, raw: raw)) }
+                let resumed = position > 0 && offset != nil && first.block == block && first.kind == .text
+                if resumed, let offset, let text = first.text { unit.blocks[0].text = "…" + String(text.dropFirst(offset)) }
+                let cost = unit.blocks.reduce(0) { $0 + tokens(render($1, style: style, raw: raw)) }
                 if let budget, used + cost > budget, !(position == 0 && rendered.isEmpty) {
-                    // A text block larger than a whole budget is cut inside; any other unit waits
-                    // for the next read.
-                    if first.kind == .text, cost > budget, let text = unit[0].text, rendered.count <= 1 {
-                        let room = max(budget - used - tokens(render(Block(kind: .text, page: number, block: first.block,
-                                                                           box: first.box, text: ""), style: style, raw: raw)), 50)
-                        let kept = prefix(text, tokens: room)
-                        unit = [unit[0]]
-                        unit[0].text = kept + "…"
-                        append(unit)
-                        let shown = (offset ?? 0) + kept.count - (text.hasPrefix("…") ? 1 : 0)
-                        next = continuation(number, first.block, shown)
-                    } else {
+                    // Only this page's heading is out in this read, so this unit goes out anyway.
+                    guard position > 0 && rendered.count == 1 else {
                         next = continuation(number, position == 0 ? nil : first.block, nil)
+                        return false
                     }
-                    return false
+                    if first.kind == .text, let text = unit.blocks[0].text {
+                        let frame = tokens(render(Block(kind: .text, page: number, block: first.block, box: first.box, text: ""),
+                                                  style: style, raw: raw))
+                        let kept = prefix(text, tokens: max(budget - used - frame, 20))
+                        let shownHere = kept.count - (resumed ? 1 : 0)
+                        if kept.count < text.count && shownHere > 0 {
+                            var cut = Unit(blocks: [unit.blocks[0]], holdsText: true)
+                            cut.blocks[0].text = kept + "…"
+                            emit(cut, page: number)
+                            next = continuation(number, first.block, (resumed ? offset ?? 0 : 0) + shownHere)
+                            return false
+                        }
+                    }
                 }
-                append(unit)
-                if position == 0 {
-                    // The page counts as read once its heading is out.
-                    pagesRead.append(number)
-                    if content.status != .ok { flagged.append((number, content.status)) }
-                    doubtful += content.doubtful
-                    oldLayers += content.oldLayers
-                    holdsText = holdsText || content.holdsText
-                }
+                emit(unit, page: number)
             }
+            // The page is done: it counts as read even if it holds no block, and its old OCR
+            // layer, which only `--raw` shows, counts as set aside.
+            if pagesRead.last != number { pagesRead.append(number) }
+            oldLayers += content.oldLayers
             return true
         }
 
-        mutating func append(_ unit: [Block]) {
-            for block in unit {
+        mutating func emit(_ unit: Unit, page: Int) {
+            for block in unit.blocks {
                 blocks.append(block)
                 let text = render(block, style: style, raw: raw)
                 rendered.append(text)
                 used += tokens(text)
             }
+            guard unit.blocks.first?.kind != .page else { return }
+            if pagesRead.last != page { pagesRead.append(page) }
+            if let flag = unit.flag {
+                if let last = flagged.last, last.page == page {
+                    flagged[flagged.count - 1].status = max(last.status, flag)
+                } else {
+                    flagged.append((page, flag))
+                }
+            }
+            doubtful += unit.doubtful
+            holdsText = holdsText || unit.holdsText
+        }
+
+        /// Ends the read early, for a reason the summary gives, with the command that goes on.
+        public mutating func stop(at page: Int, because reason: String) {
+            stopped = reason
+            next = continuation(page, nil, nil)
         }
 
         /// The summary line, then the blocks, then the line that continues the read.
@@ -260,6 +297,7 @@ public enum Output {
                                + "and an earlier copy may read better")
             }
             var parts = [summary.joined(separator: " · ")] + rendered
+            if let stopped { parts.append("⚠ stopped: \(stopped)") }
             if let next { parts.append("next: \(next)") }
             let exitCode: Int32 = flagged.isEmpty ? 0 : holdsText || pagesRead.isEmpty ? 2 : 3
             return Report(text: parts.joined(separator: "\n\n") + "\n", exitCode: exitCode)
@@ -278,6 +316,7 @@ public enum Output {
                 var provisional: Bool
                 var savedByPDFKit: Bool
                 var blocks: [Block]
+                var stopped: String?
                 var next: String?
             }
             let encoder = JSONEncoder()
@@ -287,7 +326,7 @@ public enum Output {
                 flagged: flagged.map { Flag(page: $0.page, status: $0.status.rawValue) },
                 setAside: Aside(doubtfulBlocks: doubtful, oldOCRLayers: oldLayers),
                 provisional: parsed.map { $0 < pageCount } ?? false, savedByPDFKit: savedByPDFKit, blocks: blocks,
-                next: next.map { $0 + " --json" }))
+                stopped: stopped, next: next.map { $0 + " --json" }))
         }
     }
 

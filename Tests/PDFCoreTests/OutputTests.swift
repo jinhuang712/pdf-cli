@@ -151,6 +151,49 @@ import Testing
         #expect(String(shown.dropLast()) + String(more.dropFirst()) == whole)
     }
 
+    @Test func readsChainedThroughTheirNextLinesShowTheWholeBlockOnce() throws {
+        let whole = Array(repeating: "word1", count: 600).joined(separator: " ")
+        var shown = "", block: Int? = nil, offset: Int? = nil, reads = 0
+        repeat {
+            reads += 1
+            var document = Output.Document(file: "paper.pdf", pageCount: 1, budget: 120)
+            let done = document.add(try page(0, paragraphs(1, words: 600)), from: block, offset: offset)
+            var text = try #require(document.blocks.last?.text)
+            if offset != nil { text = String(text.dropFirst()) }
+            if !done { text = String(text.dropLast()) }
+            shown += text
+            if done { break }
+            let next = try #require(document.next)
+            let place = try #require(next.split(separator: " ").last)
+            block = 1
+            offset = Int(place.split(separator: ":").last!)
+        } while reads < 50
+        #expect(shown == whole)
+        #expect(reads > 2)
+    }
+
+    @Test func aDoubtLargerThanTheBudgetStillGoesOutSoTheReadMovesOn() throws {
+        var read = layer(Array(repeating: "Smudged words here", count: 60))
+        read.agreement = 0.3
+        var document = Output.Document(file: "scan.pdf", pageCount: 2, raw: true, budget: 50)
+        #expect(document.add(try page(0, read, method: "ocr")))
+        #expect(document.blocks.contains { $0.kind == .doubtful })
+        #expect(!document.add(try page(1, layer(["Next page."]))))
+        #expect(document.next == "pdf read scan.pdf --from p2")
+    }
+
+    @Test func aPageWhoseHeadingAloneWentOutIsNotCountedAsRead() throws {
+        var flaggedPage = layer(["CTRLperforms well."])
+        flaggedPage.unsure = [unsure(0, "CTRLperforms", "CTRL performs", at: 0)]
+        var document = Output.Document(file: "paper.pdf", pageCount: 2, budget: 40)
+        _ = document.add(try page(0, layer(["A short first page."])))
+        _ = document.add(try page(1, flaggedPage))
+        let report = document.report()
+        #expect(report.text.contains("read p.1 ·"))
+        #expect(report.text.contains("flagged: none"))
+        #expect(report.exitCode == 0)
+    }
+
     @Test func aReadThatGoesOnSkipsTheBlocksAlreadyShown() throws {
         var document = Output.Document(file: "paper.pdf", pageCount: 1)
         _ = document.add(try page(0, paragraphs(4, words: 3)), from: 3)

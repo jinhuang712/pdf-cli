@@ -79,7 +79,7 @@ next: pdf read paper.pdf --from p4.27
 | `--page 3-5` | Pages by their position in the file, such as `3`, `3-5` or `3,7-9`. The flag can repeat. |
 | `--printed-page 237` | A page by the number printed on it, such as "237" or "iv" |
 | `--section "Method"` or `--section 2.1` | A section by its title or its number. The flag can repeat. |
-| `--full` | The whole document, within the budget |
+| `--full` | The whole document, within the budget, as a read without a page flag does |
 | `--from p4.27` | Goes on from where a read stopped, as its `next:` line says: a page, a block in it, and a character in the block after a colon, as in `p4.27:200` |
 | `--format md\|text\|html` | The output format. The default is `md`. |
 | `--styles` | Marks bold, italic and heading levels in the text |
@@ -188,7 +188,7 @@ Every command follows the same rules, so an agent learns them once.
 - Output starts with a one-line summary: the pages read, the pages flagged and what normal output set aside.
 - A file that macOS Preview or another app saved through PDFKit carries a warning in its summary line: such a save can damage the text, and an earlier copy may read better.
 - Nothing is dropped without a trace. What normal output sets aside leaves a marker in place, or a count in the summary line, with the flag that shows it: `--raw` for doubtful text, `--include-hidden` for hidden text and `--headers` for running headers, footers and publisher stamps.
-- `--budget N` stops the output at about N tokens, between blocks, and ends it with a line that continues the read, such as `next: pdf read paper.pdf --from p4.27`. A block larger than the whole budget is cut inside, and the next read goes on from the cut. `read` and `search` stop at 5,000 tokens by default, about 4 pages of a paper, and `--budget all` turns the limit off.
+- `--budget N` stops the output at about N tokens, between blocks, and ends it with a line that continues the read, such as `next: pdf read paper.pdf --from p4.27`. A text block larger than the whole budget is cut inside, and the next read goes on from the cut. A failure block, or text shown with `--raw`, larger than the budget goes out whole, so every read moves on. `read` and `search` stop at 5,000 tokens by default, about 4 pages of a paper, and `--budget all` turns the limit off.
 - While a document is still parsing, the summary line says `provisional`, with how many pages are parsed so far, because headings and note numbers can change once the whole document is known.
 
 Gap: only `pdf read` accepts `--json` so far, and `--include-hidden` and `--headers` come with M1.10 and M2.5.

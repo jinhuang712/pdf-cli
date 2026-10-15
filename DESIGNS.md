@@ -369,7 +369,7 @@ Holds as: `scripts/test-cache.sh` reads three new files at once and never sees m
 
 A sample-paper page holds about 950 tokens of text, so 5,000 tokens is about 5 pages, or 20,000 characters. Claude Code shows a command's output in full up to about 30,000 characters and moves the rest to a file, according to third-party reports. Our cut lands between blocks and ends with the command that continues. Claude Code's cut lands anywhere.
 
-Task M1.7 built it. Tokens are estimated as one per four characters of Latin text and one per character of other scripts. The cut falls between a text block and the doubts that follow it, and the `next:` line names the block to go on from, as in `--from p4.27`. A block larger than the whole budget is cut inside, after a word, and the next read goes on from that character, as in `--from p3.2:200`. With block addresses, a sample page came to about 1,230 tokens, so the default read showed 4 pages and part of a fifth, in 19,740 characters.
+Task M1.7 built it. Tokens are estimated as one per four characters of Latin text and one per character of other scripts. A text block goes out together with the doubts that follow it, and the cut falls between such units, with a `next:` line that names the block to go on from, as in `--from p4.27`. Every read moves on: the first unit after a page's heading goes out even when it alone is larger than the budget. A text block is cut inside, after a word, and the next read goes on from that character, as in `--from p3.2:200`; a failure block or text shown with `--raw` goes out whole. Counts and flags in the summary line come only from what went out. Following each `next:` line rebuilt the full read exactly on five sample files at budgets of 55, 120 and 300 tokens. With block addresses, a sample page came to about 1,230 tokens, so the default read showed 4 pages and part of a fifth, in 19,740 characters.
 
 | Option | For | Against |
 |---|---|---|
@@ -381,11 +381,13 @@ Task M1.7 built it. Tokens are estimated as one per four characters of Latin tex
 
 PDFKit's `characterBounds(at:)` counts glyphs, not characters. After a ligature such as "fl", one glyph for two characters, it returns the box of the character after the one asked for, and the shift carries on down the page. On an arXiv title, "Dataset Distillation by Influence Matching", the last letter got the box of the next line's first letter, so the title's box spanned two lines. Task M1.7 found it while building the superscript marks.
 
-A selection of one character lands in the right place across the line, but spans the line's full height, so it cannot show a raised character. Each character now takes the glyph box that sits where its selection does, and the shift carries on to the next character. Lines got their true height, and blocks group into whole paragraphs: the ten arXiv samples went from 43.6 blocks per page to 26.9. Matching costs about 5 ms per page.
+A selection lands in the right place across the line, but spans the line's full height. Each line is now checked first: when the glyph boxes for its first and last characters, at the shift carried from the lines before, sit inside the line's selection, the line keeps its glyph boxes at that shift. A ligature moves the line's last box off the line, and only then does each character take the glyph box that sits where its own selection does, searching wider after a jump. Lines got their true height, and blocks group into whole paragraphs: the ten arXiv samples went from 43.6 blocks per page to 27.3.
+
+The marks for raised and lowered characters read each character's font size and baseline from PDFKit's attributed string of the page. Together with the boxes, the new work costs a plain text page about 22 ms: on the 456-page file, a page went from 16 ms to 38 ms, and a full read that a command waits on from 6.5 s to 19.8 s with two workers. One selection per character, tried first, cost 51 ms a page.
 
 | Option | For | Against |
 |---|---|---|
-| **Glyph boxes matched to selections** | True heights and true places. | Two PDFKit calls per character. |
+| **Glyph boxes, checked line by line against selections** | True heights and true places. | One more PDFKit call per line, and per character on lines with a ligature. |
 | `characterBounds` alone | One call. | Wrong boxes after every ligature. |
 | Selections alone | Right places. | Every character takes the line's height. |
 | Glyph positions read from the content stream | Exact. | A text engine of our own, which the PDFKit decision keeps out. |

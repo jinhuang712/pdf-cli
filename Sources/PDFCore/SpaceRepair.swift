@@ -141,16 +141,17 @@ enum SpaceRepair {
             var pieces = other.text.split(separator: " ")[...]
             var offset = 0
             // The relaxed reading only adds spaces, but its new breaks can change whether a
-            // line-end hyphen joins two halves, so words are matched with hyphens left out.
-            func letters(_ text: some StringProtocol) -> Int { text.filter { $0 != "-" }.count }
+            // line-end hyphen joins two halves, and a break inside a raised run closes and
+            // reopens its mark, so words are matched with hyphens and marks left out.
+            func plain(_ text: some StringProtocol) -> String { String(text.filter { !"-^_{}".contains($0) }) }
             for word in block.text.split(separator: " ", omittingEmptySubsequences: false) {
                 defer { offset += word.utf16.count + 1 }
                 var joined = "", parts: [Substring] = []
-                while letters(joined) < letters(word), let piece = pieces.popFirst() {
+                while plain(joined).count < plain(word).count, let piece = pieces.popFirst() {
                     joined += piece
                     parts.append(piece)
                 }
-                guard joined.filter({ $0 != "-" }) == word.filter({ $0 != "-" }) else { break }
+                guard plain(joined) == plain(word) else { break }
                 guard joined == word, parts.count > 1 else { continue }
                 let trimmed = word.trimmingCharacters(in: .punctuationCharacters)
                 guard !trimmed.isEmpty, let range = word.range(of: trimmed) else { continue }
