@@ -1,4 +1,4 @@
-<!-- what-we-build: approved 2026-10-15 -->
+<!-- what-we-build: drafted 2026-10-15 -->
 # pdf-cli — Proposal
 
 > A macOS command-line tool that helps coding agents read PDFs.
@@ -141,7 +141,7 @@ Coding agents such as Claude Code and Codex, and the people who use them to read
 | Our layout handling (reading order, footnotes) falls short of Docling or MinerU. | Add their pretrained models on Core ML when a goal fails, keep a test set of real PDFs, and flag low-quality pages so failures are visible. |
 | Apple's PDFKit and Vision are closed and change between macOS versions. | Cross-check with PDFium in tests, and rerun the test set on each macOS release. |
 | A model fails to convert to Core ML. | Fall back to MLX or ONNX Runtime. |
-| The full engine takes 5–7 months of work. | Phase 1 (cache, search, read, crop and OCR) is useful on its own after 4–6 weeks. |
+| The full engine takes 5–7 months of work. | Phase 1 (cache, search, read, crop and OCR) is useful on its own after 5–7 weeks. |
 | Hidden text in a PDF injects instructions into the agent. | Flag invisible text, and keep it out of the normal output. |
 
 ## How we know it works

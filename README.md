@@ -1,4 +1,4 @@
-<!-- what-we-build: approved 2026-10-15 -->
+<!-- what-we-build: drafted 2026-10-15 -->
 # pdf-cli
 
 > A PDF CLI tool that lets you read fast, cheap and accurately.
@@ -12,6 +12,7 @@ pdf-cli lets coding agents such as Claude Code read PDFs on your Mac. It parses 
 - It searches one PDF or your whole library, by keyword or by meaning.
 - It crops a figure, a table or any region as an image, for the agent's own image understanding.
 - It flags every page it could not read well, with a command to read that page as an image instead.
+- It drops nothing silently. Hidden text, doubtful text, comments and attachments each leave a marker in place, with the command that shows them.
 - It runs entirely on your Mac, with Apple's PDF, OCR and Neural Engine frameworks. Nothing is uploaded.
 
 The full behavior is in [FEATURES.md](FEATURES.md).

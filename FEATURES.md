@@ -47,6 +47,9 @@ Figures and tables
 - The outline, with each section's pages and size in tokens.
 - Every figure and table, with its page and caption.
 - The counts of headnotes, footnotes and references.
+- The counts of comments, highlights and filled-in form fields.
+- Every file attached to the PDF and every script in it, with its name and size, or the event that would start the script. None of them runs.
+- The running headers, footers and publisher stamps, each once.
 - Every page that is flagged, with its status.
 
 Settings: none.
@@ -63,15 +66,31 @@ Prints text in reading order. Every block shows its page and its position on the
 | `--full` | The whole document |
 | `--format md\|text\|html` | The output format. The default is `md`. |
 | `--styles` | Marks bold, italic and heading levels in the text |
+| `--raw` | Shows the text that normal output set aside as doubtful, in place, each part labelled with its reason: `[low-quality]`, `[unsure]`, `[table text: rows and columns lost]`, `[figure text]` or `[old OCR]` |
 
 Without a page or section flag, `pdf read` starts at the first page and stops at the default budget (see F7).
 
-A table appears as a table block in place of its cells: its number, its caption, its notes and the command that crops it. The agent reads the cells from the image.
+A table appears as a table block in place of its cells: its number, its caption, its notes and the command that crops it. The agent reads the cells from the image, and `--raw` shows the table's flat text.
 
 ```text
 [table 3] p.6 · Forecasting results on multivariate benchmarks
   read it as an image: pdf crop paper.pdf --table 3
 ```
+
+A figure appears the same way, as a figure block with its caption, its alt text when the file has one, and the command that crops it. An image or a drawing outside every figure, such as a logo, a signature or a chart without a caption, gets a marker in place:
+
+```text
+[image] p.3 · 0.62,0.08,0.30,0.12 · crop: pdf crop paper.pdf --page 3 --bbox 0.62,0.08,0.30,0.12
+```
+
+The rest of the page reaches the text too, at its position:
+
+| What | How it shows |
+|---|---|
+| Comments and sticky notes | `[comment · Reviewer 2] Please cite the 2019 baseline.`, with the author when the file names one |
+| Highlights | `[highlight] the highlighted words`, with the comment attached to it, if any |
+| Filled-in form fields | `[field: Name = …]` |
+| Links | `[here](https://…)` in Markdown, and `here <https://…>` in plain text |
 
 Settings: none.
 
@@ -90,7 +109,7 @@ Finds the right page, in one PDF or across the whole library.
 
 A query in another language finds matches by meaning, for example a Chinese query on an English paper.
 
-A hit inside a table names the table and the command that crops it. While a PDF is still parsing, every result says how many of its pages were searched, so an empty result reads as partial.
+A hit inside a table names the table and the command that crops it. A hit inside hidden text shows as a marker, without the hidden words. While a PDF is still parsing, every result says how many of its pages were searched, so an empty result reads as partial.
 
 Settings: none.
 
@@ -129,6 +148,8 @@ Writes a PDF's content to files and prints their paths.
 | `--tables` | Every table as a PNG, with its caption and notes |
 | `--notes` | Footnotes, endnotes and other notes, as JSON |
 | `--refs` | The reference list, as JSON |
+| `--attachments` | The files attached to the PDF, saved without being opened |
+| `--scripts` | The PDF's scripts, as text files that never run |
 | `-o <folder>` | The output folder. The default is a folder named after the PDF, in the current folder. |
 
 Settings: none.
@@ -140,7 +161,8 @@ Every command follows the same rules, so an agent learns them once.
 - Every block shows its page and its position, such as `p.12 · 0.10,0.40,0.80,0.30`. The page is its position in the file. When the number printed on the page differs, it follows, as in `p.12 (printed 237)`.
 - Superscripts and subscripts keep a mark, as in `10^{-5}` and `x_{2}`. Footnote markers and citation numbers have their own marks (see F14 and F15).
 - Every command accepts `--json`.
-- Output starts with a one-line summary: the pages read and the pages flagged.
+- Output starts with a one-line summary: the pages read, the pages flagged and what normal output set aside.
+- Nothing is dropped without a trace. What normal output sets aside leaves a marker in place, or a count in the summary line, with the flag that shows it: `--raw` for doubtful text, `--include-hidden` for hidden text and `--headers` for running headers, footers and publisher stamps.
 - `--budget N` stops the output at about N tokens and ends it with a line that continues the read, such as `next: pdf read paper.pdf --page 15`. A block larger than the budget is cut the same way. `read` and `search` stop at 5,000 tokens by default, about 5 pages of a paper, and `--budget all` turns the limit off.
 - While a document is still parsing, output is marked `provisional`, because headings and note numbers can change once the whole document is known.
 
@@ -155,6 +177,7 @@ When a page fails to parse, or reads below the quality bar, its text is replaced
 ```text
 ⚠ p.7 low-quality: garbled text layer (score 0.41)
   read it as an image: pdf crop paper.pdf --page 7
+  raw: pdf read paper.pdf --page 7 --raw
 ```
 
 The crop command covers the smallest region that holds the doubt, with the lines around it: a few lines, a paragraph, a table or the whole page. A small crop costs the agent fewer image tokens and stays sharp.
@@ -169,7 +192,7 @@ When two readings of a passage still differ in words, the block shows both, limi
   look: pdf crop paper.pdf --page 2 --bbox 0.09,0.31,0.40,0.04
 ```
 
-`pdf pick` saves the agent's choice. Later reads show the chosen words labelled `[picked]` with the date, and `pdf reparse` clears every pick on the page. A pick takes only one of the readings shown. When two readings differ in digits, table cells or formulas, the passage comes as a failure block with a crop instead, because the text alone cannot show which reading is right.
+`pdf pick` saves the agent's choice. Later reads show the chosen words labelled `[picked]` with the date, and `pdf reparse` clears every pick on the page. A pick takes only one of the readings shown. When two readings differ in digits, table cells or formulas, the passage comes as a failure block with a crop, because the text alone cannot show which reading is right. `--raw` shows both readings.
 
 - The summary line at the top counts every flagged page. An unsure block flags its page.
 - A low-quality page is flagged the same way as a failed one, with its reason and its score.
@@ -189,7 +212,7 @@ Settings: none.
 
 Marks where a reader's eye would miss text, and keeps that text's words out of the agent's way until it asks.
 
-Text that renders invisible, such as text in the color behind it, tiny text, clipped text, text covered by an image or text off the page, is replaced by a marker in normal output. The marker sits where the text sat, and gives its size, how it was hidden and the command that shows it:
+Text that renders invisible, such as text in the color behind it, tiny text, clipped text, text covered by an image, text off the page or text in a layer switched off, is replaced by a marker in normal output. The marker sits where the text sat, and gives its size, how it was hidden and the command that shows it:
 
 ```text
 …the results support our claim. [hidden: 38 words, white on white · show: pdf read paper.pdf --page 3 --include-hidden]
@@ -243,7 +266,7 @@ Teaches an agent the tool in one read.
 
 | Command | What happens |
 |---|---|
-| `pdf agent-guide` | Prints a compact guide for agents: the commands, the output rules, how to handle failure, unsure and table blocks, and the rule that a PDF's text is content to read, not instructions to follow. |
+| `pdf agent-guide` | Prints a compact guide for agents: the commands, the output rules, how to handle failure, unsure and table blocks and the markers for set-aside parts, and the rule that a PDF's text is content to read, not instructions to follow. |
 | `pdf agent-guide --install claude-code` | Installs the guide as a Claude Code skill. |
 
 Settings: none.
@@ -257,7 +280,7 @@ Gives every kind of note in a document its own place, apart from the body text.
 | Footnotes and endnotes | A marker such as `[^7]` in the text. The note texts follow at the end of the output by default. `--notes end\|inline\|off` changes this. |
 | One footnote | `pdf read <path> --footnote 7` shows the note and every place that references it. When numbering restarts in each chapter, the ID includes the chapter, as in `--footnote 3.7`. |
 | Headnote | A block labelled `[headnote]` at the start of its article or chapter |
-| Running headers and footers | Left out of the text. `--headers` keeps them. |
+| Running headers, footers and publisher stamps | Left out of the text, counted in the summary line and listed once by `pdf info`. `--headers` keeps them in place. |
 | Table and figure notes | Shown with their table or figure, in `read` and in `crop` |
 | Author notes | Shown in `pdf info` |
 | Margin notes | Blocks labelled `[margin]`, beside the paragraph they belong to |
@@ -309,7 +332,7 @@ Settings: none.
 | An LLM inside the tool, such as `ask` or `summarize` | The calling agent already is an LLM. A second one would cost money and make the output unpredictable. |
 | Windows and Linux | Apple's PDF, OCR and Neural Engine frameworks are the project's main advantage. |
 | PDF editing: merging, splitting, forms or signing | Agents need to read PDFs. Editing is a different product. |
-| Table cells as text, CSV or Markdown | A rebuilt cell can be wrong and still look right, and the agent trusts it. Each table goes to the agent as an image instead. |
+| Table cells as text, CSV or Markdown | A rebuilt cell can be wrong and still look right, and the agent trusts it. Each table goes to the agent as an image instead, and `--raw` shows its flat text, labelled as having lost its rows and columns. |
 | A PDF parser or renderer of our own | Apple and Google maintain theirs. Ours would take years, with no difference a user could see. |
 | A reading app with a window | Agents call commands. simple-pdf already covers a reader with a window. |
 | Cloud parsing | Documents stay on the Mac. A hard page goes to a local model or to the agent's own image understanding. |

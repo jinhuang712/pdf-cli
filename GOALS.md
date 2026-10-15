@@ -1,4 +1,4 @@
-<!-- what-we-build: approved 2026-10-15 -->
+<!-- what-we-build: drafted 2026-10-15 -->
 # Goals
 
 Each goal is a check with a number. Unless a row says otherwise, goals are measured on an M3 MacBook with 24 GB, against two sets the project builds: the open test set (60 open-access PDFs: 20 journal papers, 10 textbook chapters, 10 reports, 10 essays or articles, 10 scans) and the question set (200 questions, each with a known answer and the page that holds it). The open test set includes Word-made files, pages with dense tables, and scans that carry an old OCR text layer.
@@ -23,3 +23,4 @@ Every goal is measured in three setups and reported side by side: **Base** (the 
 | G14 | Install | Easy | ≤ 2 minutes from install to first result, and ≤ 500 MB installed, models included | Install on a fresh macOS user account and time it | Fresh macOS user account | ⬜ Open |
 | G15 | Commands | Easy | ≥ 95% of agent commands work on the first try | Read the command log from the G1 runs | Question set | ⬜ Open |
 | G16 | Hostile PDFs | Safe | 100% of planted hidden text flagged and kept out of normal output, and 0 crashes or hangs | Run the safety test set | Safety test set: planted hidden text and broken PDFs | ⬜ Open |
+| G17 | Nothing missing | Honest | 100% of the text runs, images, annotations, form fields, attachments and scripts in a file reach the output as text or a marker | A script lists every object that PDFKit and Core Graphics report, and finds each one in the output | Open test set and safety test set | ⬜ Open |

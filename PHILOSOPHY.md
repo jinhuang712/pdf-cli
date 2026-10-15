@@ -1,7 +1,7 @@
-<!-- what-we-build: approved 2026-10-14 -->
+<!-- what-we-build: drafted 2026-10-15 -->
 # Philosophy
 
-Agents now read PDFs for people. The project answers six questions, and each answer is a choice.
+Agents now read PDFs for people. The project answers seven questions, and each answer is a choice.
 
 ## What is a PDF?
 
@@ -14,6 +14,10 @@ Agents now read PDFs for people. The project answers six questions, and each ans
 ## How do agents read PDFs differently from humans?
 
 **They believe what they are handed.** A person sees the whole page and notices garbled text. An agent sees only the text it gets, and repeats it with confidence. So **wrong is way worse than missing**. No silent guesses: say what you could not read well.
+
+## What may the tool leave out?
+
+**Nothing goes missing without a trace.** Hidden text can carry planted instructions, and doubtful text can be wrong, so neither belongs in plain output. Dropping them silently is worse: the agent never learns that part of the page exists, and the user never learns what the agent missed. So every part of the file reaches the agent, as text or as a marker in its place that says what sits there, why it was set aside and the command that shows it. No silent drops: mark what you set aside.
 
 ## How does an agent read PDFs better?
 

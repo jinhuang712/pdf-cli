@@ -6,7 +6,7 @@
 ## Overview
 
 - ✅ **M0 — Spike.** Proven: Swift and Apple's engines carry the design. About 2 weeks.
-- ⬜ **M1 — Daily reader.** Usable: an agent reads born-digital and scanned PDFs through the cache, with keyword search and page crops. About 4–6 weeks, after M0.
+- ⬜ **M1 — Daily reader.** Usable: an agent reads born-digital and scanned PDFs through the cache, with keyword search and page crops. About 5–7 weeks, after M0.
 - ⬜ **M2 — Accurate layout.** Proven: two-column papers, footnotes, citations and figures read right. About 2–3 months, after M1.
 - ⬜ **M3 — Complete.** Usable: search by meaning, tables across pages, formulas, memos and a one-command install. About 1–2 months, after M2.
 
@@ -40,16 +40,18 @@ The spike shipped no features. It answered the riskiest questions.
   - [ ] M1.2 The text layer, with ligatures, hyphenation and Unicode cleaned up, the font check, and the space repair for at-risk files
   - [ ] M1.4 Apple OCR for scanned and garbled pages
 - **Failure reports** (F8): every bad page says so
-  - [ ] M1.3 Quality checks on every page, failure blocks with crop commands, and unsure blocks with `pdf pick`
+  - [ ] M1.3 Quality checks on every page, failure blocks with crop commands, unsure blocks with `pdf pick`, and `--raw` for the text they set aside, the old OCR layer of a scan included
   - Later: thresholds tuned on the open test set (M2.12)
 - **Add** (F1) and **Library** (F11): adding, listing and cleaning up
   - [ ] M1.5 `pdf add`, `pdf ls`, `pdf rm` and `pdf gc`
 - **Info** (F2): the outline, page labels and section sizes
-  - [ ] M1.6 `pdf info` from bookmarks, page labels and the text layer
-  - Later: the figure list, with figure detection (M2.6)
-- **Read** (F3) and **Output basics** (F7): by page, printed page and section
+  - [ ] M1.6 `pdf info` from bookmarks, page labels and the text layer, with the counts of comments, highlights and form fields, and the list of attachments and scripts
+  - Later: the figure list, with figure detection (M2.6), and the running headers, footers and publisher stamps (M2.5)
+- **Read** (F3) and **Output basics** (F7): by page, printed page and section, with nothing dropped without a trace
   - [ ] M1.7 `pdf read`, with addresses, `--json`, the budget and the provisional mark
-  - Later: cleaner column order, without running headers and footers (M2.5)
+  - [ ] M1.13 Comments, sticky notes, highlights, filled-in form fields and link targets, each at its position
+  - [ ] M1.14 Every image and drawing marked in place, with its crop command
+  - Later: cleaner column order, with running headers and footers set aside (M2.5)
 - **Search** (F4): by keyword and by pattern
   - [ ] M1.8 `pdf search` by keyword and with `--regex`
   - Later: search by meaning (M3.1)
@@ -57,13 +59,13 @@ The spike shipped no features. It answered the riskiest questions.
   - [ ] M1.9 `pdf crop` for pages and regions
   - Later: figures, tables and equations (M2.6)
 - **Hidden text** (F9)
-  - [ ] M1.10 Hidden text replaced by a marker in place, with its words shown on request
+  - [ ] M1.10 Hidden text replaced by a marker in place, with its words shown on request, text in layers switched off included
 - **Agent guide** (F13)
   - [ ] M1.11 `pdf agent-guide` and its Claude Code skill
 - **Tests**
-  - [ ] M1.12 A smoke set of 10 PDFs, and a safety set of broken PDFs and hidden-text PDFs. The safety set holds one hidden-text PDF per trick: text in the background's color, tiny, clipped, covered by an image and off the page, plus white text on a dark box, which counts as visible.
+  - [ ] M1.12 A smoke set of 10 PDFs, and a safety set of broken PDFs and hidden-text PDFs. The safety set holds one hidden-text PDF per trick: text in the background's color, tiny, clipped, covered by an image, off the page and in a layer switched off, plus white text on a dark box, which counts as visible. It also holds PDFs with comments, form fields, links, attachments and scripts.
 
-**Exit criteria:** GOALS.md G2, G4, G9, G12, G13 and G16, plus the author's own report after one week of daily use.
+**Exit criteria:** GOALS.md G2, G4, G9, G12, G13, G16 and G17, plus the author's own report after one week of daily use.
 
 ## M2 — Accurate layout ⬜
 
@@ -73,16 +75,16 @@ The spike shipped no features. It answered the riskiest questions.
   - [ ] M2.3 A scorer that weighs a wrong block 3× a missing one, and a Docling baseline run on the same Mac
 - **Under the hood**
   - [ ] M2.4 The layout model running on Core ML, only if a goal fails with rules alone. See DESIGNS.md → the decision on rules over a default layout model.
-  - [ ] M2.5 Reading order across columns, with running headers, footers and publisher stamps removed
+  - [ ] M2.5 Reading order across columns, with running headers, footers and publisher stamps set aside, counted in the summary line and shown with `--headers`
 - **Crop** (F5) and **Info** (F2): figures, tables and equations
-  - [ ] M2.6 Figures, tables and equations detected, listed by `pdf info` and cropped with `pdf crop`. Each table's text gives way to its table block.
+  - [ ] M2.6 Figures, tables and equations detected, listed by `pdf info` and cropped with `pdf crop`. Each table's and figure's text gives way to its block and stays behind `--raw`, and alt text shows with its figure.
   - Later: tables that continue across pages (M3.2)
 - **Notes** (F14)
   - [ ] M2.7 Footnotes, endnotes, headnotes, margin notes and author notes
 - **Citations and references** (F15)
   - [ ] M2.8 Citations, references and cross-references
 - **Dump** (F6)
-  - [ ] M2.9 `pdf dump`
+  - [ ] M2.9 `pdf dump`, with attachments saved and scripts written as text, never opened or run
 - **Reparse** (F10)
   - [ ] M2.10 `pdf reparse`, plain and with `--step ocr`
   - Later: `--step vlm` (M3.3)
