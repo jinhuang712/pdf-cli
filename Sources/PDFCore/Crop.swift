@@ -10,6 +10,11 @@ public struct CropError: Error, CustomStringConvertible {
     public let description: String
 }
 
+/// A worker's output, filled by the thread that reads it.
+final class Collected: @unchecked Sendable {
+    var data = Data()
+}
+
 extension Box {
     /// A region as `pdf crop --bbox` takes it: "x,y,width,height" in fractions of the page from
     /// its top left. A region that runs past the page's edge is cut at the edge, since the
@@ -24,6 +29,17 @@ extension Box {
         let width = within(numbers[0]!, numbers[2]!, x), height = within(numbers[1]!, numbers[3]!, y)
         guard x < 1, y < 1, width > 0, height > 0 else { return nil }
         return Box(x: x, y: y, width: width, height: height)
+    }
+
+    /// The region grown to whole hundredths of the page: its near edges rounded down and its far
+    /// edges up, at least a hundredth wide and tall, inside the page. A crop names its image by
+    /// this region and draws it, so a region that rounds to nothing still draws its spot.
+    public var outward: Box {
+        func down(_ value: Double) -> Double { min(max((value * 100 + 1e-6).rounded(.down) / 100, 0), 0.99) }
+        func up(_ value: Double) -> Double { min(max((value * 100 - 1e-6).rounded(.up) / 100, 0.01), 1) }
+        let left = down(x), top = down(y)
+        let right = max(up(x + width), left + 0.01), bottom = max(up(y + height), top + 0.01)
+        return Box(x: left, y: top, width: ((right - left) * 100).rounded() / 100, height: ((bottom - top) * 100).rounded() / 100)
     }
 }
 
@@ -131,7 +147,7 @@ public enum Crop {
             let bounds = CTLineGetBoundsWithOptions(line, [])
             let origin = CGPoint(x: min(max(point.x + 3, 2), Double(context.width) - bounds.width - 4),
                                  y: min(max(point.y - bounds.height - 2, 2), Double(context.height) - bounds.height - 4))
-            context.setFillColor(CGColor(gray: 1, alpha: 0.85))
+            context.setFillColor(CGColor(gray: 1, alpha: 0.7))
             context.fill(CGRect(x: origin.x - 2, y: origin.y - 2, width: bounds.width + 4, height: bounds.height + 4))
             context.textPosition = CGPoint(x: origin.x, y: origin.y - bounds.minY)
             CTLineDraw(line, context)
@@ -176,13 +192,17 @@ public enum Crop {
 
     /// Makes the crop of page `page`, counted from 1, or finds it in the cache folder when it was
     /// made in the last 7 days. `region` is in fractions of the stored page; nil is the whole page.
-    public static func make(path: String, page: Int, region: Box?, grid: Bool, password: String? = nil) throws -> Made {
+    public static func make(path: String, page: Int, region requested: Box?, grid: Bool, password: String? = nil) throws -> Made {
         let resolved = Reader.resolve(path)
         guard let stat = FileStat(path: resolved) else { throw ReadError.notFound(path) }
         removeOld()
+        // The region the image is named by is the one it draws, rounded outward, and the worker
+        // gets it in the same words.
+        let region = requested?.outward
         let directory = folder(path: resolved, stat: stat)
         let url = directory.appendingPathComponent("p\(page)" + (region.map { "-" + Output.format($0) } ?? "") + (grid ? "-grid" : "") + ".png")
         if let made = existing(url) { return made }
+        // The worker makes the folder again right before it writes, in case a cleanup took it.
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let partial = directory.appendingPathComponent(".\(UUID().uuidString).png")
         defer { try? FileManager.default.removeItem(at: partial) }
@@ -196,8 +216,11 @@ public enum Crop {
         guard event?.kind == .result, FileManager.default.fileExists(atPath: partial.path) else {
             throw CropError(description: "the reader stopped before the image was made")
         }
-        _ = try? FileManager.default.removeItem(at: url)
-        try FileManager.default.moveItem(at: partial, to: url)
+        // rename(2) replaces the image at once, so two crops of one region that finish together
+        // both leave a whole image.
+        guard Darwin.rename(partial.path, url.path) == 0 else {
+            throw CropError(description: "the image could not be saved: \(String(cString: strerror(errno)))")
+        }
         guard var made = existing(url) else { throw CropError(description: "the image could not be read back") }
         made.kept = false
         return made
@@ -214,18 +237,26 @@ public enum Crop {
         return Made(url: url, width: width, height: height, kept: true)
     }
 
-    /// Removes crops older than 7 days, and folders left empty. Returns how many it removed.
+    /// Removes crops older than 7 days, partial images that a stopped crop left more than an hour
+    /// ago, and folders empty for more than an hour: a folder another crop just made is empty
+    /// while that crop waits for its worker. Returns how many images it removed.
     @discardableResult
     public static func removeOld() -> Int {
         let manager = FileManager.default
         var removed = 0
-        for directory in (try? manager.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? [] {
+        func age(_ url: URL) -> TimeInterval {
+            let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+            return Date().timeIntervalSince(modified)
+        }
+        for directory in (try? manager.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.contentModificationDateKey])) ?? [] {
             let files = (try? manager.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
             for file in files {
-                let modified = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
-                if Date().timeIntervalSince(modified) >= keep, (try? manager.removeItem(at: file)) != nil { removed += 1 }
+                let partial = file.lastPathComponent.hasPrefix(".")
+                if age(file) >= (partial ? 3600 : keep), (try? manager.removeItem(at: file)) != nil, !partial { removed += 1 }
             }
-            if ((try? manager.contentsOfDirectory(atPath: directory.path)) ?? []).isEmpty { try? manager.removeItem(at: directory) }
+            if age(directory) >= 3600, ((try? manager.contentsOfDirectory(atPath: directory.path)) ?? []).isEmpty {
+                try? manager.removeItem(at: directory)
+            }
         }
         return removed
     }
@@ -241,6 +272,18 @@ public enum Crop {
         defer { slot?.release() }
         let (pid, output) = try Processes.spawn(Env.executablePath, arguments, detached: false, captureOutput: true,
                                                 environment: environment)
+        // The output is read while the worker runs, so a worker that writes much never waits on
+        // a full pipe.
+        let collected = Collected()
+        let done = DispatchSemaphore(value: 0)
+        if let output {
+            DispatchQueue.global().async {
+                collected.data = FileHandle(fileDescriptor: output, closeOnDealloc: true).readDataToEndOfFile()
+                done.signal()
+            }
+        } else {
+            done.signal()
+        }
         let started = Date()
         var status: Int32?
         var stopped: String?
@@ -258,7 +301,8 @@ public enum Crop {
                 while status == nil { status = Processes.reap(pid) ?? { Thread.sleep(forTimeInterval: 0.01); return nil }() }
             }
         }
-        let data = output.map { FileHandle(fileDescriptor: $0, closeOnDealloc: true).readDataToEndOfFile() } ?? Data()
+        done.wait()
+        let data = collected.data
         if let stopped { throw CropError(description: stopped) }
         let last = data.split(separator: 0x0A).last.flatMap { try? JSONDecoder().decode(WorkerEvent.self, from: Data($0)) }
         if last == nil, let status, !Processes.exitedCleanly(status: status) {

@@ -86,7 +86,7 @@ public enum Worker {
 
     /// Draws page `index`, counted from 0, or a region of it, into a PNG at `out`, and reports the
     /// image's size, or why it could not be drawn.
-    public static func crop(path: String, page index: Int, region: Box?, grid: Bool, out: String) -> Int32 {
+    public static func crop(path: String, page index: Int, bbox: String?, grid: Bool, out: String) -> Int32 {
         watchParent()
         plantedFault(at: index, phase: "crop-")
         let url = URL(fileURLWithPath: path)
@@ -94,13 +94,17 @@ public enum Worker {
             emit(WorkerEvent(kind: .result, page: index, reason: reason))
             return 0
         }
+        // A region that does not parse fails: drawing the whole page in its place would pass off
+        // the page as the region.
+        let region = bbox.map(Box.parse) ?? Box(x: 0, y: 0, width: 1, height: 1)
+        guard let region else { return fail("the region lies outside the page") }
         guard let document = PDFDocument(url: url) else { return fail(OpenFailure.classify(url: url)) }
         guard OpenFailure.unlock(document) else { return fail(OpenFailure.lockedReason) }
         guard let page = document.page(at: index) else { return fail("PDFKit could not read this page") }
-        guard let image = Crop.render(page, region: region ?? Box(x: 0, y: 0, width: 1, height: 1), grid: grid) else {
-            return fail("the region is too small to draw")
-        }
-        guard Crop.writePNG(image, to: URL(fileURLWithPath: out)) else { return fail("the image could not be written") }
+        guard let image = Crop.render(page, region: region, grid: grid) else { return fail("the region is too small to draw") }
+        let target = URL(fileURLWithPath: out)
+        try? FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+        guard Crop.writePNG(image, to: target) else { return fail("the image could not be written") }
         emit(WorkerEvent(kind: .result, page: index, text: "\(image.width)x\(image.height)"))
         return 0
     }
@@ -327,9 +331,9 @@ enum PageKeys {
 
 /// Why a file could not be opened, in words the agent can act on
 /// (DESIGNS.md → Decision: a loud failure for a file PDFKit cannot open).
-enum OpenFailure {
+public enum OpenFailure {
     static let notPDF = "not a PDF"
-    static let locked = "locked by a password"
+    public static let locked = "locked by a password"
     static let damaged = "damaged: PDFKit could not open it"
 
     /// Why a locked file stays locked: no password was given, or the one given does not open it.

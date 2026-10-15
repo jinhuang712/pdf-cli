@@ -35,19 +35,23 @@ struct CropCommand: ParsableCommand {
     func run() throws {
         let store = try Store()
         let password = passwordStdin ? readLine(strippingNewline: true).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) } : nil
+        // A locked file needs its password on every crop, since none is stored.
+        let unlock = " · crop it with: echo \"$PW\" | pdf crop \(Output.quoted(path)) --page \(page) --password-stdin"
         switch try Reader(store: store, library: try Library()).read(path: path, pages: [], password: password) {
         case .fileFailed(let reason):
-            print(json ? ReadCommand.failureJSON(path, reason) : "\(path): failed: \(Output.failure(reason, file: path))")
+            let shown = reason.hasPrefix(OpenFailure.locked) ? reason + unlock : reason
+            print(json ? ReadCommand.failureJSON(path, shown) : "\(path): failed: \(shown)")
             throw ExitCode(3)
         case .pages(_, let pageCount, _):
             guard page <= pageCount else { throw ReadError.pageOutOfRange(page: page - 1, pageCount: pageCount) }
         }
-        let region = bbox.flatMap(Box.parse)
+        let region = bbox.flatMap(Box.parse)?.outward
         let made: Crop.Made
         do {
             made = try Crop.make(path: path, page: page, region: region, grid: grid, password: password)
-        } catch let error as CropError {
-            let message = "p.\(page) could not be drawn: \(error.description)"
+        } catch {
+            let reason = (error as? CropError)?.description ?? "\(error)"
+            let message = "p.\(page) could not be drawn: \(reason)" + (reason.hasPrefix(OpenFailure.locked) ? unlock : "")
             if json {
                 print(String(decoding: try JSONSerialization.data(withJSONObject: ["file": path, "page": page, "failed": message],
                                                                   options: [.sortedKeys, .withoutEscapingSlashes]), as: UTF8.self))

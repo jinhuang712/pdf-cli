@@ -187,7 +187,7 @@ $ pdf crop paper.pdf --page 2 --bbox 0.08,0.07,0.85,0.3
 /Users/me/Library/Caches/pdf-cli/crops/b430b72936d6cf8b/p2-0.08,0.07,0.85,0.30.png  (~1.5k image tokens, 1568×716 px)
 ```
 
-A region uses the same fractions as the positions in `pdf read --json` and the crop commands in failure blocks, taken on the page as stored, before any rotation; the image comes out upright. An image fits Claude's standard limits, 1,568 px on its long edge and about 1,568 image tokens, so a whole page costs about 1,500 tokens and a small region comes out enlarged, up to 6 times. It shows comments and highlights as a reader sees them. The same crop asked again within 7 days comes from the cache folder at once, and `pdf gc` removes older ones. `--password-stdin` opens a locked PDF, and `--json` gives the image's path, size and tokens.
+A region uses the same fractions as the positions in `pdf read --json` and the crop commands in failure blocks, taken on the page as stored, before any rotation; the image comes out upright. A region is rounded outward to hundredths of the page, so it always holds all of what was asked for. An image fits Claude's standard limits, 1,568 px on its long edge and about 1,568 image tokens, so a whole page costs about 1,500 tokens and a small region comes out enlarged, up to 6 times. It shows comments and highlights as a reader sees them. The same crop asked again within 7 days comes from the cache folder at once, and `pdf gc` removes older ones. `--password-stdin` opens a locked PDF, and `--json` gives the image's path, size and tokens.
 
 Gap:
 - `--figure`, `--table` and `--equation` come with figure, table and equation detection in M2.6.

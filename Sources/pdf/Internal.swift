@@ -104,7 +104,7 @@ struct WorkerCommand: AsyncParsableCommand {
                                               readAllByOCR: readAllByOCR))
         case .crop:
             guard let page = pages.first, let out else { throw ExitCode(64) }
-            throw ExitCode(Worker.crop(path: path, page: page, region: bbox.flatMap(Box.parse), grid: grid, out: out))
+            throw ExitCode(Worker.crop(path: path, page: page, bbox: bbox, grid: grid, out: out))
         }
     }
 }

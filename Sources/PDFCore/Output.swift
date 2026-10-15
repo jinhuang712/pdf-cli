@@ -497,9 +497,11 @@ public enum Output {
 
     // MARK: Formatting
 
-    /// A region as `pdf crop --bbox` takes it, to two decimals.
+    /// A region as `pdf crop --bbox` takes it, rounded outward to hundredths of the page, so a
+    /// crop of a block never cuts off the block's edge.
     public static func format(_ box: Box) -> String {
-        [box.x, box.y, box.width, box.height].map { String(format: "%.2f", $0) }.joined(separator: ",")
+        let outward = box.outward
+        return [outward.x, outward.y, outward.width, outward.height].map { String(format: "%.2f", $0) }.joined(separator: ",")
     }
 
     /// A region grown by a line above and below, so a crop shows the lines around the doubt.

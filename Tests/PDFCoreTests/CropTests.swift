@@ -59,6 +59,16 @@ import Testing
         #expect(tiny.width == 36)
     }
 
+    /// A region is drawn rounded outward to hundredths, so a block's edge is never cut off and a
+    /// region thinner than a hundredth still draws its own spot, not the whole page.
+    @Test func aRegionRoundsOutwardToHundredths() {
+        #expect(Output.format(Box(x: 0.0256, y: 0.0194, width: 0.3266, height: 0.0212)) == "0.02,0.01,0.34,0.04")
+        #expect(Output.format(Box(x: 0.3, y: 0.3, width: 0.001, height: 0.2)) == "0.30,0.30,0.01,0.20")
+        #expect(Output.format(Box(x: 0.996, y: 0.5, width: 0.004, height: 0.3)) == "0.99,0.50,0.01,0.30")
+        #expect(Output.format(Box(x: 0.1, y: 0.7, width: 0.2, height: 0.3)) == "0.10,0.70,0.20,0.30")
+        #expect(Box.parse(Output.format(Box(x: 0.3, y: 0.3, width: 0.0001, height: 0.0001))) != nil)
+    }
+
     @Test func aRegionThatRunsPastTheEdgeIsCutThere() {
         #expect(Box.parse("0.1,0.2,0.3,0.4") == Box(x: 0.1, y: 0.2, width: 0.3, height: 0.4))
         #expect(Box.parse("0.9,0.9,0.3,0.3").map { [$0.width, $0.height].map { ($0 * 100).rounded() } } == [10, 10])

@@ -244,6 +244,17 @@ command=$(quality read $scan --page 1 | grep -o 'pdf crop [^ ]* --page 1[^)]*' |
 check "a warning's crop command makes an image" "/crops/[0-9a-f]*/p1.*\.png  (~" "$(PDF_CLI_HOME=$work/quality $pdf ${command#pdf } 2>&1)"
 check "a page that hangs while drawn stops at the time limit" "could not be drawn: time limit" \
     "$(run env PDF_CLI_TEST_FAULT=crop-hang:1 $pdf crop $paper --page 2 2>&1)"
+check "a region thinner than a hundredth draws its spot, not the page" "p2-0\.30,0\.30,0\.01,0\.20\.png  (~[0-9]* image tokens, [1-9][0-9]×[0-9]* px)$" \
+    "$(reading crop $paper --page 2 --bbox 0.3,0.3,0.001,0.2)"
+# Crops of new files at once: each makes its folder while another crop cleans up. Each also
+# starts a parse of its file, which the checks wait out.
+parallel=$work/parallel
+for f in $(ls testdata/smoke/arxiv-*.pdf | head -6); do
+    PDF_CLI_HOME=$parallel $pdf crop "$f" --page 1 --bbox 0.1,0.1,0.5,0.5 >"$parallel-$(basename "$f").out" 2>&1 &
+done
+wait
+check "crops of many files at once all make their images" "^6$" "$(cat "$parallel"-*.out | grep -c '\.png  (~')"
+settle
 
 # The library: pdf add, ls, rm and gc, and a locked file.
 library() { PDF_CLI_HOME=$work/library $pdf "$@" 2>&1; echo "exit $?"; }

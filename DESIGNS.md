@@ -446,8 +446,9 @@ Searches took 34–79 ms on cached files. Naming each hit's section costs more o
 
 - **Where:** a worker draws the image, since drawing opens PDF content (Principles → Safety), within the page's time and memory limits, in a slot of the shared pool.
 - **Which way up:** a region is given in fractions of the page as stored, before its rotation, the same frame as the positions in `pdf read --json` and the crop commands in failure blocks. The image comes out upright. A test draws a black box and crops it at 0°, 90°, 180° and 270°.
+- **Rounding:** a region is rounded outward to hundredths of the page, its near edges down and its far edges up, and that region is both drawn and named. Rounding to the nearest hundredth, as the first version did, cut 4 pt off a block's edge and turned a region thinner than half a hundredth into the whole page, as the review found.
 - **What it shows:** the page as a reader sees it, comments and highlights included. So the image belongs to one version of one file, its path and state, not to the document shared by every copy.
-- **Kept:** in the cache folder for 7 days; the same command within them answers in about 35 ms, and `pdf gc` removes older images.
+- **Kept:** in the cache folder for 7 days; the same command within them answers in about 35 ms, and `pdf gc` removes older images. A finished image replaces the old one at once, with `rename(2)`, and a folder is removed only when it has been empty for an hour, since a crop waiting for its worker holds an empty folder: removing it at once failed 9 of 10 crops run together in the review.
 - **Locked files:** `--password-stdin` hands the password to the worker in its environment, as `pdf add` does.
 
 Crops took 90–120 ms on cached files with the release build, and 0.84 s for the first crop of an unseen 456-page file, most of it the index.
