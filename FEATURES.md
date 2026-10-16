@@ -14,7 +14,7 @@ Adds PDFs to the library once, so every later command reads from the cache.
 | `pdf add <paths…>` | Parses each PDF and caches it. Accepts files, folders and globs. A folder adds every PDF in it and in its subfolders. Prints each PDF's ID, title, page count and status, such as `1f9472ae · Dataset Distillation by Influence Matching · 11 pages · ok · paper.pdf`. |
 | `pdf add <paths…> -j N` | Parses with up to N workers in parallel. By default, every parse on the Mac shares a pool of half the performance cores, at least 2, and pages nobody waits for parse at the lowest priority, so the Mac stays responsive. |
 | `pdf add <path> --password <pw>` | Opens a password-protected PDF. Other users of the Mac can see the password in the command line while it runs. |
-| `pdf add <path> --password-stdin` | Opens a password-protected PDF with the password read from standard input, as in `echo "$PW" \| pdf add paper.pdf --password-stdin`, which keeps it out of the command line. |
+| `pdf add <path> --password-stdin` | Opens a password-protected PDF with the password read from standard input, as in `echo "$PW" \| pdf add paper.pdf --password-stdin`, which keeps it out of the command line. On a terminal it asks for the password and hides it as it is typed. |
 
 Any other command adds a PDF it has not seen before, on first use, and parses the requested page first. Adding an unchanged file again does nothing, and so does adding a file whose only change is highlights appended to it. A file that macOS Preview or another app saved through PDFKit counts as a new file (see F7).
 
@@ -53,7 +53,7 @@ Figures and tables
 - The running headers, footers and publisher stamps, each once.
 - Every page that is flagged, with its status.
 
-The outline comes from the file's bookmarks, or, in a file with none, from the headings in its text, such as "2.1 Method" or "References". The output says which. `pdf info` answers once the file is indexed and its first page parsed: on a file not seen before, the sizes, the flags and the headings cover the pages parsed so far, and the output says how many those are. A section whose end lies on a page not parsed yet shows its size as `…`. `--json` gives every section, at every level.
+The outline comes from the file's bookmarks, or, in a file with none, from the headings in its text, such as "2.1 Method" or "References". The output says which. `pdf info` answers once the file is indexed and its first page parsed: on a file not seen before, the sizes, the flags and the headings cover the pages parsed so far, and the output says how many those are. A section whose end lies on a page not parsed yet shows its size as `…`. The table shows the top two levels, at most 40 rows: past that, the top level alone, and its first 40 sections, so a book with hundreds of bookmarks costs a few hundred tokens, as a paper does. `--json` gives every section, at every level.
 
 When a file's comments, form fields, attachments and scripts cannot be read, as when a hostile file makes the reading run out of time, `pdf info` says they are unknown and why, and the pages read all the same.
 
@@ -269,7 +269,7 @@ Reading [a] is the text layer's. Reading [b] breaks the words where Apple OCR do
 
 - The summary line at the top counts every flagged page, with its status: `failed`, `low-quality` or `unsure`. It also counts what normal output set aside, such as doubtful blocks and a scan's replaced text layer, with the flag that shows them.
 - A low-quality page is flagged the same way as a failed one, with its reason and its score.
-- A file that PDFKit cannot open fails as a whole, in one line that names the reason: not a PDF, damaged, locked by a password, or slow to open, past 90 s. A file slow to open gives commands that verdict for 10 minutes, and then a command tries it again. A locked file points to `pdf add <path> --password <pw>`.
+- A file that PDFKit cannot open fails as a whole, in one line that names the reason: not a PDF, damaged, locked by a password, or slow to open, past 90 s. A file slow to open gives commands that verdict for 10 minutes, and then a command tries it again. A locked file points to `pdf add <path> --password-stdin`.
 - The exit code tells success from failure:
 
 | Exit code | Meaning |

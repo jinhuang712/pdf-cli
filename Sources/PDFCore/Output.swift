@@ -423,10 +423,12 @@ public enum Output {
         return flags.isEmpty ? nil : flags.joined(separator: ", ")
     }
 
-    /// Why a file failed, with the command that opens a locked one.
+    /// Why a file failed, with the command that opens a locked one. It reads the password from
+    /// standard input, asking on a terminal, so the password stays out of the list of running
+    /// commands that `--password` would put it in.
     public static func failure(_ reason: String, file: String) -> String {
         reason.hasPrefix(OpenFailure.locked)
-            ? "\(reason) · open it with: pdf add \(quoted(file)) --password <password>"
+            ? "\(reason) · open it with: pdf add \(quoted(file)) --password-stdin"
             : reason
     }
 

@@ -51,7 +51,7 @@ public enum AgentGuide {
         - `⚠ p.2 ¶5 unsure: words run together, and no reading splits them`: read those words with care, or look at the crop.
         - `set aside: … (show: --raw)` in the first line: `--raw` shows the text set aside as doubtful, labelled with its reason, such as `[low-quality]` in place, or a scan's replaced text layer as `[old OCR]` at the end of its page. Trust it less than normal output.
         - `⚠ made or last saved by macOS PDFKit` in the first line: such a save, as Preview makes, can damage the text, and an earlier copy of the file may read better.
-        - A file that fails as a whole says why: not a PDF, damaged, locked by a password, or slow to open, which a command tries again after 10 minutes. For a locked one, ask the user to run the `pdf add` command its failure line gives, or `pdf add <pdf> --password-stdin`, which keeps the password out of the list of running commands. Reads then come from the cache, but `pdf crop` needs the password through `--password-stdin` every time.
+        - A file that fails as a whole says why: not a PDF, damaged, locked by a password, or slow to open, which a command tries again after 10 minutes. For a locked one, ask the user to run the command its failure line gives, `pdf add <pdf> --password-stdin`: it asks for the password and keeps it out of the list of running commands. Reads then come from the cache, but `pdf crop` needs the password through `--password-stdin` every time.
 
         ## Hidden text
 

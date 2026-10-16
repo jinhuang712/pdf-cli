@@ -291,4 +291,25 @@ import Testing
         }(), metadataTitle: "")
         #expect(outline.render().contains("Resources: Data and Baseline p.1"))
     }
+
+    /// Hundreds of bookmarks keep the table short: the top level first, then its first rows.
+    @Test func aLongSectionTableIsCut() throws {
+        func info(_ outline: [FileFacts.Section]) -> String {
+            var facts = FileFacts()
+            facts.outline = outline
+            return Info(file: "a.pdf", pageCount: 300, pages: [], facts: facts, metadataTitle: "").render()
+        }
+        let chapters = (0..<30).flatMap { chapter in
+            [FileFacts.Section(title: "Chapter \(chapter + 1)", level: 1, page: chapter * 10, top: nil)]
+                + (0..<5).map { FileFacts.Section(title: "Part \(chapter + 1).\($0 + 1)", level: 2, page: chapter * 10 + $0, top: nil) }
+        }
+        let book = info(chapters)
+        #expect(book.contains("Chapter 30") && !book.contains("Part 1.1"))
+        #expect(book.contains("and 150 deeper sections; pdf info --json lists them"))
+        let flat = info((0..<200).map { FileFacts.Section(title: "Entry \($0 + 1)", level: 1, page: $0, top: nil) })
+        #expect(flat.contains("Entry 40 ") && !flat.contains("Entry 41 "))
+        #expect(flat.contains("and 160 more sections; pdf info --json lists them"))
+        let paper = info((0..<12).map { FileFacts.Section(title: "Section \($0 + 1)", level: 1 + $0 % 2, page: $0, top: nil) })
+        #expect(paper.contains("Section 12") && !paper.contains("more sections") && !paper.contains("deeper sections"))
+    }
 }

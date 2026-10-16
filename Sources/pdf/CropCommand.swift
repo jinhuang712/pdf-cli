@@ -34,7 +34,7 @@ struct CropCommand: ParsableCommand {
 
     func run() throws {
         let store = try Store()
-        let password = passwordStdin ? readLine(strippingNewline: true).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) } : nil
+        let password = passwordStdin ? Password.read(for: path) : nil
         // A locked file needs its password on every crop, since none is stored.
         let unlock = " · crop it with: echo \"$PW\" | pdf crop \(Output.quoted(path)) --page \(page) --password-stdin"
         switch try Reader(store: store, library: try Library()).read(path: path, pages: [], password: password) {

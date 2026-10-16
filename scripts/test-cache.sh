@@ -317,7 +317,7 @@ check "the rest of the library stays" "Dataset Distillation" "$(library ls)"
 
 locked=testdata/locked/locked.pdf
 output=$(library add $locked)
-check "a locked PDF fails and names the password flag" "locked by a password · open it with: pdf add $locked --password" "$output"
+check "a locked PDF fails and names the password flag" "locked by a password · open it with: pdf add $locked --password-stdin · " "$output"
 check "a locked PDF exits 3" "exit 3" "$output"
 check "a wrong password says so" "the password given does not open it" "$(library add $locked --password wrong)"
 check "the right password opens it" "· 1 page · ok" "$(library add $locked --password "open sesame")"
@@ -328,6 +328,14 @@ sqlite3 "$work/library/Caches/cache.sqlite" "DELETE FROM page_result"
 check "a missing page of a locked file fails the file, not the page" "^$locked: failed: locked by a password" \
     "$(library read $locked)"
 check "the password still opens it after" "· 1 page · ok" "$(echo "open sesame" | library add $locked --password-stdin)"
+# On a terminal, --password-stdin asks for the password and hides it as it is typed.
+output=$(PDF_CLI_HOME=$work/terminal expect -c "spawn $pdf add $locked --password-stdin
+    expect \"Password for $locked: \"
+    send \"open sesame\r\"
+    expect eof" 2>&1)
+check "on a terminal, --password-stdin asks for the password" "Password for $locked: " "$output"
+check "the password typed there opens the file" "· 1 page · ok" "$output"
+check "the password typed there is not shown" "^0$" "$(grep -c "open sesame" <<<"$output")"
 check "a locked PDF crops without its password only to say so" "could not be drawn: locked by a password" "$(library crop $locked --page 1)"
 check "a locked PDF crops with its password on standard input" "/p1\.png  (~" \
     "$(echo "open sesame" | library crop $locked --page 1 --password-stdin)"

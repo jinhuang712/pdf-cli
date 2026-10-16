@@ -408,7 +408,16 @@ public struct Info: Encodable, Sendable {
             lines.append("provisional: \(pagesParsed) of \(pageCount) pages parsed so far; pdf info again shows the rest")
         }
 
-        let shown = sections.filter { $0.level <= 2 }
+        var shown = sections.filter { $0.level <= 2 }
+        var cut = false
+        if shown.count > Info.maxSectionRows {
+            // A file with hundreds of bookmarks would fill the agent's context, 3,200 tokens for
+            // 200 of them, so a long table keeps to the top level, and to its first rows.
+            let top = sections.map(\.level).min() ?? 1
+            shown = sections.filter { $0.level == top }
+            cut = shown.count > Info.maxSectionRows
+            shown = Array(shown.prefix(Info.maxSectionRows))
+        }
         if !shown.isEmpty {
             let titles = shown.map { String(repeating: "  ", count: $0.level - 1) + $0.title }
             let width = min(max(titles.map(\.count).max() ?? 0, 7), 60)
@@ -422,12 +431,17 @@ public struct Info: Encodable, Sendable {
                              + pages.padding(toLength: 11, withPad: " ", startingAt: 0)
                              + (section.tokens.map { Info.thousands($0) } ?? "…"))
             }
-            if sections.count > shown.count { table.append("  and \(sections.count - shown.count) deeper sections; pdf info --json lists them") }
+            if sections.count > shown.count {
+                table.append("  and \(sections.count - shown.count) \(cut ? "more" : "deeper") sections; pdf info --json lists them")
+            }
             lines.append("")
             lines.append(table.joined(separator: "\n"))
         }
         return lines.joined(separator: "\n") + "\n"
     }
+
+    /// The most sections the table shows: a paper has 10 to 30 at its top two levels.
+    static let maxSectionRows = 40
 
     /// "1.8k" for 1,800, "950" below a thousand.
     public static func thousands(_ value: Int) -> String {
