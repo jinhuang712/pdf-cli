@@ -116,7 +116,7 @@ public final class Runner: @unchecked Sendable {
             var fileFailure: String?
             var retried: Set<Int> = []
             var start = 0
-            var stops = 0, slowOpens = 0
+            var stops = 0
             // The index takes its slot first: the first page needs the keys most.
             var indexSlot = waitForSlot(foreground: true)
             guard indexSlot != nil else { return .unavailable }
@@ -153,17 +153,16 @@ public final class Runner: @unchecked Sendable {
                 indexSlot = nil
                 while !worker.finished { step([worker] + [sampler].compactMap { $0 }, handle: handle) }
                 if fileFailure != nil || worker.endedCleanly { break }
+                // A file slow to open, as one on a slow disk or network volume, is no sign of
+                // damage. It already had the open limit, three times a page's, so it is not tried
+                // again here: its verdict stands for a while, then a command tries again
+                // (`Store.entry`).
+                if worker.stopKind == .opening {
+                    fileFailure = OpenFailure.slow + ": it took more than \(Int(Env.openTimeLimit)) s to open,"
+                        + " and is tried again after \(Int(Env.slowOpenRetry / 60)) minutes"
+                    break
+                }
                 guard let count = pageCount else {
-                    // A file slow to open, as one on a slow network volume, is no sign of damage:
-                    // it is tried once more, then left for the next command to try again.
-                    if worker.stopKind == .opening {
-                        slowOpens += 1
-                        if slowOpens > 1 {
-                            fileFailure = OpenFailure.slow + ": it took more than \(Int(Env.openTimeLimit)) s to open, twice;"
-                                + " the next command tries again"
-                        }
-                        continue
-                    }
                     stops += 1
                     if stops > 2 { fileFailure = "damaged: the reader stopped while opening it (\(worker.endReason))" }
                     continue
@@ -491,6 +490,10 @@ public final class Runner: @unchecked Sendable {
         let pages: [Int]
         /// The time limit when it differs from the page limit.
         var timeLimit: TimeInterval?
+        /// It opens the file before it says anything, as the index and page workers do, so it
+        /// gets the open limit until its first event. The sample check and the facts say nothing
+        /// until they finish, and keep their own limits.
+        var opens = false
         var lastEventAt = Date()
         var sawEvent = false
         var current: Int?
@@ -560,6 +563,7 @@ public final class Runner: @unchecked Sendable {
         worker.slot = slot
         worker.inBackground = !foreground
         worker.startedInBackground = !foreground
+        worker.opens = ["index", "parse"].contains(arguments.first ?? "")
         return worker
     }
 
@@ -646,13 +650,14 @@ public final class Runner: @unchecked Sendable {
         let now = Date()
         for worker in workers where worker.exitStatus == nil && worker.stopReason == nil {
             let limit = worker.timeLimit ?? Env.pageTimeLimit
-            // A worker says nothing until it has opened the file, which can take longer.
-            let silence = worker.sawEvent ? limit : max(limit, Env.openTimeLimit)
+            // A worker that opens the file says nothing until it has, which can take longer.
+            let opening = worker.opens && !worker.sawEvent
+            let silence = opening ? Env.openTimeLimit : limit
             if let started = worker.currentStartedAt, now.timeIntervalSince(started) > limit {
                 stop(worker, reason: "time limit: the page took more than \(Int(limit)) s", kind: .pageTime)
             } else if worker.current == nil, now.timeIntervalSince(worker.lastEventAt) > silence {
-                stop(worker, reason: worker.sawEvent ? "time limit: the reader was silent for more than \(Int(limit)) s"
-                         : "time limit: the file took more than \(Int(silence)) s to open", kind: worker.sawEvent ? .silence : .opening)
+                stop(worker, reason: opening ? "time limit: the file took more than \(Int(silence)) s to open"
+                         : "time limit: the reader was silent for more than \(Int(limit)) s", kind: opening ? .opening : .silence)
             } else if let footprint = Processes.footprint(of: worker.pid), footprint > Env.memoryLimitBytes {
                 stop(worker, reason: "memory limit: the reader used more than \(Env.memoryLimitBytes >> 20) MB",
                      kind: .memory)

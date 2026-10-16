@@ -176,8 +176,9 @@ enum OCR {
                     read.blocks[index].agreement = agreement(units: read.blocks[index].lines.flatMap { units($0.text) },
                                                              check: Set(inside.flatMap(\.units)))
                 }
-            } else {
-                // The second reading failed, so nothing checks the first: the page says so.
+            } else if read.blocks.flatMap(\.lines).flatMap({ units($0.text) }).count >= 20 {
+                // The second reading failed, so nothing checks the first: the page says so. A page
+                // with too few words to score goes unflagged, as a checked one would.
                 read.checkFailed = true
             }
         }

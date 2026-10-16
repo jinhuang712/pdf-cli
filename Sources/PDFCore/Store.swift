@@ -214,16 +214,22 @@ public final class Store: Sendable {
     // MARK: Files and documents
 
     /// The cached entry for a file, if the file has not changed since it was indexed, with the
-    /// index checks of this version.
+    /// index checks of this version. A file found slow to open is tried again once its verdict is
+    /// older than `Env.slowOpenRetry`, and so is one that an earlier version cached as damaged
+    /// because it was slow to open.
     public func entry(path: String, stat: FileStat) throws -> FileEntry? {
         try pool.read { db in
             guard let row = try Row.fetchOne(db, sql: """
-                SELECT doc_id, failure FROM file_entry
+                SELECT doc_id, failure, indexed_at FROM file_entry
                 WHERE path = ? AND size = ? AND modified_ns = ? AND inode = ? AND device = ? AND checks = ?
                 """, arguments: [path, stat.size, stat.modifiedNanos, stat.inode, stat.device, Store.indexChecks])
             else { return nil }
             if let id: String = row["doc_id"] { return .document(id: id) }
-            return .failed(reason: row["failure"] ?? "unknown")
+            let reason: String = row["failure"] ?? "unknown"
+            let age = Date().timeIntervalSince1970 - (row["indexed_at"] as Double? ?? 0)
+            if reason.hasPrefix(OpenFailure.slow) && age >= Env.slowOpenRetry { return nil }
+            if reason.hasPrefix("damaged: the reader stopped while opening it (time limit") { return nil }
+            return .failed(reason: reason)
         }
     }
 

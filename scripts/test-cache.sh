@@ -106,12 +106,22 @@ check "a scan page whose second OCR reading failed is low-quality" \
     "p.1 low-quality: OCR read the page, but its second reading, which checks the first, failed" \
     "$(PDF_CLI_HOME=$work/unchecked PDF_CLI_TEST_FAULT=ocr-check-fail:0 $pdf read testdata/ocr/scan-no-text.pdf --page 1 2>&1)"
 
-# A file slow to open is not damaged: the command that tried says so, and the next tries again.
+# A file that opens slower than a page may take reads, within the open limit. One that takes
+# longer is slow to open, not damaged: commands get that verdict at once for a while, and then
+# one tries the file again.
+check "a file slower to open than a page may take reads" "read p.1 · flagged: none" \
+    "$(PDF_CLI_HOME=$work/slower PDF_CLI_TEST_FAULT=open-slow:0 PDF_CLI_PAGE_TIME_LIMIT=2 PDF_CLI_OPEN_TIME_LIMIT=20 \
+        $pdf read $paper --page 1 2>&1)"
 slowly() { PDF_CLI_HOME=$work/slow $pdf "$@" 2>&1; }
-check "a file slow to open fails that command, as slow, not damaged" \
-    "failed: slow to open: it took more than 2 s to open, twice; the next command tries again" \
+check "a file that hangs while it opens is slow to open, not damaged" \
+    "failed: slow to open: it took more than 2 s to open, and is tried again after 10 minutes" \
     "$(PDF_CLI_TEST_FAULT=open-hang:0 PDF_CLI_OPEN_TIME_LIMIT=2 slowly read $paper --page 1)"
-check "the next command opens it again" "read p.1 · flagged: none" "$(slowly read $paper --page 1)"
+started=$(date +%s)
+output=$(slowly read $paper --page 1)
+check "the next command gets the verdict at once" "failed: slow to open" "$output"
+check "without opening the file again" "^[01]$" "$(($(date +%s) - started))"
+check "once the verdict is old enough, a command opens the file again" "read p.1 · flagged: none" \
+    "$(PDF_CLI_SLOW_OPEN_RETRY=0 slowly read $paper --page 1)"
 check "a read whose every page failed exits 3" "exit 3" \
     "$(PDF_CLI_HOME=$work/failed PDF_CLI_PAGE_TIME_LIMIT=2 PDF_CLI_TEST_FAULT=hang:3 $pdf read $paper --page 4 2>&1; echo "exit $?")"
 

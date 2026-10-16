@@ -269,7 +269,7 @@ Reading [a] is the text layer's. Reading [b] breaks the words where Apple OCR do
 
 - The summary line at the top counts every flagged page, with its status: `failed`, `low-quality` or `unsure`. It also counts what normal output set aside, such as doubtful blocks and a scan's replaced text layer, with the flag that shows them.
 - A low-quality page is flagged the same way as a failed one, with its reason and its score.
-- A file that PDFKit cannot open fails as a whole, in one line that names the reason: not a PDF, damaged, locked by a password, or slow to open. A file slow to open fails only the command that tried it, and the next command tries again. A locked file points to `pdf add <path> --password <pw>`.
+- A file that PDFKit cannot open fails as a whole, in one line that names the reason: not a PDF, damaged, locked by a password, or slow to open, past 90 s. A file slow to open gives commands that verdict for 10 minutes, and then a command tries it again. A locked file points to `pdf add <path> --password <pw>`.
 - The exit code tells success from failure:
 
 | Exit code | Meaning |

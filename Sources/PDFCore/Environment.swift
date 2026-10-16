@@ -38,11 +38,17 @@ public enum Env {
         variables["PDF_CLI_PAGE_TIME_LIMIT"].flatMap(Double.init) ?? 30
     }
 
-    /// How long a worker may stay silent while it opens the file, before its first event: a
-    /// large file, or one on a slow disk or network volume, can take far longer to open than a
-    /// page takes to read.
+    /// How long an index or page worker may stay silent while it opens the file, before its first
+    /// event: a large file, or one on a slow disk or network volume, can take far longer to open
+    /// than a page takes to read. Under the 120 s an agent's command commonly gets.
     public static var openTimeLimit: TimeInterval {
-        variables["PDF_CLI_OPEN_TIME_LIMIT"].flatMap(Double.init) ?? 120
+        variables["PDF_CLI_OPEN_TIME_LIMIT"].flatMap(Double.init) ?? 90
+    }
+
+    /// How long a file's "slow to open" verdict stands before a command tries the file again.
+    /// Commands in between get the verdict at once, rather than waiting out the open limit again.
+    public static var slowOpenRetry: TimeInterval {
+        variables["PDF_CLI_SLOW_OPEN_RETRY"].flatMap(Double.init) ?? 600
     }
 
     /// How much memory one worker may hold before it is stopped and its page fails.

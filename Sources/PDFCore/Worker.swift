@@ -276,8 +276,8 @@ public enum Worker {
 
     /// Makes a test's planted fault happen: a hang, a runaway allocation or a crash. A fault
     /// named with the prefix "index-", such as "index-hang:3", happens while keys are read, and
-    /// one with "sample-", such as "sample-crash:0", in the sample check, and "open-hang:0"
-    /// while the index opens the file.
+    /// one with "sample-", such as "sample-crash:0", in the sample check, and "open-hang:0" or
+    /// "open-slow:0", a 4 s wait, while the index opens the file.
     static func plantedFault(at index: Int, phase: String) {
         guard let fault = Env.testFault, fault.page == index, fault.kind.hasPrefix(phase) else { return }
         let kind = fault.kind.dropFirst(phase.count)
@@ -285,6 +285,9 @@ public enum Worker {
         switch kind {
         case "hang":
             while true { sleep(60) }
+        case "slow":
+            // Slower than a page may take, quicker than the open limit a test sets.
+            sleep(4)
         case "background-hang":
             // Hangs only in the background state, as a throttled worker can seem to.
             while getpriority(PRIO_DARWIN_PROCESS, 0) == 1 { sleep(1) }
