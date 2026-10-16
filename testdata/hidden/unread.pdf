@@ -3,7 +3,7 @@
 << /Type /Catalog /Pages 2 0 R  >>
 endobj
 2 0 obj
-<< /Type /Pages /Kids [9 0 R 11 0 R] /Count 2 >>
+<< /Type /Pages /Kids [13 0 R 15 0 R 17 0 R 19 0 R 21 0 R 23 0 R] /Count 6 >>
 endobj
 3 0 obj
 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
@@ -34,9 +34,29 @@ endobj
 << /Type /Font /Subtype /Type3 /FontBBox [0 0 500 700] /FontMatrix [0.001 0 0 0.001 0 0] /FontDescriptor 5 0 R /CharProcs << /box 4 0 R >> /Encoding << /Type /Encoding /Differences [65 /box 66 /box 67 /box] >> /FirstChar 65 /LastChar 67 /Widths [600 600 600] /ToUnicode 7 0 R >>
 endobj
 9 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 10 0 R /Resources << /Font << /F1 3 0 R /U 6 0 R /M 8 0 R >> >>  >>
+<<  /Length 35 >>
+stream
+60 0 0 0 50 100 d1 0 0 50 100 re f
+
+endstream
 endobj
 10 0 obj
+<< /Type /Font /Subtype /Type3 /FontBBox [0 0 50 100] /FontMatrix [1 0 0 1 0 0] /FontDescriptor 5 0 R /CharProcs << /box 9 0 R >> /Encoding << /Type /Encoding /Differences [65 /box 66 /box 67 /box] >> /FirstChar 65 /LastChar 67 /Widths [60 60 60] >>
+endobj
+11 0 obj
+<< /Type /XObject /Subtype /Image /ColorSpace /DeviceGray /BitsPerComponent 8 /Width 4 /Height 4 /Length 16 >>
+stream
+(ÈZ Ü´FdŒð<úx
+
+endstream
+endobj
+12 0 obj
+<< /Type /Font /Subtype /Type3 /FontBBox [0 0 500 700] /FontMatrix [0.001 0 0 0.001 0 0] /CharProcs << /box 4 0 R >> /Encoding << /Type /Encoding /Differences [65 /box 66 /box 67 /box] >> /FirstChar 65 /LastChar 67 /Widths [600 600 600] >>
+endobj
+13 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 14 0 R /Resources << /Font << /F1 3 0 R /U 6 0 R /M 8 0 R /X 10 0 R /B 12 0 R >> /XObject << /Im 11 0 R >> >>  >>
+endobj
+14 0 obj
 <<  /Length 195 >>
 stream
 BT /F1 12.0 Tf 72 720 Td (Visible words before the trick on this page.) Tj ET
@@ -45,10 +65,10 @@ BT /U 12 Tf 72 680 Td (ABCABCABC) Tj ET
 
 endstream
 endobj
-11 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 12 0 R /Resources << /Font << /F1 3 0 R /U 6 0 R /M 8 0 R >> >>  >>
+15 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 16 0 R /Resources << /Font << /F1 3 0 R /U 6 0 R /M 8 0 R /X 10 0 R /B 12 0 R >> /XObject << /Im 11 0 R >> >>  >>
 endobj
-12 0 obj
+16 0 obj
 <<  /Length 195 >>
 stream
 BT /F1 12.0 Tf 72 720 Td (Visible words before the trick on this page.) Tj ET
@@ -57,23 +77,84 @@ BT /M 12 Tf 72 680 Td (ABCABCABC) Tj ET
 
 endstream
 endobj
+17 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 18 0 R /Resources << /Font << /F1 3 0 R /U 6 0 R /M 8 0 R /X 10 0 R /B 12 0 R >> /XObject << /Im 11 0 R >> >>  >>
+endobj
+18 0 obj
+<<  /Length 200 >>
+stream
+BT /F1 12.0 Tf 72 720 Td (Visible words before the trick on this page.) Tj ET
+BT /F1 12.0 Tf 72 600 Td (Visible words after the trick on this page.) Tj ET
+BT /U 12 Tf 1 Tz 72 680 Td (ABCABCABC) Tj ET
+
+endstream
+endobj
+19 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 20 0 R /Resources << /Font << /F1 3 0 R /U 6 0 R /M 8 0 R /X 10 0 R /B 12 0 R >> /XObject << /Im 11 0 R >> >>  >>
+endobj
+20 0 obj
+<<  /Length 227 >>
+stream
+BT /F1 12.0 Tf 72 720 Td (Visible words before the trick on this page.) Tj ET
+BT /F1 12.0 Tf 72 600 Td (Visible words after the trick on this page.) Tj ET
+BT /U 12 Tf 72 680 Td (ABCABCABC) Tj ET
+q 200 0 0 20 66 675 cm /Im Do Q
+
+endstream
+endobj
+21 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 22 0 R /Resources << /Font << /F1 3 0 R /U 6 0 R /M 8 0 R /X 10 0 R /B 12 0 R >> /XObject << /Im 11 0 R >> >>  >>
+endobj
+22 0 obj
+<<  /Length 265 >>
+stream
+BT /F1 12.0 Tf 72 720 Td (Visible words before the trick on this page.) Tj ET
+BT /F1 12.0 Tf 72 600 Td (Visible words after the trick on this page.) Tj ET
+BT /F1 12 Tf 72 680 Td (The value is ) Tj /B 12 Tf (ABCABC) Tj /F1 12 Tf ( and more words follow here.) Tj ET
+
+endstream
+endobj
+23 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 24 0 R /Resources << /Font << /F1 3 0 R /U 6 0 R /M 8 0 R /X 10 0 R /B 12 0 R >> /XObject << /Im 11 0 R >> >>  >>
+endobj
+24 0 obj
+<<  /Length 197 >>
+stream
+BT /F1 12.0 Tf 72 720 Td (Visible words before the trick on this page.) Tj ET
+BT /F1 12.0 Tf 72 600 Td (Visible words after the trick on this page.) Tj ET
+BT /X 0.12 Tf 72 680 Td (ABCABCABC) Tj ET
+
+endstream
+endobj
 xref
-0 13
+0 25
 0000000000 65535 f 
 0000000009 00000 n 
 0000000059 00000 n 
-0000000123 00000 n 
-0000000220 00000 n 
-0000000309 00000 n 
-0000000465 00000 n 
-0000000742 00000 n 
-0000001047 00000 n 
-0000001341 00000 n 
-0000001487 00000 n 
-0000001735 00000 n 
-0000001882 00000 n 
+0000000152 00000 n 
+0000000249 00000 n 
+0000000338 00000 n 
+0000000494 00000 n 
+0000000771 00000 n 
+0000001076 00000 n 
+0000001370 00000 n 
+0000001456 00000 n 
+0000001722 00000 n 
+0000001883 00000 n 
+0000002139 00000 n 
+0000002332 00000 n 
+0000002580 00000 n 
+0000002773 00000 n 
+0000003021 00000 n 
+0000003214 00000 n 
+0000003467 00000 n 
+0000003660 00000 n 
+0000003940 00000 n 
+0000004133 00000 n 
+0000004451 00000 n 
+0000004644 00000 n 
 trailer
-<< /Size 13 /Root 1 0 R >>
+<< /Size 25 /Root 1 0 R >>
 startxref
-2130
+4894
 %%EOF

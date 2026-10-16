@@ -173,10 +173,11 @@ public enum Output {
                 for (position, place) in unread.enumerated() {
                     let region = Box(x: max(0, place.box.x - 0.01), y: max(0, place.box.y - 0.01),
                                      width: min(1, place.box.width + 0.02), height: min(1, place.box.height + 0.02))
-                    var unit = Unit(blocks: [failureBlock(doubt, page: number, block: nil, region: region, path: path, raw: raw)],
+                    // Numbered after the page's last block, so a read cut here goes on past it.
+                    var unit = Unit(blocks: [failureBlock(doubt, page: number, block: layer.blocks.count + 1 + position, region: region,
+                                                          path: path, raw: raw)],
                                     flag: .lowQuality)
                     if raw {
-                        // Numbered after the page's last block, so a read that goes on from it skips them.
                         unit.blocks.append(Block(kind: .doubtful, page: number, block: layer.blocks.count + 1 + position, box: place.box,
                                                  text: "as its codes spell it: " + place.text, status: doubt.kind.rawValue))
                     } else {
@@ -187,15 +188,18 @@ public enum Output {
             }
             // Text placed off the page has no block: PDFKit leaves it out of the page's text,
             // and only the drawing commands spell it.
+            var after = layer.blocks.count + (layer.unread?.count ?? 0)
             if let offPage = layer.offPage, !offPage.isEmpty {
                 let words = offPage.joined(separator: " ")
-                var unit = Unit(blocks: [Block(kind: .hidden, page: number,
+                after += 1
+                var unit = Unit(blocks: [Block(kind: .hidden, page: number, block: after,
                                                text: marker(words, reason: .offPage, includeHidden: includeHidden, path: path, page: number))])
                 unit.hidden = 1
                 result.units.append(unit)
             }
             if layer.hiddenCheckIncomplete == true {
-                var unit = Unit(blocks: [Block(kind: .hidden, page: number, text: """
+                after += 1
+                var unit = Unit(blocks: [Block(kind: .hidden, page: number, block: after, text: """
                     [hidden-text check incomplete: the page draws more than the check reads, so some hidden text may read as \
                     text · look: pdf crop \(path) --page \(number)]
                     """)])

@@ -281,9 +281,12 @@ struct Visibility {
         // A word an image over it shows, as a scan's picture of the layer drawn under it, is
         // judged by the image, not letter by letter against the layer's places.
         case .shown: return .seen(nil)
-        // A word in the invisible mode has no ink of its own to check letter by letter: what
-        // shows there is the scan's, as where a note in the layer's size stood beside it.
-        case nil: return .seen(straight && !(!drawn.isEmpty && drawn.allSatisfy { $0.kind == .invisible }) ? ink : nil)
+        // On a scan's page, a word of its layer in the invisible mode has no ink of its own to check
+        // letter by letter: what shows there is the scan's, as where a note in the layer's size
+        // stood beside it. Elsewhere such a word's letters are checked, as over a dotted leader.
+        case nil:
+            let layer = drawing.underlay && !drawn.isEmpty && drawn.allSatisfy { $0.kind == .invisible }
+            return .seen(straight && !layer ? ink : nil)
         }
     }
 
@@ -326,21 +329,46 @@ struct Visibility {
     ///     some a box a line long, whose center lies between lines.
     ///   - text: PDFKit's text of the page.
     /// - Returns: the places, and the share of the glyphs the page draws to show that they hold.
-    func unread(near boxes: [CGRect], in text: String) -> (places: [(rect: CGRect, text: String)], share: Double) {
+    func unread(near boxes: [CGRect], or raw: () -> [CGRect], in text: String) -> (places: [(rect: CGRect, text: String)], share: Double) {
         let cell: CGFloat = 12
-        func key(_ x: CGFloat, _ y: CGFloat) -> Int {
-            Visibility.pixel(((x - crop.minX) / cell).rounded(.down)) &* 100_003 &+ Visibility.pixel(((y - crop.minY) / cell).rounded(.down))
+        func index(_ value: CGFloat) -> Int { Visibility.pixel((value / cell).rounded(.down)) }
+        func key(_ x: Int, _ y: Int) -> Int { x &* 100_003 &+ y }
+        func grid(_ boxes: [CGRect]) -> [Int: [CGPoint]] {
+            var centers: [Int: [CGPoint]] = [:]
+            for box in boxes {
+                centers[key(index(box.midX - crop.minX), index(box.midY - crop.minY)), default: []].append(CGPoint(x: box.midX, y: box.midY))
+            }
+            return centers
         }
-        var centers: [Int: [CGPoint]] = [:]
-        for box in boxes {
-            centers[key(box.midX, box.midY), default: []].append(CGPoint(x: box.midX, y: box.midY))
+        let fitted = grid(boxes)
+        // PDFKit's own boxes, where the fitted ones, moved onto their characters' lines, leave a
+        // string: on right-to-left lines they lie elsewhere. Asked for only then, as they cost
+        // about 20 ms a page.
+        var drawnAt: [Int: [CGPoint]]?
+        // Whether a character of PDFKit's has its box's center on the string itself, in the
+        // string's own space: along its run, a fifth of its size beyond either end, and from just
+        // below its baseline to its top. A line above or below, or a word beside it, does not
+        // vouch for it: a looser test let text PDFKit dropped inside a paragraph through.
+        func pdfKitHasText(on run: Drawing.TextRun) -> Bool {
+            if pdfKitHasText(on: run, in: fitted) { return true }
+            if drawnAt == nil { drawnAt = grid(raw()) }
+            return pdfKitHasText(on: run, in: drawnAt ?? [:])
         }
-        func pdfKitHasText(in area: CGRect) -> Bool {
-            let x0 = Int(((area.minX - crop.minX) / cell).rounded(.down)), x1 = Int(((area.maxX - crop.minX) / cell).rounded(.down))
-            let y0 = Int(((area.minY - crop.minY) / cell).rounded(.down)), y1 = Int(((area.maxY - crop.minY) / cell).rounded(.down))
+        func pdfKitHasText(on run: Drawing.TextRun, in centers: [Int: [CGPoint]]) -> Bool {
+            let x0 = index(run.bounds.minX - crop.minX), x1 = index(run.bounds.maxX - crop.minX)
+            let y0 = index(run.bounds.minY - crop.minY), y1 = index(run.bounds.maxY - crop.minY)
             guard x1 - x0 < 400, y1 - y0 < 400 else { return true }
+            let low = min(0, run.reach) - 0.2 * run.size, high = max(0, run.reach) + 0.2 * run.size
             for x in x0...x1 {
-                for y in y0...y1 where centers[x &* 100_003 &+ y]?.contains(where: { area.contains($0) }) == true { return true }
+                for y in y0...y1 {
+                    for center in centers[key(x, y)] ?? [] {
+                        let local = center.applying(run.toText)
+                        let along: CGFloat = run.vertical ? local.y : local.x
+                        let across: CGFloat = run.vertical ? local.x : local.y
+                        let inside = run.vertical ? abs(across) <= 0.6 * run.size : across >= -0.3 * run.size && across <= run.size
+                        if along >= low && along <= high && inside { return true }
+                    }
+                }
             }
             return false
         }
@@ -350,13 +378,23 @@ struct Visibility {
         for run in drawing.runs where run.kind == .shown && crop.contains(CGPoint(x: run.bounds.midX, y: run.bounds.midY)) {
             drawn += run.glyphs
         }
-        for run in drawing.runs where run.kind == .shown && run.glyphs >= 3 && run.toText.axisAligned {
+        // Only strings a reader sees: drawn to show, not squeezed or stacked, 2 pt tall or more,
+        // not clipped away, with no image or shape drawn over most of them, and with ink. What
+        // the place holds goes out with `--raw`, so a string hidden any way must stay out.
+        for run in drawing.runs where run.kind == .shown && run.glyphs >= 3 && run.toText.axisAligned && !run.crushed
+            && !run.clipped && run.height >= 2 {
             let rect = run.bounds.intersection(crop)
-            guard !rect.isNull, rect.width > 0, rect.height > 0, crop.contains(CGPoint(x: run.bounds.midX, y: run.bounds.midY)),
-                  !pdfKitHasText(in: run.bounds.insetBy(dx: -0.5 * run.height, dy: -0.5 * run.height)) else { continue }
+            guard !rect.isNull, rect.width > 0, rect.height > 0, crop.contains(CGPoint(x: run.bounds.midX, y: run.bounds.midY)) else { continue }
+            // At least 3 letters or digits, as its codes spell them: a string of symbols, as a
+            // dashed arrow, or of blank glyphs, as a signature's line, or one PDFKit boxes a few
+            // characters off, as "(8)", is no text to flag.
             let own = Visibility.normalized(run.shown)
-            if own.count >= 3, spelled.contains(own) { continue }
-            guard let ink = ink(in: rect), ink.count >= 2, ink.share >= 0.005 else { continue }
+            guard own.count >= 3, !spelled.contains(own) else { continue }
+            // Nor is a frame or rule drawn as one glyph over and over, as "abbbbbbc".
+            let most = Dictionary(grouping: own, by: { $0 }).values.map(\.count).max() ?? 0
+            guard own.count < 6 || most * 10 < own.count * 6, !pdfKitHasText(on: run) else { continue }
+            guard !drawing.coverings.contains(where: { $0.order > run.order && $0.rect.intersection(rect).area >= 0.5 * rect.area }),
+                  let ink = ink(in: rect), ink.count >= 2, ink.share >= 0.005 else { continue }
             missing += run.glyphs
             let line = TextCleanup.line(run.shown)
             if let last = found.last, last.rect.insetBy(dx: -run.height, dy: -0.3 * run.height).intersects(rect) {
@@ -734,6 +772,8 @@ final class Drawing {
         /// How many glyphs this string draws, and its own text, as its codes spell it.
         var glyphs: Int = 0
         var shown: String = ""
+        /// The clip leaves under half of its bounds.
+        var clipped = false
 
         func holds(_ point: CGPoint) -> Bool {
             guard bounds.contains(point) else { return false }
@@ -755,6 +795,10 @@ final class Drawing {
         var fallback: CGFloat = 600
         var twoBytes = false
         var vertical = false
+        /// How tall the font's glyphs stand, in units of its size: 1 but for a Type 3 font, whose
+        /// glyphs stand as tall as its box, scaled by its matrix. A TeX file's Type 3 fonts draw
+        /// 12-pt letters at a size of 0.12, in glyphs 100 units tall under a matrix of 1.
+        var height: CGFloat = 1
 
         nonisolated(unsafe) static let unknown = Widths()
 
@@ -838,6 +882,12 @@ final class Drawing {
             if subtype == "Type3", CGPDFDictionaryGetArray(font, "FontMatrix", &matrix), let matrix,
                CGPDFArrayGetNumber(matrix, 0, &first) {
                 scale = abs(first) * 1000
+                var vertical: CGPDFReal = 0, box: CGPDFArrayRef?, low: CGPDFReal = 0, high: CGPDFReal = 0
+                if CGPDFArrayGetNumber(matrix, 3, &vertical), CGPDFDictionaryGetArray(font, "FontBBox", &box), let box,
+                   CGPDFArrayGetNumber(box, 1, &low), CGPDFArrayGetNumber(box, 3, &high) {
+                    let tall = abs(high - low) * abs(vertical)
+                    if tall.isFinite, tall > 0.01, tall < 100_000 { widths.height = tall }
+                }
             }
             var list: CGPDFArrayRef?, firstCode: CGPDFInteger = 0
             if CGPDFDictionaryGetArray(font, "Widths", &list), let list {
@@ -980,8 +1030,9 @@ final class Drawing {
     var fonts: [OpaquePointer: Widths] = [:]
     /// The path being built, by its bounds in page space; whether it is one rectangle along the
     /// page's axes; and whether it then clips.
-    /// Visibility expressions told so far.
-    var told: [OpaquePointer: Bool?] = [:]
+    /// Visibility expressions told so far for the membership being read, and at what depth: an
+    /// inline membership's arrays are freed after it, and others may take their addresses.
+    var told: [OpaquePointer: (shown: Bool?, depth: Int)] = [:]
     var path = CGRect.null
     var rectangles = 0
     var curved = false
@@ -1137,6 +1188,7 @@ final class Drawing {
         // A visibility expression, when the membership has one, decides before its layers and
         // policy (PDF 32000, 8.11.2.2).
         var expression: CGPDFArrayRef?
+        told.removeAll(keepingCapacity: true)
         if CGPDFDictionaryGetArray(properties, "VE", &expression), let expression, let shown = shows(expression, depth: 0) {
             return !shown
         }
@@ -1167,10 +1219,11 @@ final class Drawing {
     func shows(_ expression: CGPDFArrayRef, depth: Int) -> Bool? {
         // Each expression is told once: one whose operands share deeper expressions would
         // otherwise take twice as long a level, 30 s at 30 levels in the sixth review.
+        // An expression untold at some depth, as past the limit, may be told nearer the top.
         let identity = unsafeBitCast(expression, to: OpaquePointer.self)
-        if let known = told[identity] { return known }
+        if let known = told[identity], known.shown != nil || depth >= known.depth { return known.shown }
         let shown = tell(expression, depth: depth)
-        told[identity] = .some(shown)
+        told[identity] = (shown, depth)
         return shown
     }
 
@@ -1287,7 +1340,7 @@ final class Drawing {
         spelling = (spelling ?? "") + Visibility.normalized(shown.text)
         defer { order += 1 }
         guard runs.count < Drawing.runLimit, placed.invertible else { return }
-        let size = max(abs(current.fontSize), 0.5)
+        let size = max(abs(current.fontSize) * current.font.height, 0.5)
         let margin = 0.3 * size, low = min(0, shown.advance) - margin, high = max(0, shown.advance) + margin
         let local = vertical ? CGRect(x: -0.8 * size, y: low, width: 1.6 * size, height: high - low)
             : CGRect(x: low, y: -0.5 * size, width: high - low, height: 1.7 * size)
@@ -1307,7 +1360,14 @@ final class Drawing {
         runs.append(TextRun(order: order, toText: placed.inverted(), reach: shown.advance, vertical: vertical, size: size, kind: kind,
                             crushed: crushed, text: spelling ?? "", height: height,
                             across: abs(direction.x) >= abs(direction.y), bounds: local.applying(placed),
-                            glyphs: shown.glyphs, shown: shown.text))
+                            glyphs: shown.glyphs, shown: shown.text, clipped: Self.clippedAway(local.applying(placed), by: current.clip)))
+    }
+
+    /// Whether a clip leaves under half of a string's bounds.
+    static func clippedAway(_ bounds: CGRect, by clip: CGRect) -> Bool {
+        guard !clip.isInfinite else { return false }
+        let kept = bounds.intersection(clip)
+        return kept.isNull || kept.width * kept.height < 0.5 * bounds.width * bounds.height
     }
 
     func image(known: Bool, mask: CGPDFStreamRef? = nil) {
@@ -1330,7 +1390,10 @@ final class Drawing {
         // clear all over, spans the page by its bounds alone. Images whose opacity the commands
         // cannot read, as a stencil, a JPEG 2000 or an inline image, count, as scans are kept so:
         // until the sixth review they did not, and their text layers got 150 marks a page.
-        let clear = mask != nil && (alpha(of: placed, over: rect)?.high ?? 1) < 0.5
+        // The mask is read only for an image large enough to count toward the page: reading
+        // every label's mask as it is drawn took 0.4 s on a page of 60.
+        let clear = mask != nil && rect.width * rect.height >= 0.02 * crop.width * crop.height
+            && (alpha(of: placed, over: rect)?.high ?? 1) < 0.5
         if fills, current.opacity >= 0.5, !clear { images.append(rect) }
         guard textSeen else { return }
         coverings.append(placed)

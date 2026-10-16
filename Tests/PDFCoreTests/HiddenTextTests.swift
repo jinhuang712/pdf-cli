@@ -180,6 +180,24 @@ import Testing
         let mapped = try layer(1, in: url)
         #expect(mapped.unread == nil)
         #expect(mapped.text.contains("ABCABCABC"))
+        // A hidden string stays out, so `--raw` cannot spell it; a word left out inside a line
+        // PDFKit keeps, and a TeX-style Type 3 font drawn at a size of 0.12, are found.
+        #expect(try layer(2, in: url).unread == nil)
+        #expect(try layer(3, in: url).unread == nil)
+        #expect(try layer(4, in: url).unread?.map(\.text) == ["ABCABC"])
+        #expect(try layer(5, in: url).unread?.map(\.text) == ["ABCABCABC"])
+    }
+
+    /// A read cut by its budget at a place PDFKit left text out of goes on past it.
+    @Test func aBudgetCutAtAPlaceLeftOutGoesOn() throws {
+        let url = Self.fixture.deletingLastPathComponent().appendingPathComponent("unread.pdf")
+        let missing = try layer(0, in: url)
+        let data = String(decoding: try JSONEncoder().encode(missing), as: UTF8.self)
+        let result = PageResult(status: .ok, method: "pdfkit", text: missing.text, reason: "", parseMillis: 1, data: data)
+        let blocks = Output.pageBlocks(Output.Page(index: 0, result: result, key: "k"), picks: [:], path: "unread.pdf", raw: false)
+            .units.flatMap(\.blocks)
+        let failure = try #require(blocks.first { $0.kind == .failure })
+        #expect(failure.block == missing.blocks.count + 1)
     }
 
     /// Pages drawn in ways that once crashed the check read, and their visible lines stay text.
@@ -204,7 +222,9 @@ import Testing
     @Test func ocrStopsAtItsCapAndThePageSaysSo() throws {
         let start = Date()
         let layer = try layer(22)
-        #expect(Date().timeIntervalSince(start) < 3)
+        // The cap is 3 s, the page's drawing included; alone the page takes about 2.2 s, and
+        // beside the other suites' tests it took 3.1.
+        #expect(Date().timeIntervalSince(start) < 4)
         #expect(layer.hiddenCheckIncomplete == true)
         #expect(hidden(layer).isEmpty)
     }

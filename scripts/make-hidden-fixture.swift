@@ -488,7 +488,27 @@ let textMap = unread.add(stream: "", """
     endcmap CMapName currentdict /CMap defineresource pop end end
     """)
 let mapped = unread.add("<< \(boxesFont) /ToUnicode \(textMap) 0 R >>")
+// As TeX's Type 3 fonts are made: glyphs 100 units tall under a matrix of 1, drawn at a size of 0.12.
+let texGlyph = unread.add(stream: "", "60 0 0 0 50 100 d1 0 0 50 100 re f\n")
+let texFont = unread.add("<< /Type /Font /Subtype /Type3 /FontBBox [0 0 50 100] /FontMatrix [1 0 0 1 0 0] "
+                         + "/FontDescriptor \(boxesDescriptor) 0 R /CharProcs << /box \(texGlyph) 0 R >> "
+                         + "/Encoding << /Type /Encoding /Differences [65 /box 66 /box 67 /box] >> /FirstChar 65 /LastChar 67 /Widths [60 60 60] >>")
+let unreadImage = unread.add(stream: "\(gray) /Width 4 /Height 4", texture)
+// The font with no descriptor: PDFKit then moves its pen over the glyphs it leaves out, as it
+// does not for the font with one, whose next words' boxes it lays over them.
+let bare = unread.add("<< /Type /Font /Subtype /Type3 /FontBBox [0 0 500 700] /FontMatrix [0.001 0 0 0.001 0 0] "
+                      + "/CharProcs << /box \(unreadGlyph) 0 R >> /Encoding << /Type /Encoding /Differences [65 /box 66 /box 67 /box] >> "
+                      + "/FirstChar 65 /LastChar 67 /Widths [600 600 600] >>")
 try unread.write([
     Page(name: "text in a Type 3 font with no text map", content: visible + "BT /U 12 Tf 72 680 Td (ABCABCABC) Tj ET\n"),
     Page(name: "visible: the same font with a text map", content: visible + "BT /M 12 Tf 72 680 Td (ABCABCABC) Tj ET\n"),
-], resources: "<< /Font << /F1 \(unreadFont) 0 R /U \(unmapped) 0 R /M \(mapped) 0 R >> >>", to: "unread.pdf")
+    // Hidden strings PDFKit leaves out stay out: what the place holds goes out with --raw.
+    Page(name: "hidden: the line squeezed to a hundredth", content: visible + "BT /U 12 Tf 1 Tz 72 680 Td (ABCABCABC) Tj ET\n"),
+    Page(name: "hidden: the line under an image drawn after it", content: visible + "BT /U 12 Tf 72 680 Td (ABCABCABC) Tj ET\n"
+        + "q 200 0 0 20 66 675 cm /Im Do Q\n"),
+    // A word PDFKit leaves out inside a line it keeps.
+    Page(name: "a word in a Type 3 font with no text map inside a line", content: visible
+        + "BT /F1 12 Tf 72 680 Td (The value is ) Tj /B 12 Tf (ABCABC) Tj /F1 12 Tf ( and more words follow here.) Tj ET\n"),
+    Page(name: "text in a TeX-style Type 3 font with no text map", content: visible + "BT /X 0.12 Tf 72 680 Td (ABCABCABC) Tj ET\n"),
+], resources: "<< /Font << /F1 \(unreadFont) 0 R /U \(unmapped) 0 R /M \(mapped) 0 R /X \(texFont) 0 R /B \(bare) 0 R >> "
+    + "/XObject << /Im \(unreadImage) 0 R >> >>", to: "unread.pdf")

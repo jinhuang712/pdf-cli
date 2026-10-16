@@ -263,7 +263,7 @@ check "text off the page leaves a marker too" "^\[hidden: 7 words, off the page 
 # Text PDFKit leaves out of the page's text: a Type 3 line with no text map.
 unread=$(reading read testdata/hidden/unread.pdf --budget all)
 check "text PDFKit leaves out flags the page" "flagged: p.1 (low-quality)" "$unread"
-check "a failure block says where it is drawn" "^⚠ p.1 low-quality: the page draws text here that PDFKit left out of its text$" "$unread"
+check "a failure block says where it is drawn" "^⚠ p.1 ¶3 low-quality: the page draws text here that PDFKit left out of its text$" "$unread"
 check "its crop command covers the place" "read it as an image: pdf crop testdata/hidden/unread.pdf --page 1 --bbox 0.10,0.11," "$unread"
 check "white on a dark box stays text" "^¶2 White on a dark box, which a reader can see\.$" "$output"
 check "a scan's text layer stays text" "^¶1 Words of a scan, under its image's own text\.$" "$output"

@@ -246,6 +246,16 @@ enum OCR {
     /// Whether OCR came back with far less than the text layer it was meant to replace, as when
     /// it cannot read the page's script: under 30% of the layer's letters and digits, with at
     /// least 100 in the layer. The layer then serves instead.
+    /// Whether OCR read clearly more letters and digits than a text layer holds: a fifth more, and
+    /// at least 20, as where PDFKit left most of a page out.
+    static func readsMore(ocr: PageText, layer: PageText) -> Bool {
+        func count(_ text: String) -> Int {
+            text.unicodeScalars.filter { $0.properties.isAlphabetic || $0.properties.numericType != nil }.count
+        }
+        let kept = count(layer.text), read = count(ocr.text)
+        return read >= kept + max(20, kept / 5)
+    }
+
     static func lostText(ocr: PageText, layer: PageText) -> Bool {
         func count(_ text: String) -> Int {
             text.unicodeScalars.filter { $0.properties.isAlphabetic || $0.properties.numericType != nil }.count

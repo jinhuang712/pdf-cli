@@ -310,15 +310,30 @@ enum TextLayer {
         if visibility?.drawing.incomplete == true { layer.hiddenCheckIncomplete = true }
         if let visibility {
             let width = max(crop.width, 1), height = max(crop.height, 1)
-            // A character's box no taller than 3 times its font size and no wider than 4: PDFKit gave
-            // one a box 13 times as wide as its size, a line long, whose center lay on the next
-            // line's empty place. Letters placed right to left get boxes of a negative width,
-            // which `width` gives as positive.
+            // A box the size of a glyph, no taller than twice its character's font size and no wider
+            // than 1.5 times: PDFKit gave one a box a line long, whose center lay on the next line's
+            // empty place, and one beside a word it left out a box over the word. Letters placed
+            // right to left get boxes of a negative width, which `width` gives as positive.
+            // Where PDFKit gives no sizes, as on a page whose two texts differ in length, as
+            // right-to-left pages, each box is weighed against the page's usual box height.
+            let heights = glyphs.boxes.compactMap { $0?.height }.filter { $0 > 0 }.sorted()
+            let usualHeight = heights.isEmpty ? 0 : heights[heights.count / 2]
             let usable = zip(glyphs.boxes, glyphs.sizes).compactMap { box, size -> CGRect? in
-                guard let box, size > 0, box.width > 0, box.height > 0, box.height <= 3 * size, box.width <= 4 * size else { return nil }
+                let scale = size > 0 ? size : usualHeight
+                guard let box, scale > 0, box.width > 0, box.height > 0, box.height <= 2 * scale, box.width <= 1.5 * scale else { return nil }
                 return box
             }
-            let found = visibility.unread(near: usable, in: raw)
+            let found = visibility.unread(near: usable, or: {
+                // Glyph-sized boxes alone, spaces aside: PDFKit's own boxes sit a character off, so a
+                // space beside a word it left out lends the next character a box over the word.
+                (0..<text.length).compactMap { index -> CGRect? in
+                    guard !TextLayer.isSpace(text.character(at: index)) else { return nil }
+                    let box = page.characterBounds(at: index)
+                    let size = glyphs.sizes.indices.contains(index) && glyphs.sizes[index] > 0 ? glyphs.sizes[index] : usualHeight
+                    guard size > 0, box.width > 0, box.height > 0, box.height <= 2 * size, box.width <= 1.5 * size else { return nil }
+                    return box
+                }
+            }, in: raw)
             let unread = found.places.map { place in
                 Unread(box: Box(x: Double((place.rect.minX - crop.minX) / width), y: Double((crop.maxY - place.rect.maxY) / height),
                                 width: Double(place.rect.width / width), height: Double(place.rect.height / height)),

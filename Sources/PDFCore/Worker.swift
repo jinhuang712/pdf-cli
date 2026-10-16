@@ -202,10 +202,11 @@ public enum Worker {
                 (layer, method) = await readTextLayer(page, atRisk: repairSpaces || check.pageAtRisk)
                 // A page whose drawn text PDFKit mostly left out of the page's text, as one set in
                 // Type 3 fonts with no text map, is read by OCR, as a page with no usable text
-                // layer is; the layer stays for `--raw`. Where OCR cannot read it, the layer
-                // serves, its places flagged.
+                // layer is; the layer stays for `--raw`. Only where OCR reads clearly more than the
+                // layer holds: where it does not, the layer was whole and its places a mistake, as
+                // OCR read a page of Arabic letters worse. Otherwise the layer serves, flagged.
                 if let share = layer.unreadShare, share >= OCR.unreadShare, var read = await OCR.pageText(page, check: true),
-                   !OCR.lostText(ocr: read, layer: layer) {
+                   OCR.readsMore(ocr: read, layer: layer) {
                     let replaced = layer.blocks.map(\.visibleText).filter { !$0.isEmpty }.joined(separator: "\n")
                     if !replaced.isEmpty { read.replacedText = replaced }
                     layer = read
