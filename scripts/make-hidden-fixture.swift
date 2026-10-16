@@ -4,7 +4,8 @@
 // "visible: …", hold text a reader can see in an unusual way, which must read as text.
 //
 // Also testdata/hidden/broken.pdf: pages drawn in ways that once crashed the check, each with
-// visible lines that must read as text.
+// visible lines that must read as text; and testdata/hidden/unread.pdf: a page whose drawn text
+// PDFKit leaves out of the page's text, and a control it reads.
 //
 // The PDFs are written by hand, so each trick is exactly the drawing command it names.
 //
@@ -432,3 +433,27 @@ try broken.write([
 ], resources: "<< /Font << /F1 \(brokenFont) 0 R /W1 \(farWidths) 0 R /W2 \(farRange) 0 R /W3 \(backRange) 0 R /T3 \(farType3) 0 R "
     + "/TT \(farTrueType) 0 R >> "
     + "/XObject << /Pop \(popper) 0 R /Im1 \(brokenTexture) 0 R /Wide \(wideMasked) 0 R /Square \(squareMasked) 0 R >> >>", to: "broken.pdf")
+
+// Text PDFKit leaves out: a Type 3 font whose glyphs, boxes, have no text map, so PDFKit gives no
+// text for the line it draws; and the same font with a text map, which PDFKit reads.
+let unread = Writer()
+let unreadFont = unread.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>")
+let unreadGlyph = unread.add(stream: "", "500 0 0 0 450 700 d1 0 0 450 700 re f\n")
+let boxesDescriptor = unread.add("<< /Type /FontDescriptor /FontName /Boxes /Flags 4 /FontBBox [0 0 500 700] /ItalicAngle 0 "
+                                 + "/Ascent 700 /Descent 0 /CapHeight 700 /StemV 80 >>")
+let boxesFont = "/Type /Font /Subtype /Type3 /FontBBox [0 0 500 700] /FontMatrix [0.001 0 0 0.001 0 0] "
+    + "/FontDescriptor \(boxesDescriptor) 0 R "
+    + "/CharProcs << /box \(unreadGlyph) 0 R >> /Encoding << /Type /Encoding /Differences [65 /box 66 /box 67 /box] >> "
+    + "/FirstChar 65 /LastChar 67 /Widths [600 600 600]"
+let unmapped = unread.add("<< \(boxesFont) >>")
+let textMap = unread.add(stream: "", """
+    /CIDInit /ProcSet findresource begin 12 dict begin begincmap /CMapName /Boxes def
+    1 begincodespacerange <00> <FF> endcodespacerange
+    3 beginbfchar <41> <0041> <42> <0042> <43> <0043> endbfchar
+    endcmap CMapName currentdict /CMap defineresource pop end end
+    """)
+let mapped = unread.add("<< \(boxesFont) /ToUnicode \(textMap) 0 R >>")
+try unread.write([
+    Page(name: "text in a Type 3 font with no text map", content: visible + "BT /U 12 Tf 72 680 Td (ABCABCABC) Tj ET\n"),
+    Page(name: "visible: the same font with a text map", content: visible + "BT /M 12 Tf 72 680 Td (ABCABCABC) Tj ET\n"),
+], resources: "<< /Font << /F1 \(unreadFont) 0 R /U \(unmapped) 0 R /M \(mapped) 0 R >> >>", to: "unread.pdf")

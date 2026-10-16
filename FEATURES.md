@@ -250,8 +250,9 @@ A page reads below the quality bar when:
 | The text layer looks garbled or disagrees with the page image, and OCR could not read the page | The share of the layer's characters that are letters or digits |
 | The fonts hide the spaces between words, and OCR could not read the page to restore them | None |
 | OCR read the page, but its second reading, which checks the first, failed | None |
+| The page draws text, with ink, that PDFKit left out of its text, as a Type 3 font's line with no text map | None |
 
-When only one block is in doubt, only that block is replaced, and the rest of the page reads normally. The crop command covers the smallest region that holds the doubt, with the lines around it: a few lines, a paragraph, a table or the whole page. A small crop costs the agent fewer image tokens and stays sharp.
+When only one block is in doubt, only that block is replaced, and the rest of the page reads normally. Text PDFKit left out has no block: a failure block for each place, at most 20 a page, gives a crop command for it, after the page's text, and `--raw` shows what its strings spell by their codes, which for a font with no text map may not be what it shows. The crop command covers the smallest region that holds the doubt, with the lines around it: a few lines, a paragraph, a table or the whole page. A small crop costs the agent fewer image tokens and stays sharp.
 
 When two readings of a word differ in where its words break, the paragraph keeps the text layer's reading, and an unsure block after it shows both, limited to the words that differ:
 

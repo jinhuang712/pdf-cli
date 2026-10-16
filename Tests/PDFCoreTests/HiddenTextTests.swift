@@ -152,6 +152,30 @@ import Testing
         #expect(layer.blocks.map(\.visibleText).joined(separator: " ").contains("Visible words after the trick on this page."))
     }
 
+    /// Text a page draws that PDFKit leaves out, a Type 3 font's line with no text map, is found
+    /// where it is drawn, and flags the page; the same font with a text map reads as text.
+    @Test func textPDFKitLeavesOutFlagsThePage() throws {
+        let url = Self.fixture.deletingLastPathComponent().appendingPathComponent("unread.pdf")
+        let missing = try layer(0, in: url)
+        let place = try #require(missing.unread?.first)
+        #expect(missing.unread?.count == 1)
+        #expect(place.text == "ABCABCABC")
+        #expect(abs(place.box.y - 0.124) < 0.02 && abs(place.box.x - 0.112) < 0.02)
+        let data = String(decoding: try JSONEncoder().encode(missing), as: UTF8.self)
+        let result = PageResult(status: .ok, method: "pdfkit", text: missing.text, reason: "", parseMillis: 1, data: data)
+        #expect(Quality.judge(result).status == .lowQuality)
+        let page = Output.Page(index: 0, result: result, key: "k")
+        let normal = Output.pageBlocks(page, picks: [:], path: "unread.pdf", raw: false).units.flatMap(\.blocks)
+        let failure = try #require(normal.first { $0.kind == .failure })
+        #expect(failure.reason == "the page draws text here that PDFKit left out of its text")
+        #expect(failure.commands?["crop"]?.hasPrefix("pdf crop unread.pdf --page 1 --bbox 0.10,0.11,") == true)
+        let raw = Output.pageBlocks(page, picks: [:], path: "unread.pdf", raw: true).units.flatMap(\.blocks)
+        #expect(raw.contains { $0.kind == .doubtful && $0.block == missing.blocks.count + 1 && $0.text == "as its codes spell it: ABCABCABC" })
+        let mapped = try layer(1, in: url)
+        #expect(mapped.unread == nil)
+        #expect(mapped.text.contains("ABCABCABC"))
+    }
+
     /// Pages drawn in ways that once crashed the check read, and their visible lines stay text.
     @Test(arguments: 0..<11)
     func pagesThatCrashedTheCheckRead(page index: Int) throws {

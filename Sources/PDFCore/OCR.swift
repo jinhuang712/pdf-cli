@@ -35,6 +35,10 @@ enum OCR {
     ///
     /// A run of a leader mark, such as the dots in a contents line or the blank of a form,
     /// counts as one character.
+    /// The share of a page's drawn glyphs PDFKit may leave out of its text before OCR reads the
+    /// page instead: the TeX Live manual of musical notation lost about nine in ten on its first page.
+    static let unreadShare = 0.3
+
     static func needed(text: String, images: Int) -> Bool {
         let (visible, usable, bad) = census(text)
         if images > 0 && (usable < 10 || usable * 10 < visible * 3) { return true }

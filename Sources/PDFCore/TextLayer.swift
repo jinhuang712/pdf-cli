@@ -74,6 +74,14 @@ public struct Unsure: Codable, Equatable, Sendable {
     public var box: Box
 }
 
+/// A place where a page draws text, with ink, that PDFKit left out of the page's text: where, in
+/// fractions of the page from its top left, and what the strings there spell by their codes, which
+/// for a font without a text map may not be what they show.
+public struct Unread: Codable, Equatable, Sendable {
+    public var box: Box
+    public var text: String
+}
+
 /// A page's text layer, as the parse stores it.
 public struct PageText: Codable, Equatable, Sendable {
     public var blocks: [TextBlock]
@@ -112,6 +120,10 @@ public struct PageText: Codable, Equatable, Sendable {
     /// The check for hidden text stopped at a limit on this page, as forms nested deeper than it
     /// reads, so some hidden text may read as text.
     public var hiddenCheckIncomplete: Bool? = nil
+    /// Places where the page draws text, with ink, that PDFKit left out of the page's text, and
+    /// the share of the glyphs the page draws to show that they hold.
+    public var unread: [Unread]? = nil
+    public var unreadShare: Double? = nil
 
     public var text: String { blocks.map(\.text).joined(separator: "\n\n") }
 }
@@ -296,6 +308,27 @@ enum TextLayer {
                              runTogether: TextCleanup.runTogetherWords(joined))
         if let offPage = visibility?.drawing.offPage.filter({ !$0.isEmpty }), !offPage.isEmpty { layer.offPage = offPage }
         if visibility?.drawing.incomplete == true { layer.hiddenCheckIncomplete = true }
+        if let visibility {
+            let width = max(crop.width, 1), height = max(crop.height, 1)
+            // A character's box no taller than 3 times its font size and no wider than 4: PDFKit gave
+            // one a box 13 times as wide as its size, a line long, whose center lay on the next
+            // line's empty place. Letters placed right to left get boxes of a negative width,
+            // which `width` gives as positive.
+            let usable = zip(glyphs.boxes, glyphs.sizes).compactMap { box, size -> CGRect? in
+                guard let box, size > 0, box.width > 0, box.height > 0, box.height <= 3 * size, box.width <= 4 * size else { return nil }
+                return box
+            }
+            let found = visibility.unread(near: usable, in: raw)
+            let unread = found.places.map { place in
+                Unread(box: Box(x: Double((place.rect.minX - crop.minX) / width), y: Double((crop.maxY - place.rect.maxY) / height),
+                                width: Double(place.rect.width / width), height: Double(place.rect.height / height)),
+                       text: place.text)
+            }
+            if !unread.isEmpty {
+                layer.unread = unread
+                layer.unreadShare = found.share
+            }
+        }
         return layer
     }
 

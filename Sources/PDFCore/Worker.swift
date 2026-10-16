@@ -176,7 +176,7 @@ public enum Worker {
             let key = keyer.key(for: reference)
             let check = FontCheck(page: reference)
             var layer: PageText
-            let method: String
+            var method: String
             if readAllByOCR || OCR.needed(text: page.string ?? "", images: check.images) {
                 let textLayer = TextLayer.read(page, visibility: Visibility(page: page))
                 if var read = await OCR.pageText(page, check: true), !OCR.lostText(ocr: read, layer: textLayer) {
@@ -200,6 +200,17 @@ public enum Worker {
                 }
             } else {
                 (layer, method) = await readTextLayer(page, atRisk: repairSpaces || check.pageAtRisk)
+                // A page whose drawn text PDFKit mostly left out of the page's text, as one set in
+                // Type 3 fonts with no text map, is read by OCR, as a page with no usable text
+                // layer is; the layer stays for `--raw`. Where OCR cannot read it, the layer
+                // serves, its places flagged.
+                if let share = layer.unreadShare, share >= OCR.unreadShare, var read = await OCR.pageText(page, check: true),
+                   !OCR.lostText(ocr: read, layer: layer) {
+                    let replaced = layer.blocks.map(\.visibleText).filter { !$0.isEmpty }.joined(separator: "\n")
+                    if !replaced.isEmpty { read.replacedText = replaced }
+                    layer = read
+                    method = "ocr"
+                }
             }
             if let label = page.label, !label.isEmpty, label != String(index + 1) { layer.label = label }
             // Words still run together, which OCR could not break either, get a second reading

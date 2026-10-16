@@ -308,6 +308,58 @@ struct Visibility {
         return inked
     }
 
+    /// Strings the page draws to show, with ink, where PDFKit has no text: no box of a character
+    /// of PDFKit's near them, and no text of the page's that spells them, as when its text map
+    /// leaves out a Type 3 font's glyphs. Strings of at least 3 glyphs, along the page's axes,
+    /// on the page; those on one line join. At most 20 places a page, each with what its
+    /// strings spell, which for a font without a text map may not be what it shows.
+    /// - Parameters:
+    ///   - boxes: PDFKit's boxes of the page's characters, in page space, those of use: PDFKit gives
+    ///     some a box a line long, whose center lies between lines.
+    ///   - text: PDFKit's text of the page.
+    /// - Returns: the places, and the share of the glyphs the page draws to show that they hold.
+    func unread(near boxes: [CGRect], in text: String) -> (places: [(rect: CGRect, text: String)], share: Double) {
+        let cell: CGFloat = 12
+        func key(_ x: CGFloat, _ y: CGFloat) -> Int {
+            Visibility.pixel(((x - crop.minX) / cell).rounded(.down)) &* 100_003 &+ Visibility.pixel(((y - crop.minY) / cell).rounded(.down))
+        }
+        var centers: [Int: [CGPoint]] = [:]
+        for box in boxes {
+            centers[key(box.midX, box.midY), default: []].append(CGPoint(x: box.midX, y: box.midY))
+        }
+        func pdfKitHasText(in area: CGRect) -> Bool {
+            let x0 = Int(((area.minX - crop.minX) / cell).rounded(.down)), x1 = Int(((area.maxX - crop.minX) / cell).rounded(.down))
+            let y0 = Int(((area.minY - crop.minY) / cell).rounded(.down)), y1 = Int(((area.maxY - crop.minY) / cell).rounded(.down))
+            guard x1 - x0 < 400, y1 - y0 < 400 else { return true }
+            for x in x0...x1 {
+                for y in y0...y1 where centers[x &* 100_003 &+ y]?.contains(where: { area.contains($0) }) == true { return true }
+            }
+            return false
+        }
+        let spelled = Visibility.normalized(text)
+        var found: [(rect: CGRect, text: String)] = []
+        var drawn = 0, missing = 0
+        for run in drawing.runs where run.kind == .shown && crop.contains(CGPoint(x: run.bounds.midX, y: run.bounds.midY)) {
+            drawn += run.glyphs
+        }
+        for run in drawing.runs where run.kind == .shown && run.glyphs >= 3 && run.toText.axisAligned {
+            let rect = run.bounds.intersection(crop)
+            guard !rect.isNull, rect.width > 0, rect.height > 0, crop.contains(CGPoint(x: run.bounds.midX, y: run.bounds.midY)),
+                  !pdfKitHasText(in: run.bounds.insetBy(dx: -0.5 * run.height, dy: -0.5 * run.height)) else { continue }
+            let own = Visibility.normalized(run.shown)
+            if own.count >= 3, spelled.contains(own) { continue }
+            guard let ink = ink(in: rect), ink.count >= 2, ink.share >= 0.005 else { continue }
+            missing += run.glyphs
+            let line = TextCleanup.line(run.shown)
+            if let last = found.last, last.rect.insetBy(dx: -run.height, dy: -0.3 * run.height).intersects(rect) {
+                found[found.count - 1] = (last.rect.union(rect), String((last.text + " " + line).prefix(300)))
+            } else if found.count < 20 {
+                found.append((rect, String(line.prefix(300))))
+            }
+        }
+        return (found, drawn > 0 ? Double(missing) / Double(drawn) : 0)
+    }
+
     /// What an image or shape over a word does to it: hides it, or shows it, as a scan's picture
     /// of its text layer does.
     enum Under: Equatable {
@@ -671,6 +723,9 @@ final class Drawing {
         var across: Bool
         /// Its bounds in page space, for a quick test.
         var bounds: CGRect
+        /// How many glyphs this string draws, and its own text, as its codes spell it.
+        var glyphs: Int = 0
+        var shown: String = ""
 
         func holds(_ point: CGPoint) -> Bool {
             guard bounds.contains(point) else { return false }
@@ -1224,7 +1279,8 @@ final class Drawing {
         anyCrushed = anyCrushed || crushed
         runs.append(TextRun(order: order, toText: placed.inverted(), reach: shown.advance, vertical: vertical, size: size, kind: kind,
                             crushed: crushed, text: spelling ?? "", height: height,
-                            across: abs(direction.x) >= abs(direction.y), bounds: local.applying(placed)))
+                            across: abs(direction.x) >= abs(direction.y), bounds: local.applying(placed),
+                            glyphs: shown.glyphs, shown: shown.text))
     }
 
     func image(known: Bool, mask: CGPDFStreamRef? = nil) {

@@ -74,6 +74,11 @@ public enum Quality {
                                     score: agreement, blocks: [index]))
             }
         }
+        // Text the page draws that PDFKit left out: no block holds it, so the doubt names none,
+        // and the output gives each place its own failure block.
+        if let unread = layer.unread, unread > 0 {
+            doubts.append(Doubt(kind: .lowQuality, reason: "the page draws text here that PDFKit left out of its text", blocks: []))
+        }
         let unsure = layer.unsure ?? []
         let status: PageQuality.Status = !doubts.isEmpty ? .lowQuality : unsure.isEmpty ? .ok : .unsure
         return PageQuality(status: status, doubts: doubts, unsure: unsure)
@@ -91,6 +96,8 @@ public struct PageMeasures: Codable, Equatable, Sendable {
     /// block.
     public var blockAgreements: [Double?]?
     public var unsure: [Unsure]?
+    /// How many places the page draws text that PDFKit left out.
+    public var unread: Int?
 
     public init() {}
 
@@ -102,6 +109,7 @@ public struct PageMeasures: Codable, Equatable, Sendable {
         let blocks = layer.blocks.map(\.agreement)
         blockAgreements = blocks.contains { $0 != nil } ? blocks : nil
         unsure = layer.unsure?.isEmpty == false ? layer.unsure : nil
+        unread = layer.unread.map(\.count)
     }
 
     /// The measures as the cache stores them.

@@ -167,6 +167,24 @@ public enum Output {
                 }
                 result.units.append(unit)
             }
+            // Text the page draws that PDFKit left out has no block either: a failure block for
+            // each place says where to look, and `--raw` gives what its strings spell.
+            if let unread = layer.unread, let doubt = quality.doubts.first(where: { $0.blocks?.isEmpty == true }) {
+                for (position, place) in unread.enumerated() {
+                    let region = Box(x: max(0, place.box.x - 0.01), y: max(0, place.box.y - 0.01),
+                                     width: min(1, place.box.width + 0.02), height: min(1, place.box.height + 0.02))
+                    var unit = Unit(blocks: [failureBlock(doubt, page: number, block: nil, region: region, path: path, raw: raw)],
+                                    flag: .lowQuality)
+                    if raw {
+                        // Numbered after the page's last block, so a read that goes on from it skips them.
+                        unit.blocks.append(Block(kind: .doubtful, page: number, block: layer.blocks.count + 1 + position, box: place.box,
+                                                 text: "as its codes spell it: " + place.text, status: doubt.kind.rawValue))
+                    } else {
+                        unit.doubtful = 1
+                    }
+                    result.units.append(unit)
+                }
+            }
             // Text placed off the page has no block: PDFKit leaves it out of the page's text,
             // and only the drawing commands spell it.
             if let offPage = layer.offPage, !offPage.isEmpty {

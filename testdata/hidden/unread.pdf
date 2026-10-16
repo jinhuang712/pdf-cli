@@ -1,0 +1,79 @@
+%PDF-1.7
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R  >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [9 0 R 11 0 R] /Count 2 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+4 0 obj
+<<  /Length 38 >>
+stream
+500 0 0 0 450 700 d1 0 0 450 700 re f
+
+endstream
+endobj
+5 0 obj
+<< /Type /FontDescriptor /FontName /Boxes /Flags 4 /FontBBox [0 0 500 700] /ItalicAngle 0 /Ascent 700 /Descent 0 /CapHeight 700 /StemV 80 >>
+endobj
+6 0 obj
+<< /Type /Font /Subtype /Type3 /FontBBox [0 0 500 700] /FontMatrix [0.001 0 0 0.001 0 0] /FontDescriptor 5 0 R /CharProcs << /box 4 0 R >> /Encoding << /Type /Encoding /Differences [65 /box 66 /box 67 /box] >> /FirstChar 65 /LastChar 67 /Widths [600 600 600] >>
+endobj
+7 0 obj
+<<  /Length 253 >>
+stream
+/CIDInit /ProcSet findresource begin 12 dict begin begincmap /CMapName /Boxes def
+1 begincodespacerange <00> <FF> endcodespacerange
+3 beginbfchar <41> <0041> <42> <0042> <43> <0043> endbfchar
+endcmap CMapName currentdict /CMap defineresource pop end end
+endstream
+endobj
+8 0 obj
+<< /Type /Font /Subtype /Type3 /FontBBox [0 0 500 700] /FontMatrix [0.001 0 0 0.001 0 0] /FontDescriptor 5 0 R /CharProcs << /box 4 0 R >> /Encoding << /Type /Encoding /Differences [65 /box 66 /box 67 /box] >> /FirstChar 65 /LastChar 67 /Widths [600 600 600] /ToUnicode 7 0 R >>
+endobj
+9 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 10 0 R /Resources << /Font << /F1 3 0 R /U 6 0 R /M 8 0 R >> >>  >>
+endobj
+10 0 obj
+<<  /Length 195 >>
+stream
+BT /F1 12.0 Tf 72 720 Td (Visible words before the trick on this page.) Tj ET
+BT /F1 12.0 Tf 72 600 Td (Visible words after the trick on this page.) Tj ET
+BT /U 12 Tf 72 680 Td (ABCABCABC) Tj ET
+
+endstream
+endobj
+11 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 12 0 R /Resources << /Font << /F1 3 0 R /U 6 0 R /M 8 0 R >> >>  >>
+endobj
+12 0 obj
+<<  /Length 195 >>
+stream
+BT /F1 12.0 Tf 72 720 Td (Visible words before the trick on this page.) Tj ET
+BT /F1 12.0 Tf 72 600 Td (Visible words after the trick on this page.) Tj ET
+BT /M 12 Tf 72 680 Td (ABCABCABC) Tj ET
+
+endstream
+endobj
+xref
+0 13
+0000000000 65535 f 
+0000000009 00000 n 
+0000000059 00000 n 
+0000000123 00000 n 
+0000000220 00000 n 
+0000000309 00000 n 
+0000000465 00000 n 
+0000000742 00000 n 
+0000001047 00000 n 
+0000001341 00000 n 
+0000001487 00000 n 
+0000001735 00000 n 
+0000001882 00000 n 
+trailer
+<< /Size 13 /Root 1 0 R >>
+startxref
+2130
+%%EOF
