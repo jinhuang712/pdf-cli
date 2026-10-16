@@ -157,21 +157,28 @@ enum OCR {
                             runTogether: TextCleanup.runTogetherWords(joined),
                             confidence: confidences.isEmpty ? nil : confidences.reduce(0, +) / Double(confidences.count),
                             ocrEngine: usesDocumentRecognizer ? "document recognizer" : "text recognizer")
-        if check, let lines = checkReading(image) {
-            // Lines, not blocks, are compared, as in the measurements: a block's text has its
-            // line-end hyphens resolved, and the second reading's lines do not.
-            let checked = lines.map { (box: pageBox($0.box, rotation: rotation), units: units($0.text)) }
-            read.agreement = agreement(units: read.blocks.flatMap(\.lines).flatMap { units($0.text) },
-                                       check: Set(checked.flatMap(\.units)))
-            for index in read.blocks.indices {
-                let box = read.blocks[index].box
-                let inside = checked.filter { line in
-                    let x = line.box.x + line.box.width / 2, y = line.box.y + line.box.height / 2
-                    return x >= box.x - 0.005 && x <= box.x + box.width + 0.005
-                        && y >= box.y - 0.005 && y <= box.y + box.height + 0.005
+        if check {
+            // A test plants a failed second reading with "ocr-check-fail:N" for page N.
+            let planted = Env.testFault.map { $0.kind == "ocr-check-fail" && $0.page == (page.pageRef?.pageNumber ?? 0) - 1 } == true
+            if let lines = planted ? nil : checkReading(image) {
+                // Lines, not blocks, are compared, as in the measurements: a block's text has its
+                // line-end hyphens resolved, and the second reading's lines do not.
+                let checked = lines.map { (box: pageBox($0.box, rotation: rotation), units: units($0.text)) }
+                read.agreement = agreement(units: read.blocks.flatMap(\.lines).flatMap { units($0.text) },
+                                           check: Set(checked.flatMap(\.units)))
+                for index in read.blocks.indices {
+                    let box = read.blocks[index].box
+                    let inside = checked.filter { line in
+                        let x = line.box.x + line.box.width / 2, y = line.box.y + line.box.height / 2
+                        return x >= box.x - 0.005 && x <= box.x + box.width + 0.005
+                            && y >= box.y - 0.005 && y <= box.y + box.height + 0.005
+                    }
+                    read.blocks[index].agreement = agreement(units: read.blocks[index].lines.flatMap { units($0.text) },
+                                                             check: Set(inside.flatMap(\.units)))
                 }
-                read.blocks[index].agreement = agreement(units: read.blocks[index].lines.flatMap { units($0.text) },
-                                                         check: Set(inside.flatMap(\.units)))
+            } else {
+                // The second reading failed, so nothing checks the first: the page says so.
+                read.checkFailed = true
             }
         }
         return read

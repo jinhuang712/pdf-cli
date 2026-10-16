@@ -249,6 +249,7 @@ A page reads below the quality bar when:
 | A scan's two OCR readings disagree, on the whole page or in one block | The share of words the readings share |
 | The text layer looks garbled or disagrees with the page image, and OCR could not read the page | The share of the layer's characters that are letters or digits |
 | The fonts hide the spaces between words, and OCR could not read the page to restore them | None |
+| OCR read the page, but its second reading, which checks the first, failed | None |
 
 When only one block is in doubt, only that block is replaced, and the rest of the page reads normally. The crop command covers the smallest region that holds the doubt, with the lines around it: a few lines, a paragraph, a table or the whole page. A small crop costs the agent fewer image tokens and stays sharp.
 
@@ -268,7 +269,7 @@ Reading [a] is the text layer's. Reading [b] breaks the words where Apple OCR do
 
 - The summary line at the top counts every flagged page, with its status: `failed`, `low-quality` or `unsure`. It also counts what normal output set aside, such as doubtful blocks and a scan's replaced text layer, with the flag that shows them.
 - A low-quality page is flagged the same way as a failed one, with its reason and its score.
-- A file that PDFKit cannot open fails as a whole, in one line that names the reason: not a PDF, damaged, or locked by a password. A locked file points to `pdf add <path> --password <pw>`.
+- A file that PDFKit cannot open fails as a whole, in one line that names the reason: not a PDF, damaged, locked by a password, or slow to open. A file slow to open fails only the command that tried it, and the next command tries again. A locked file points to `pdf add <path> --password <pw>`.
 - The exit code tells success from failure:
 
 | Exit code | Meaning |

@@ -74,6 +74,15 @@ public final class Reader: Sendable {
                     try store.forgetEntry(path: path)
                 }
                 continue
+            case .failed(let reason)? where reason.hasPrefix(OpenFailure.slow) && spawns == 0:
+                // A file slow to open failed the command that tried it; this one tries again,
+                // once no runner still works on it.
+                if try store.isLockAlive("path:" + path) {
+                    Thread.sleep(forTimeInterval: 0.05)
+                } else {
+                    try store.forgetEntry(path: path)
+                }
+                continue
             case .failed(let reason)?:
                 return .fileFailed(reason: reason)
             case .document(let id)?:

@@ -112,6 +112,20 @@ import Testing
         #expect(quality.wholePage)
     }
 
+    /// OCR text that no second reading checked is in doubt, though it has no score, and its
+    /// block says why and how to read the page instead.
+    @Test func anOCRPageWhoseSecondReadingFailedIsLowQuality() throws {
+        var read = layer(["Read by OCR, with nothing to check it against."])
+        read.checkFailed = true
+        let quality = Quality.judge(try page(0, read, method: "ocr").result)
+        #expect(quality.status == .lowQuality)
+        #expect(quality.wholePage)
+        #expect(quality.doubts.first?.score == nil)
+        let report = Output.render(file: "scan.pdf", pageCount: 1, pages: [try page(0, read, method: "ocr")])
+        #expect(report.text.contains("⚠ p.1 low-quality: OCR read the page, but its second reading, which checks the first, failed"))
+        #expect(report.text.contains("read it as an image: pdf crop scan.pdf --page 1"))
+    }
+
     @Test func wordsWithNoSecondReadingAskTheAgentToLook() throws {
         var read = layer(["Twoprompttemplateswereused here."])
         read.unsure = [Unsure(block: 0, offset: 0, readings: ["Twoprompttemplateswereused"], box: box)]

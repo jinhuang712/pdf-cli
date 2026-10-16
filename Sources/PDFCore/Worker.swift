@@ -51,6 +51,7 @@ public enum Worker {
     /// Reports the key of every page from `start` on, with the page's font check.
     public static func index(path: String, from start: Int) -> Int32 {
         watchParent()
+        plantedFault(at: 0, phase: "open-")
         let url = URL(fileURLWithPath: path)
         guard let document = CGPDFDocument(url as CFURL) else {
             emit(WorkerEvent(kind: .openFailed, reason: OpenFailure.classify(url: url)))
@@ -275,11 +276,12 @@ public enum Worker {
 
     /// Makes a test's planted fault happen: a hang, a runaway allocation or a crash. A fault
     /// named with the prefix "index-", such as "index-hang:3", happens while keys are read, and
-    /// one with "sample-", such as "sample-crash:0", in the sample check.
+    /// one with "sample-", such as "sample-crash:0", in the sample check, and "open-hang:0"
+    /// while the index opens the file.
     static func plantedFault(at index: Int, phase: String) {
         guard let fault = Env.testFault, fault.page == index, fault.kind.hasPrefix(phase) else { return }
         let kind = fault.kind.dropFirst(phase.count)
-        if phase.isEmpty && ["index-", "sample-", "facts-", "crop-"].contains(where: fault.kind.hasPrefix) { return }
+        if phase.isEmpty && ["index-", "sample-", "facts-", "crop-", "open-"].contains(where: fault.kind.hasPrefix) { return }
         switch kind {
         case "hang":
             while true { sleep(60) }
@@ -339,6 +341,9 @@ public enum OpenFailure {
     static let notPDF = "not a PDF"
     public static let locked = "locked by a password"
     static let damaged = "damaged: PDFKit could not open it"
+    /// A file that took too long to open: cached for the command that tried, and tried again by
+    /// the next one.
+    static let slow = "slow to open"
 
     /// Why a locked file stays locked: no password was given, or the one given does not open it.
     static var lockedReason: String {

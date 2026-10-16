@@ -59,7 +59,13 @@ public enum Quality {
                                 reason: "the fonts hide the spaces between words, and OCR could not read the page to restore them",
                                 blocks: nil))
         }
-        if let agreement = layer.agreement, agreement < OCR.agreementThreshold {
+        if layer.checkFailed == true {
+            // OCR's own confidence does not track its accuracy, so unchecked OCR text is in doubt
+            // (DESIGNS.md → Decision: two OCR readings compared, over OCR's own confidence).
+            doubts.append(Doubt(kind: .lowQuality,
+                                reason: "OCR read the page, but its second reading, which checks the first, failed",
+                                blocks: nil))
+        } else if let agreement = layer.agreement, agreement < OCR.agreementThreshold {
             doubts.append(Doubt(kind: .lowQuality, reason: "two OCR readings of the page disagree", score: agreement, blocks: nil))
         } else {
             for (index, block) in layer.blocks.enumerated() {

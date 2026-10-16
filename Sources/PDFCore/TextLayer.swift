@@ -92,6 +92,9 @@ public struct PageText: Codable, Equatable, Sendable {
     /// For a page read by OCR: the share of its words that a second OCR reading also finds. Nil
     /// when the page has too few words to judge, or the second reading failed.
     public var agreement: Double? = nil
+    /// For a page read by OCR: the second reading, which checks the first, failed, so the
+    /// page's text is unchecked.
+    public var checkFailed: Bool? = nil
     /// Words whose two readings differ in their breaks.
     public var unsure: [Unsure]? = nil
     /// For a text layer that looked garbled, so OCR was asked to read the page and could not:

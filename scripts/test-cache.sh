@@ -102,6 +102,16 @@ check "--raw shows its text, labelled" "\[low-quality\] TECH LIBRARY" "$(quality
 check "a file that PDFKit made carries the warning" "made or last saved by macOS PDFKit" \
     "$(quality read testdata/ocr/scan-no-text.pdf --page 1)"
 check "the text layer OCR replaced shows with --raw" "\[old OCR\]" "$(quality read testdata/ocr/scan-wrong-layer.pdf --page 1 --raw)"
+check "a scan page whose second OCR reading failed is low-quality" \
+    "p.1 low-quality: OCR read the page, but its second reading, which checks the first, failed" \
+    "$(PDF_CLI_HOME=$work/unchecked PDF_CLI_TEST_FAULT=ocr-check-fail:0 $pdf read testdata/ocr/scan-no-text.pdf --page 1 2>&1)"
+
+# A file slow to open is not damaged: the command that tried says so, and the next tries again.
+slowly() { PDF_CLI_HOME=$work/slow $pdf "$@" 2>&1; }
+check "a file slow to open fails that command, as slow, not damaged" \
+    "failed: slow to open: it took more than 2 s to open, twice; the next command tries again" \
+    "$(PDF_CLI_TEST_FAULT=open-hang:0 PDF_CLI_OPEN_TIME_LIMIT=2 slowly read $paper --page 1)"
+check "the next command opens it again" "read p.1 · flagged: none" "$(slowly read $paper --page 1)"
 check "a read whose every page failed exits 3" "exit 3" \
     "$(PDF_CLI_HOME=$work/failed PDF_CLI_PAGE_TIME_LIMIT=2 PDF_CLI_TEST_FAULT=hang:3 $pdf read $paper --page 4 2>&1; echo "exit $?")"
 

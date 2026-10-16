@@ -9,7 +9,7 @@ public enum Env {
     /// Part of every cache key. Raise it when a change alters what a parse produces, so each
     /// page is parsed again on its next read (DESIGNS.md → Decision: macOS updates leave the
     /// cache alone).
-    public static let parserVersion = 7
+    public static let parserVersion = 8
 
     static var variables: [String: String] { ProcessInfo.processInfo.environment }
 
@@ -36,6 +36,13 @@ public enum Env {
     /// How long one page may take before its worker is stopped and the page fails.
     public static var pageTimeLimit: TimeInterval {
         variables["PDF_CLI_PAGE_TIME_LIMIT"].flatMap(Double.init) ?? 30
+    }
+
+    /// How long a worker may stay silent while it opens the file, before its first event: a
+    /// large file, or one on a slow disk or network volume, can take far longer to open than a
+    /// page takes to read.
+    public static var openTimeLimit: TimeInterval {
+        variables["PDF_CLI_OPEN_TIME_LIMIT"].flatMap(Double.init) ?? 120
     }
 
     /// How much memory one worker may hold before it is stopped and its page fails.
