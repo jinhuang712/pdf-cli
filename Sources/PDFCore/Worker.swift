@@ -72,9 +72,17 @@ public enum Worker {
         }
         emit(WorkerEvent(kind: .opened, pageCount: count, producer: info("Producer"), title: info("Title")))
         var keyer = PageKeyer()
+        // One walk of the page tree, where CGPDF would number its pages alike: asking CGPDF for
+        // each page by its number took 17 s on a flat tree of 30,000 pages.
+        let tree = PageTree(document)
         for index in max(start, 0)..<max(count, start) {
             emit(WorkerEvent(kind: .start, page: index))
             plantedFault(at: index, phase: "index-")
+            if let dictionary = tree?.pages[index], let key = keyer.key(forDictionary: dictionary),
+               let check = FontCheck(pageDictionary: dictionary) {
+                emit(WorkerEvent(kind: .key, page: index, key: key, gaps: check.gaps, risky: check.risky))
+                continue
+            }
             guard let page = document.page(at: index + 1) else {
                 emit(WorkerEvent(kind: .key, page: index, key: PageKeys.missing))
                 continue

@@ -49,17 +49,26 @@ struct PageKeyer {
     private var cuts = 0
 
     mutating func key(for page: CGPDFPage) -> String {
+        key(PageGeometry(page), page.dictionary)
+    }
+
+    /// The key of the page whose dictionary is `dictionary`, the same as `key(for:)` gives the
+    /// page, or nil where its boxes or rotation take CGPDF to read (`PageGeometry`).
+    mutating func key(forDictionary dictionary: CGPDFDictionaryRef) -> String? {
+        PageGeometry(dictionary: dictionary).map { key($0, dictionary) }
+    }
+
+    private mutating func key(_ geometry: PageGeometry, _ dictionary: CGPDFDictionaryRef?) -> String {
         budget = PageKeyer.nodeBudget
         var hasher = SHA256()
         hasher.add(PageKeyer.version)
-        for box in [CGPDFBox.mediaBox, .cropBox] {
-            let rect = page.getBoxRect(box)
+        for rect in [geometry.mediaBox, geometry.cropBox] {
             for value in [rect.origin.x, rect.origin.y, rect.size.width, rect.size.height] {
                 hasher.add(String(Double(value).bitPattern))
             }
         }
-        hasher.add("rotate \(page.rotationAngle)")
-        guard let dictionary = page.dictionary else {
+        hasher.add("rotate \(geometry.rotation)")
+        guard let dictionary else {
             hasher.add("no dictionary")
             return Hashing.hex(hasher.finalize())
         }

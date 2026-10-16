@@ -176,6 +176,57 @@ public struct FontCheck: Sendable, Equatable {
         let stream = CGPDFContentStreamCreateWithPage(page)
         defer { CGPDFContentStreamRelease(stream) }
         FontCheck.run(stream, scan)
+        self.init(scan)
+    }
+
+    /// Measures the page whose dictionary is `dictionary`, as `init(page:)` does, reading its
+    /// content streams in turn. An operation split between two streams, which the format allows
+    /// and files hardly do, goes uncounted. Nil for a page whose contents are neither a stream nor
+    /// streams, or that has contents and no resources: the caller asks CGPDF for the page.
+    init?(pageDictionary dictionary: CGPDFDictionaryRef) {
+        let scan = Scan()
+        if let object = PageKeyer.inherited(dictionary, "Resources") {
+            var resources: CGPDFDictionaryRef?
+            guard CGPDFObjectGetValue(object, .dictionary, &resources) else { return nil }
+            scan.pageResources = resources
+        }
+        var streams: [CGPDFStreamRef] = []
+        if let object = PageKeyer.object(dictionary, "Contents") {
+            var stream: CGPDFStreamRef?
+            var array: CGPDFArrayRef?
+            if CGPDFObjectGetValue(object, .stream, &stream), let stream {
+                streams = [stream]
+            } else if CGPDFObjectGetValue(object, .array, &array), let array {
+                for index in 0..<CGPDFArrayGetCount(array) {
+                    var item: CGPDFStreamRef?
+                    guard CGPDFArrayGetStream(array, index, &item), let item else { return nil }
+                    streams.append(item)
+                }
+            } else {
+                return nil
+            }
+        }
+        if !streams.isEmpty {
+            guard let resources = scan.pageResources, let create = Self.createContentStream else { return nil }
+            for stream in streams {
+                guard let content = create(stream, resources, nil) else { return nil }
+                defer { CGPDFContentStreamRelease(content) }
+                FontCheck.run(content, scan)
+            }
+        }
+        self.init(scan)
+    }
+
+    /// `CGPDFContentStreamCreateWithStream`, which takes no parent stream in C, as its header
+    /// says, though Swift's import of it asks for one.
+    private typealias CreateContentStream = @convention(c) (CGPDFStreamRef, CGPDFDictionaryRef,
+                                                            CGPDFContentStreamRef?) -> CGPDFContentStreamRef?
+    private static let createContentStream: CreateContentStream? = {
+        guard let symbol = dlsym(dlopen(nil, RTLD_NOW), "CGPDFContentStreamCreateWithStream") else { return nil }
+        return unsafeBitCast(symbol, to: CreateContentStream.self)
+    }()
+
+    private init(_ scan: Scan) {
         images = scan.images
         let total = scan.byFont.values.reduce(0) { $0 + $1.gaps }
         for (_, entry) in scan.byFont where entry.gaps * 4 >= max(total, 1) {
