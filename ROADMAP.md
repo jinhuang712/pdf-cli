@@ -90,7 +90,7 @@ The spike shipped no features. It answered the riskiest questions.
   - [ ] M2.10 `pdf reparse`, plain and with `--step ocr`
   - Later: `--step vlm` (M3.3)
 - **Setup and doctor** (F12)
-  - [ ] M2.11 `pdf setup` and `pdf doctor`
+  - [ ] M2.11 `pdf setup` and `pdf doctor`, with the licence notice of every model `pdf setup` downloads: MIT covers only our own code
 - **Failure reports** (F8)
   - [ ] M2.12 The quality thresholds, tuned until G11 passes
 
