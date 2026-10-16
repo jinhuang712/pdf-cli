@@ -577,7 +577,7 @@ Task M1.3 made 33 scans from three pages, two arXiv papers and the 1951 NACA rep
 
 Pages between 80% and 90% right fell on either side. On the real samples, the two synthetic scans scored 0.98–1.00, and two NACA pages 0.91. The NACA cover scored 0.78: its small print had come back as "Corernment Printing Ofice.-Wathingion", and the check flagged it. Its blocks are too short to judge one by one, so the whole page went out as a failure block. The second reading costs about 0.8 s per page: a scan's first page came back in 1.74 s, against 0.90 s without it. Scans are outside goals G2 and G3.
 
-The quality is judged when a page is read, from the measures the parse stored, so a threshold tuned later applies to every cached page without parsing it again.
+The quality is judged when a page is read, from the measures the parse stored, so a threshold tuned later applies to every cached page without parsing it again. The measures are stored twice: in the page's layer, and on their own beside it, so `pdf ls` judges every page in the library without decoding a layer, 13 ms for 709 pages against 87 ms. A page cached before they were stored on their own gets them the first time a listing judges it.
 
 | Option | For | Against |
 |---|---|---|

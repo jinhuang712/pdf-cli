@@ -135,7 +135,9 @@ struct ListCommand: ParsableCommand {
         guard try store.entry(path: entry.path, stat: stat) != nil else { return "changed since it was read" }
         let keys = try store.pageKeys(docID: entry.docID)
         guard !keys.isEmpty else { return "not parsed" }
-        let results = try store.results(keys: keys)
+        // Judging needs no page's text, so a library of thousands of files lists without
+        // decoding one.
+        let results = try store.verdicts(keys: keys)
         let parsed = keys.indices.filter { results[keys[$0]] != nil }
         let pages = parsed.map { Output.Page(index: $0, result: results[keys[$0]]!, key: keys[$0]) }
         let flags = Output.flagged(pages, picks: try picks.picks(keys: keys)).map { "flagged: \($0)" }

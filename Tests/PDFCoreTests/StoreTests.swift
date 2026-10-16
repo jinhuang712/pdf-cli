@@ -146,4 +146,60 @@ import Testing
         }
         #expect(try store.results(keys: keys).count == 1200)
     }
+
+    /// A page judged from the measures the cache stores, as `pdf ls` judges it, gets the verdict
+    /// it gets from its layer, and a page cached before the measures were stored gets them.
+    @Test func pagesJudgeAlikeFromTheirLayerAndFromTheStoredMeasures() throws {
+        let box = Box(x: 0.1, y: 0.1, width: 0.5, height: 0.02)
+        func block(_ text: String, agreement: Double? = nil) -> TextBlock {
+            var block = TextBlock(text: text, box: box, lines: [TextLine(text: text, box: box)])
+            block.agreement = agreement
+            return block
+        }
+        var plain = PageText(blocks: [block("Plain text.")], words: 2, runTogether: 0)
+        var garbled = plain
+        garbled.layerScore = 0.2
+        var spaces = plain
+        spaces.spacesLost = true
+        var unchecked = plain
+        unchecked.checkFailed = true
+        var disagreeing = plain
+        disagreeing.agreement = 0.5
+        var oneBlock = PageText(blocks: [block("Read well.", agreement: 0.99), block("Read badly.", agreement: 0.4)],
+                                words: 4, runTogether: 0)
+        oneBlock.agreement = 0.95
+        var unsure = plain
+        unsure.unsure = [Unsure(block: 0, offset: 0, readings: ["Plaintext", "Plain text"], box: box)]
+        plain.label = "iv"
+        let layers = [plain, garbled, spaces, unchecked, disagreeing, oneBlock, unsure]
+        let store = try makeStore()
+        var keys: [String] = []
+        var expected: [String: PageQuality] = [:]
+        for (index, layer) in layers.enumerated() {
+            let data = String(decoding: try JSONEncoder().encode(layer), as: UTF8.self)
+            let result = PageResult(status: .ok, method: "ocr", text: layer.text, reason: "", parseMillis: 1, data: data)
+            keys.append("k\(index)")
+            expected["k\(index)"] = Quality.judge(result)
+            try store.saveResult(key: "k\(index)", result)
+        }
+        try store.saveResult(key: "failed", .failed("the page took too long"))
+        keys.append("failed")
+        expected["failed"] = Quality.judge(.failed("the page took too long"))
+        #expect(Set(expected.values.map(\.status)) == [.ok, .lowQuality, .unsure, .failed])
+
+        func judged(_ results: [String: PageResult]) -> [String: PageQuality] { results.mapValues(Quality.judge) }
+        #expect(judged(try store.results(keys: keys)) == expected)
+        let light = try store.verdicts(keys: keys)
+        #expect(light.values.allSatisfy { $0.data.isEmpty && $0.text.isEmpty })
+        #expect(judged(light) == expected)
+
+        // Pages cached before the measures were stored: judged from their layer, then stored.
+        try store.write { db in try db.execute(sql: "UPDATE page_result SET verdict = NULL") }
+        let old = try store.verdicts(keys: keys)
+        #expect(old.values.contains { !$0.data.isEmpty })
+        #expect(judged(old) == expected)
+        let filled = try store.verdicts(keys: keys)
+        #expect(filled.values.allSatisfy { $0.data.isEmpty && $0.verdict != nil })
+        #expect(judged(filled) == expected)
+    }
 }

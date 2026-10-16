@@ -59,9 +59,18 @@ public struct PageResult: Equatable, Sendable {
     public let parseMillis: Double
     /// The page's text layer as JSON: blocks and lines with their positions.
     public let data: String
+    /// What the verdict reads of the layer, as the cache stores it (`PageMeasures.stored`), or
+    /// nil where the cache has not stored it.
+    let verdict: String?
 
     public init(status: Status, method: String, text: String, reason: String,
                 macOSBuild: String = Env.macOSBuild, parseMillis: Double, data: String = "") {
+        self.init(status: status, method: method, text: text, reason: reason, macOSBuild: macOSBuild,
+                  parseMillis: parseMillis, data: data, verdict: nil)
+    }
+
+    init(status: Status, method: String, text: String, reason: String, macOSBuild: String, parseMillis: Double,
+         data: String, verdict: String?) {
         self.status = status
         self.method = method
         self.text = text
@@ -69,15 +78,59 @@ public struct PageResult: Equatable, Sendable {
         self.macOSBuild = macOSBuild
         self.parseMillis = parseMillis
         self.data = data
+        self.verdict = verdict
     }
 
-    /// The text layer, decoded. Nil for a failed page.
-    public var pageText: PageText? {
-        try? JSONDecoder().decode(PageText.self, from: Data(data.utf8))
+    /// The text layer, decoded once, however often a command asks: `pdf info` asks for each
+    /// page's several times. Nil for a failed page.
+    public var pageText: PageText? { decoded.layer(from: data) }
+
+    /// What the verdict reads of the layer: as the cache stored it, or else from the layer.
+    /// Nil where the layer cannot be read.
+    public var measures: PageMeasures? {
+        decoded.measures { verdict.map(PageMeasures.decode) ?? pageText.map(PageMeasures.init) }
     }
+
+    private let decoded = DecodedLayer()
 
     public static func failed(_ reason: String) -> PageResult {
         PageResult(status: .failed, method: "", text: "", reason: reason, parseMillis: 0)
+    }
+
+    public static func == (lhs: PageResult, rhs: PageResult) -> Bool {
+        lhs.status == rhs.status && lhs.method == rhs.method && lhs.text == rhs.text && lhs.reason == rhs.reason
+            && lhs.macOSBuild == rhs.macOSBuild && lhs.parseMillis == rhs.parseMillis && lhs.data == rhs.data
+    }
+}
+
+/// A page's text layer and measures, each decoded the first time it is asked for. Copies of a
+/// result share them, and a result's data never changes.
+final class DecodedLayer: @unchecked Sendable {
+    private let lock = NSLock()
+    private var layer: PageText??
+    private var measures: PageMeasures??
+
+    func layer(from data: String) -> PageText? {
+        lock.lock()
+        defer { lock.unlock() }
+        if let layer { return layer }
+        let decoded = try? JSONDecoder().decode(PageText.self, from: Data(data.utf8))
+        layer = .some(decoded)
+        return decoded
+    }
+
+    /// The measures, from `read` the first time. `read` may ask for the layer, so it runs
+    /// outside the lock.
+    func measures(_ read: () -> PageMeasures?) -> PageMeasures? {
+        lock.lock()
+        let known = measures
+        lock.unlock()
+        if let known { return known }
+        let value = read()
+        lock.lock()
+        measures = .some(value)
+        lock.unlock()
+        return value
     }
 }
 
@@ -125,7 +178,7 @@ public final class Store: Sendable {
         }
     }
 
-    static let schemaVersion = 7
+    static let schemaVersion = 8
 
     static func createSchema(_ db: Database) throws {
         let version = try Int.fetchOne(db, sql: "PRAGMA user_version") ?? 0
@@ -136,7 +189,10 @@ public final class Store: Sendable {
         // Version 4: whether PDFKit saved the document.
         // Version 5: the document's title, and the index checks each file entry ran.
         // Version 6: each file's facts.
+        // Version 8: what the verdict reads of each page's layer, so a listing need not decode
+        // it. Pages cached before it have none until a listing first judges them.
         for (table, column, type) in [("page_result", "data", "TEXT NOT NULL DEFAULT ''"),
+                                      ("page_result", "verdict", "TEXT"),
                                       ("document", "spaces_at_risk", "INTEGER NOT NULL DEFAULT 0"),
                                       ("document", "needs_ocr", "INTEGER NOT NULL DEFAULT 0"),
                                       ("document", "saved_by_pdfkit", "INTEGER NOT NULL DEFAULT 0"),
@@ -369,11 +425,60 @@ public final class Store: Sendable {
                     found[row["page_key"]] = PageResult(
                         status: PageResult.Status(rawValue: row["status"]) ?? .failed,
                         method: row["method"], text: row["text"], reason: row["reason"],
-                        macOSBuild: row["macos_build"], parseMillis: row["parse_ms"], data: row["data"])
+                        macOSBuild: row["macos_build"], parseMillis: row["parse_ms"], data: row["data"],
+                        verdict: row["verdict"])
                 }
             }
             return found
         }
+    }
+
+    /// The results of these keys for judging alone, as `pdf ls` judges every page in the
+    /// library: each without its text or layer, and with what the verdict reads of the layer.
+    /// A result cached before that was stored comes with its layer, and gets it stored now.
+    public func verdicts(keys: [String]) throws -> [String: PageResult] {
+        let unique = Array(Set(keys))
+        var found: [String: PageResult] = [:]
+        try pool.read { db in
+            for chunk in stride(from: 0, to: unique.count, by: 500).map({ Array(unique[$0..<min($0 + 500, unique.count)]) }) {
+                let marks = Array(repeating: "?", count: chunk.count).joined(separator: ",")
+                let rows = try Row.fetchAll(db, sql: """
+                    SELECT page_key, status, method, reason, macos_build, parse_ms, verdict,
+                           CASE WHEN verdict IS NULL THEN data ELSE '' END AS data
+                    FROM page_result WHERE parser_version = ? AND page_key IN (\(marks))
+                    """, arguments: StatementArguments([Env.parserVersion] + chunk)!)
+                for row in rows {
+                    found[row["page_key"]] = PageResult(
+                        status: PageResult.Status(rawValue: row["status"]) ?? .failed,
+                        method: row["method"], text: "", reason: row["reason"],
+                        macOSBuild: row["macos_build"], parseMillis: row["parse_ms"], data: row["data"],
+                        verdict: row["verdict"])
+                }
+            }
+        }
+        let missing = found.filter { $0.value.verdict == nil }
+        guard !missing.isEmpty else { return found }
+        // A few hundred pages at a time, so no transaction holds the write lock long enough to
+        // stall a runner.
+        let entries = Array(missing)
+        for start in stride(from: 0, to: entries.count, by: 200) {
+            try write { db in
+                for (key, result) in entries[start..<min(start + 200, entries.count)] {
+                    try db.execute(sql: """
+                        UPDATE page_result SET verdict = ? WHERE page_key = ? AND parser_version = ? AND verdict IS NULL
+                        """, arguments: [Store.verdict(of: result), key, Env.parserVersion])
+                }
+            }
+        }
+        return found
+    }
+
+    /// What the cache stores of a result's verdict: its measures, "{}" for a failed page, which
+    /// needs none, and an empty string for a layer that cannot be read.
+    static func verdict(of result: PageResult) -> String {
+        if let verdict = result.verdict { return verdict }
+        guard result.status == .ok else { return "{}" }
+        return result.pageText.map { PageMeasures($0).stored } ?? ""
     }
 
     /// Stores a page's result. A result already cached stays, so a failure never replaces a
@@ -385,11 +490,11 @@ public final class Store: Sendable {
     static func insertResult(_ db: Database, key: String, _ result: PageResult) throws {
         try db.execute(sql: """
             INSERT OR IGNORE INTO page_result
-                (page_key, parser_version, status, method, text, reason, macos_build, parse_ms, parsed_at, data)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (page_key, parser_version, status, method, text, reason, macos_build, parse_ms, parsed_at, data, verdict)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, arguments: [key, Env.parserVersion, result.status.rawValue, result.method,
                              result.text, result.reason, result.macOSBuild, result.parseMillis,
-                             Date().timeIntervalSince1970, result.data])
+                             Date().timeIntervalSince1970, result.data, verdict(of: result)])
         // The page joins the keyword index in the same transaction, so a search never sees a
         // cached page that it cannot find.
         if db.changesCount > 0 { try indexForSearch(db, key: key, version: Env.parserVersion, result: result) }

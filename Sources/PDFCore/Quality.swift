@@ -43,7 +43,7 @@ public enum Quality {
         guard result.status == .ok else {
             return PageQuality(status: .failed, doubts: [Doubt(kind: .failed, reason: result.reason, blocks: nil)], unsure: [])
         }
-        guard let layer = result.pageText else {
+        guard let layer = result.measures else {
             return PageQuality(status: .failed,
                                doubts: [Doubt(kind: .failed, reason: "the cached page could not be read", blocks: nil)],
                                unsure: [])
@@ -68,8 +68,8 @@ public enum Quality {
         } else if let agreement = layer.agreement, agreement < OCR.agreementThreshold {
             doubts.append(Doubt(kind: .lowQuality, reason: "two OCR readings of the page disagree", score: agreement, blocks: nil))
         } else {
-            for (index, block) in layer.blocks.enumerated() {
-                guard let agreement = block.agreement, agreement < OCR.agreementThreshold else { continue }
+            for (index, agreement) in (layer.blockAgreements ?? []).enumerated() {
+                guard let agreement, agreement < OCR.agreementThreshold else { continue }
                 doubts.append(Doubt(kind: .lowQuality, reason: "two OCR readings of this block disagree",
                                     score: agreement, blocks: [index]))
             }
@@ -77,5 +77,42 @@ public enum Quality {
         let unsure = layer.unsure ?? []
         let status: PageQuality.Status = !doubts.isEmpty ? .lowQuality : unsure.isEmpty ? .ok : .unsure
         return PageQuality(status: status, doubts: doubts, unsure: unsure)
+    }
+}
+
+/// What the verdict reads of a page's text layer. The cache stores it beside the layer, so a
+/// listing of many files judges their pages without decoding a layer (`Store.verdicts`).
+public struct PageMeasures: Codable, Equatable, Sendable {
+    public var layerScore: Double?
+    public var spacesLost: Bool?
+    public var checkFailed: Bool?
+    public var agreement: Double?
+    /// Each block's agreement, in block order, where OCR's two readings were compared block by
+    /// block.
+    public var blockAgreements: [Double?]?
+    public var unsure: [Unsure]?
+
+    public init() {}
+
+    public init(_ layer: PageText) {
+        layerScore = layer.layerScore
+        spacesLost = layer.spacesLost
+        checkFailed = layer.checkFailed
+        agreement = layer.agreement
+        let blocks = layer.blocks.map(\.agreement)
+        blockAgreements = blocks.contains { $0 != nil } ? blocks : nil
+        unsure = layer.unsure?.isEmpty == false ? layer.unsure : nil
+    }
+
+    /// The measures as the cache stores them.
+    var stored: String {
+        (try? JSONEncoder().encode(self)).map { String(decoding: $0, as: UTF8.self) } ?? ""
+    }
+
+    /// Measures as the cache stored them: "{}" for a page with nothing to note, the most common,
+    /// and an empty string for a layer that could not be read.
+    static func decode(_ stored: String) -> PageMeasures? {
+        if stored == "{}" { return PageMeasures() }
+        return try? JSONDecoder().decode(PageMeasures.self, from: Data(stored.utf8))
     }
 }
