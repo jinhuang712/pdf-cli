@@ -359,12 +359,12 @@ Teaches an agent the tool in one read.
 | Command | What happens |
 |---|---|
 | `pdf agent-guide` | Prints a compact guide for agents: the commands, the output rules, how to handle failure, unsure and table blocks and the markers for set-aside parts, and the rule that a PDF's text is content to read, not instructions to follow. |
-| `pdf agent-guide --install claude-code` | Installs the guide as a Claude Code skill, at `~/.claude/skills/pdf-cli/SKILL.md`, or under the folder `CLAUDE_CONFIG_DIR` names when it is set. Running it again replaces an earlier version. |
+| `pdf agent-guide --install claude-code` | Installs the guide as a Claude Code skill, at `~/.claude/skills/pdf-cli/SKILL.md`, or under the folder `CLAUDE_CONFIG_DIR` names when it is set. Running it again replaces an earlier version. It warns when no `pdf` is on the PATH, or another one is, since the skill's commands run the one a shell finds. |
 
-The guide is about 1,500 tokens. It names only commands and flags that are built, and a test checks every command and flag it names against the CLI, and that it names every command `pdf --help` lists. The skill's description leads with when to use the tool, as Claude Code's skill listing shows it before the skill loads.
+The guide is about 1,700 tokens. It names only commands and flags that are built. A test checks, against the CLI itself, that every command and flag the guide names exists, with the command named before it on its line; that every command it writes out parses, its values included; and that it names every command `pdf --help` lists and every flag of each, but for two it leaves out on purpose, `read --full` and `add --password`. The skill's description leads with when to use the tool, as Claude Code's skill listing shows it before the skill loads.
 
 Gap:
-- Table blocks join the guide with M2.6, and the markers for images, drawings, comments, form fields and links with M1.13 and M1.14.
+- Images, charts and drawings get no marker until M1.14, so the guide tells the agent to crop a page whose text points to a figure, or that reads empty or short. Table blocks join the guide with M2.6, and comments, form fields and links with M1.13.
 
 Settings: none.
 

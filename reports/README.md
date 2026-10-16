@@ -22,3 +22,4 @@ The spike's reports (M0) are in [spike/](../spike/README.md).
 | M1.9 `pdf crop` | 2026-10-15 | 2 high, 3 smaller; all fixed | [M1.9](M1.9-crop.md) |
 | M1.10 Hidden text | 2026-10-16 | 3 false alarms, 6 ways through, 6 smaller; 12 fixed, 1 in part, 2 kept. Second review: 7, all fixed. Third: 20, 18 fixed, 2 kept. Fourth: 17, 16 fixed, 1 kept | [M1.10](M1.10-hidden.md) |
 | TODO fixes: an unchecked OCR page, a slow open | 2026-10-16 | 2 high, 2 medium, 3 smaller; 6 fixed, 1 in part | [TODO fixes](TODO-ocr-check-and-slow-open.md) |
+| M1.11 `pdf agent-guide` and its skill | 2026-10-16 | 1 high, 3 medium, 8 smaller; 10 fixed, 2 in part | [M1.11](M1.11-agent-guide.md) |

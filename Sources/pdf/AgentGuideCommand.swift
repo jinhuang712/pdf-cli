@@ -27,8 +27,6 @@ struct AgentGuideCommand: ParsableCommand {
             return
         }
         let file = AgentGuide.claudeCodeSkillFile()
-        let skills = file.deletingLastPathComponent().deletingLastPathComponent()
-        let skillsExisted = FileManager.default.fileExists(atPath: skills.path)
         let installed: AgentGuide.Installed
         do {
             installed = try AgentGuide.install(at: file)
@@ -38,12 +36,22 @@ struct AgentGuideCommand: ParsableCommand {
         }
         switch installed {
         case .new: print("installed the Claude Code skill: \(file.path)")
-        case .replaced: print("updated the Claude Code skill: \(file.path)")
+        case .replaced: print("updated the Claude Code skill, replacing the SKILL.md that was there: \(file.path)")
         case .unchanged: print("the Claude Code skill is up to date: \(file.path)")
         }
         // Claude Code watches the skills folders it found at its start, and no others.
-        if !skillsExisted {
-            print("a Claude Code session that is already running sees it after /reload-skills")
+        if installed != .unchanged {
+            print("a running Claude Code session picks it up, after /reload-skills if its skills folder is newer than the session")
+        }
+        // The skill's commands run the pdf that a shell finds on the PATH.
+        let me = Bundle.main.executableURL?.resolvingSymlinksInPath()
+        if let found = AgentGuide.commandOnPath() {
+            if let me, found != me {
+                print("⚠ the pdf on the PATH is \(found.path), not this one, \(me.path): the skill's commands run that one")
+            }
+        } else {
+            print("⚠ no pdf on the PATH, so the skill's commands cannot run until one is there"
+                  + (me.map { "; this one is \($0.path)" } ?? ""))
         }
     }
 }

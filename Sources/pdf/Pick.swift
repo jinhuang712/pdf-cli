@@ -15,13 +15,14 @@ struct PickCommand: ParsableCommand {
     @Argument(help: "The block, as its unsure block names it: p2.3 is page 2, paragraph 3.") var block: String
     @Argument(help: "The reading to keep: a or b.") var reading: String
 
+    func validate() throws {
+        if Self.address(block) == nil { throw ValidationError("name the block as its unsure block does, such as p2.3") }
+        if !["a", "b"].contains(reading.lowercased()) { throw ValidationError("pick a or b") }
+    }
+
     func run() throws {
-        guard let (page, index) = Self.address(block) else {
-            throw ValidationError("name the block as its unsure block does, such as p2.3")
-        }
-        guard let chosen = ["a", "b"].firstIndex(of: reading.lowercased()) else {
-            throw ValidationError("pick a or b")
-        }
+        let (page, index) = Self.address(block)!
+        let chosen = ["a", "b"].firstIndex(of: reading.lowercased())!
         let store = try Store()
         switch try Reader(store: store, library: try Library()).read(path: path, pages: [page]) {
         case .fileFailed(let reason):

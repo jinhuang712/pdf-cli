@@ -350,6 +350,10 @@ check "a second install changes nothing" "^the Claude Code skill is up to date: 
 check "an install follows CLAUDE_CONFIG_DIR" "^installed the Claude Code skill: $work/config/skills/pdf-cli/SKILL.md$" \
     "$(CLAUDE_CONFIG_DIR=$work/config $pdf agent-guide --install claude-code 2>&1)"
 check "an agent it does not know is refused" "exit 64" "$(guide --install codex)"
+mkdir -p "$work/bin" && ln -s "$PWD/$pdf" "$work/bin/pdf"
+check "an install says when no pdf is on the PATH" "^⚠ no pdf on the PATH" "$(env -u CLAUDE_CONFIG_DIR HOME=$work/guide PATH=/usr/bin:/bin $pdf agent-guide --install claude-code 2>&1)"
+check "and says nothing when this pdf is" "^0$" \
+    "$(env -u CLAUDE_CONFIG_DIR HOME=$work/guide PATH="$work/bin:/usr/bin:/bin" $pdf agent-guide --install claude-code 2>&1 | grep -c '⚠')"
 
 # Pages nobody waits for parse slowly, at background priority, so runners get a minute to finish.
 for _ in $(seq 60); do
