@@ -415,15 +415,21 @@ enum TextLayer {
                 // huge glyph's, even one joined to the word, which reaches the lines around it: there
                 // the word's ordinary glyphs tell its height, none over twice their median height, and
                 // each on their usual baseline, as PDFKit places some of a line's boxes on other
-                // lines. Only where the box is over three times as tall as those glyphs, which sit
-                // inside it, and they reach across more than half the word: an ordinary word's box
-                // is about twice as tall as its letters, and PDFKit gives the letters of a slanted
-                // label short boxes in a heap.
+                // lines. Only where the box is over 2.5 times their median height, as tall as a word
+                // must be to count as set at an angle below, the glyphs sit inside it, and they reach
+                // across more than half the word, a huge glyph's own width aside: an ordinary word's
+                // box is about twice as tall as its letters, and PDFKit gives the letters of a slanted
+                // label short boxes in a heap. Only a word whose ordinary glyphs, most of them, sit
+                // level on one baseline: a word set at an angle, as a watermark's, or down the page,
+                // as a column of CJK, keeps its box.
                 let sized = word.compactMap { glyphs.boxes[$0] }.filter { $0.height > 0 }
                 let usual = median(sized.map(\.height)), baseline = median(sized.map(\.minY))
-                let glyphSpan = sized.filter { $0.height <= 2 * usual && abs($0.minY - baseline) <= usual }
-                    .reduce(CGRect.null) { $0.union($1) }
-                if !glyphSpan.isNull, rect.height > 3 * glyphSpan.height, glyphSpan.width >= 0.6 * rect.width {
+                let ordinary = sized.filter { $0.height <= 2 * usual && abs($0.minY - baseline) <= usual }
+                let glyphSpan = ordinary.reduce(CGRect.null) { $0.union($1) }
+                let huge = sized.filter { $0.height > 2 * usual }.reduce(0) { $0 + $1.width }
+                let middles = ordinary.map(\.midY)
+                let level = ordinary.count * 10 >= sized.count * 6 && (middles.max() ?? 0) - (middles.min() ?? 0) <= 0.5 * usual
+                if level, !glyphSpan.isNull, rect.height > 2.5 * usual, glyphSpan.width >= 0.6 * (rect.width - huge) {
                     let low = max(rect.minY, glyphSpan.minY), high = min(rect.maxY, glyphSpan.maxY)
                     if high - low >= 0.8 * glyphSpan.height { rect = CGRect(x: rect.minX, y: low, width: rect.width, height: high - low) }
                 }

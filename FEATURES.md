@@ -303,14 +303,15 @@ Very faint text, under a contrast of 1.3 to 1 with what lies behind it, as #EEEE
 
 Gap:
 - A word set at an angle, as a chart's slanted label, is checked for its size, but not for ink, since PDFKit's boxes for it miss its ink.
-- On a page whose images cover most of it, as a scan's or a slide's background, text in the invisible mode, or drawn with no opacity, reads as text, as a scan's own text layer does; so does text drawn under opaque images that together cover most of the page, as a scan's text layer under its image. Text drawn to show there gets every check.
+- On a page whose opaque images, set along the page's edges, cover most of it, as a scan's or a slide's background, text in the invisible mode, or drawn with no opacity, reads as text, as a scan's own text layer does; so does text drawn under such images, as a scan's text layer under its image. That holds only where the image puts ink along the word's line, within three times the word's width, and no string drawn to show, of about the word's size, lies there: such text over a scan's inked lines reads as text whatever it says, and so does such text beside a visible heading of another size on a blank background. Text drawn to show there gets every check.
+- Letters stacked on one spot count as too small to read where most of a string's letters are, word by word: a few words stacked inside a string of ordinary ones read as text.
 - Text over a photo always counts as seen: the photo's own ink cannot tell whether the text shows. So does white text with shapes drawn inside its box other than rules across it, as bars between its letters, and text in the invisible mode, or white, laid over other text that shows: the other text's ink stands for its own.
 - Text under a shape drawn after it counts as hidden when the shape leaves no ink there, or is an opaque rectangle or an axial shading over it; under other shapes, as stripes, a pattern or a stamp annotation's picture, with ink of their own, it counts as seen.
 - Text in a script OCR does not read, as Greek or Hebrew, under an image that lets part of it through by a blend mode, a stencil or a color key, counts as seen. A word OCR misreads there by more than one letter, as a label of look-alike letters, "Il1O0", read as "100", or 4-pt type, counts as covered.
 - Letters hidden one by one count only in a word of letters and digits set across the page: in maths, and in a word set down the page, such letters read as text.
 - OCR checks at most 24 places a page under images that blend or that the drawing commands cannot read, and stops after 3 s, the page's own drawing included; past that, text there counts as seen, and the page says its check is incomplete.
 - Text that runs off the page part-way keeps the part on the page as text.
-- A layer a viewer hides by its usage alone, as one for print only, reads as text: macOS's viewers show it, and only Acrobat applies the usage.
+- A layer a viewer hides by its usage alone, as one for print only, reads as text: macOS's viewers show it, and only Acrobat applies the usage. So does content whose visibility expression nests past 32 levels: its layers decide.
 
 Settings: none.
 

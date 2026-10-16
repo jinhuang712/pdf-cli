@@ -125,6 +125,8 @@ struct Visibility {
         var failed = Set<Int>()
         var counts = [Int32](repeating: 0, count: 1 << 15)
         var sums = [Int32](repeating: 0, count: 3 << 15)
+        /// Whether each band along a line holds ink, by its edges in half points.
+        var bandInk: [Int: Bool] = [:]
     }
 
     /// The ink in a word's box.
@@ -223,8 +225,9 @@ struct Visibility {
         let center = CGPoint(x: rect.midX, y: rect.midY)
         // The strings drawn where the word is, looked up only when a check below needs them: a
         // page can hold tens of thousands.
-        let needed = stacked || drawing.anyOff || drawing.anyCrushed || drawing.underlay || drawing.overlay != nil
+        let needed = stacked || !straight || drawing.anyOff || drawing.anyCrushed || drawing.underlay || drawing.overlay != nil
             || drawing.coverings.contains { $0.rect.intersection(rect).area >= 0.5 * rect.area }
+            || drawing.coverings.lazy.filter { $0.rect.intersects(rect) }.prefix(2).count == 2
         let here = needed ? drawing.runs(at: center) : []
         // Text in a layer switched off, which CoreGraphics draws in some cases all the same: only
         // such text is drawn where the word is. Its strings need not spell the word: a CID font's
@@ -242,17 +245,24 @@ struct Visibility {
         // show on such a page, as a slide's over its background image, gets every check.
         let own = drawing.plausible(here, for: rect, spelled: spelled)
         let drawn = own.isEmpty ? here : own
-        if drawing.underlay, !drawn.isEmpty, drawn.allSatisfy({ $0.kind == .invisible }) { return .seen(nil) }
+        if drawing.underlay, !drawn.isEmpty, drawn.allSatisfy({ $0.kind == .invisible }),
+           scanShows(rect, here: here, own: drawn, after: nil) { return .seen(nil) }
         // Under a scan's image, a word no string is found for, as one PDFKit gives a box off its
         // place, reads as text too.
-        if let overlay = drawing.overlay, drawn.allSatisfy({ $0.order < overlay }) { return .seen(nil) }
+        if let overlay = drawing.overlay, drawn.allSatisfy({ $0.order < overlay }),
+           scanShows(rect, here: here, own: drawn, after: overlay) { return .seen(nil) }
         // Letters squeezed or stacked into a smudge, as the drawing commands set them: strings
         // that move the pen on by under 40% of their glyphs' widths. Where no string is found for
         // the word, its boxes tell. A scan's OCR layer squeezes and stretches its words to fit the
         // image, so this comes after the scan's tests.
         if squeezed || (own.isEmpty ? stacked : own.allSatisfy(\.crushed)) { return .hidden(.tiny) }
         // Letters set at an angle: PDFKit's boxes for them miss their ink, so ink cannot judge them.
-        guard straight else { return .seen(nil) }
+        // A word whose own strings run along the page's axes is set straight all the same, though
+        // PDFKit's box for it grows too tall for a straight line, as beside a glyph twice its size:
+        // there ink judges the word as a whole, as PDFKit's boxes for its letters may lie a letter
+        // off, on another line even.
+        let alongAxes = !own.isEmpty && own.allSatisfy { $0.toText.axisAligned }
+        guard straight || alongAxes else { return .seen(nil) }
         // A point above and below the box, where PDFKit places some glyphs' boxes a little off
         // their ink; none to the sides, where the next word's ink starts.
         guard let ink = ink(in: rect.insetBy(dx: 0, dy: -1)) else { return .seen(nil) }
@@ -260,8 +270,49 @@ struct Visibility {
             if let color, color.distance(ink.background) < 0.2 { return .hidden(.background) }
             return .hidden(.invisible)
         }
-        if let reason = covered(rect, text: text, own: own) { return .hidden(reason) }
-        return .seen(ink)
+        switch covered(rect, text: text, own: own) {
+        case .hidden(let reason): return .hidden(reason)
+        // A word an image over it shows, as a scan's picture of the layer drawn under it, is
+        // judged by the image, not letter by letter against the layer's places.
+        case .shown: return .seen(nil)
+        case nil: return .seen(straight ? ink : nil)
+        }
+    }
+
+    /// Whether a scan's image shows a line of its text layer, on or under the image: the band
+    /// along the line around the word, three times its width each side, holds ink, as the image's
+    /// picture of the line puts there, and no string drawn to show, about the size of the word's
+    /// own, lies in the band to put the ink there instead, or to show the reader something else.
+    /// The band, not the word's box: a scan's layer can sit a word off its picture, 23 pt on the
+    /// OCR sample. A blank
+    /// page-size image shows no line, and a string in a font that does not spell the word, drawn
+    /// over an invisible one that does, is no scan's layer. A watermark's larger string across the
+    /// layer leaves it a scan's.
+    /// - Parameter after: the scan's image, for a layer drawn under it: only strings drawn after
+    ///   it show.
+    func scanShows(_ rect: CGRect, here: [Drawing.TextRun], own: [Drawing.TextRun], after image: Int?) -> Bool {
+        let heights = own.map(\.height).sorted()
+        let height = heights.isEmpty ? rect.height : heights[heights.count / 2]
+        let reach = 3 * max(rect.width, rect.height)
+        let band = CGRect(x: rect.minX - reach, y: rect.minY - 1, width: rect.width + 2 * reach, height: rect.height + 2).intersection(crop)
+        guard !band.isNull, band.width > 0 else { return false }
+        let rival = drawing.shownRuns(across: band).contains { run in
+            (image.map { run.order > $0 } ?? true) && run.height >= 0.67 * height && run.height <= 1.5 * height
+                && !own.contains { $0.order == run.order }
+        }
+        guard !rival else { return false }
+        let key = [band.minX, band.minY, band.maxX, band.maxY].reduce(0) { $0 &* 65_537 &+ Visibility.pixel(($1 * 2).rounded()) }
+        if let known = ocr.bandInk[key] { return known }
+        let inked = ink(in: band).map { $0.count >= 2 && $0.share >= 0.005 } ?? false
+        ocr.bandInk[key] = inked
+        return inked
+    }
+
+    /// What an image or shape over a word does to it: hides it, or shows it, as a scan's picture
+    /// of its text layer does.
+    enum Under: Equatable {
+        case hidden(HiddenReason)
+        case shown
     }
 
     /// Whether an image or a shape drawn after a word hides it. Ink cannot tell: under an image,
@@ -272,9 +323,9 @@ struct Visibility {
     /// where the commands cannot tell, as for a blend mode, a stencil or a picture turned or
     /// clipped to a curve, OCR reads what shows there, for a word in a script it reads.
     /// - Parameter own: the runs of text that may have drawn the word.
-    func covered(_ rect: CGRect, text: String, own: [Drawing.TextRun]) -> HiddenReason? {
+    func covered(_ rect: CGRect, text: String, own: [Drawing.TextRun]) -> Under? {
         let over = drawing.coverings.indices.filter { drawing.coverings[$0].rect.intersection(rect).area >= 0.5 * rect.area }
-        guard !over.isEmpty else { return nil }
+        guard !over.isEmpty else { return union(rect, text: text, own: own) }
         // With no run found for the word, an image drawn after any text may cover it, and OCR
         // decides.
         let first = own.map(\.order).min() ?? -1
@@ -284,20 +335,55 @@ struct Visibility {
             let cover = drawing.coverings[index]
             let after = last.map { cover.order > $0 } ?? false
             if cover.shape {
-                if cover.exact && after { return .invisible }
+                if cover.exact && after { return .hidden(.invisible) }
                 continue
             }
             let alpha = drawing.alpha(of: cover, over: rect)
             if let alpha, alpha.high <= 0.35 { continue }
-            // A scan's page draws its own words in its image, so there OCR tells whether the
-            // image shows the word.
-            if let alpha, alpha.low >= 0.9, cover.exact, after, !drawing.underlay { return .covered }
+            // An opaque image drawn exactly over the word hides it, unless it shows the word, as a
+            // scan's picture of a text layer drawn under it does, over part of the page or all of
+            // it: OCR tells, for a word it can read. Past OCR's cap, or for a word OCR cannot
+            // vouch for, the image hides it.
+            if let alpha, alpha.low >= 0.9, cover.exact, after {
+                guard letters >= 3, Visibility.ocrReads(text), let seen = ocrText(index, near: rect) else { return .hidden(.covered) }
+                return Visibility.read(Visibility.normalized(text), in: seen) ? .shown : .hidden(.covered)
+            }
             guard letters >= 3, let seen = ocrText(index, near: rect) else { continue }
-            if Visibility.read(Visibility.normalized(text), in: seen) { return nil }
+            if Visibility.read(Visibility.normalized(text), in: seen) { return .shown }
             // OCR cannot vouch for a script it does not read, as Greek: the word reads as seen.
-            if Visibility.ocrReads(text) { return .covered }
+            if Visibility.ocrReads(text) { return .hidden(.covered) }
         }
-        return nil
+        return union(rect, text: text, own: own)
+    }
+
+    /// Opaque images and shapes drawn exactly over a word after it, each over less than half of
+    /// it, that together cover most of it, as two pictures over a column of CJK, one word: they
+    /// hide it, unless OCR reads it there.
+    func union(_ rect: CGRect, text: String, own: [Drawing.TextRun]) -> Under? {
+        guard let last = own.map(\.order).max(), rect.width > 0, rect.height > 0 else { return nil }
+        let pieces = drawing.coverings.indices.filter { index in
+            let cover = drawing.coverings[index]
+            guard cover.order > last, cover.exact, cover.rect.intersects(rect) else { return false }
+            if cover.shape { return true }
+            return (drawing.alpha(of: cover, over: rect)?.low ?? 0) >= 0.9
+        }
+        guard pieces.count >= 2 else { return nil }
+        // An 8 by 8 grid of points over the word.
+        var inside = 0
+        for row in 0..<8 {
+            for column in 0..<8 {
+                let point = CGPoint(x: rect.minX + (CGFloat(column) + 0.5) / 8 * rect.width,
+                                    y: rect.minY + (CGFloat(row) + 0.5) / 8 * rect.height)
+                if pieces.contains(where: { drawing.coverings[$0].rect.contains(point) }) { inside += 1 }
+            }
+        }
+        guard inside * 10 >= 64 * 8 else { return nil }
+        let letters = text.filter { $0.isLetter || $0.isNumber }.count
+        let images = pieces.filter { !drawing.coverings[$0].shape }
+        guard let image = images.first, letters >= 3, Visibility.ocrReads(text), let seen = ocrText(image, near: rect) else {
+            return .hidden(images.isEmpty ? .invisible : .covered)
+        }
+        return Visibility.read(Visibility.normalized(text), in: seen) ? .shown : .hidden(.covered)
     }
 
     /// Whether OCR read a word: whole, or, for a word of 4 letters or more, with one letter
@@ -628,6 +714,16 @@ final class Drawing {
             return (width, glyphs, spaces)
         }
 
+        /// Calls `body` with each glyph's width, in thousandths of the font size, and whether its
+        /// code is a single-byte space.
+        func each(_ bytes: UnsafePointer<UInt8>, _ count: Int, _ body: (CGFloat, Bool) -> Void) {
+            if twoBytes {
+                for index in stride(from: 0, to: count - 1, by: 2) { body(cid[Int(bytes[index]) << 8 | Int(bytes[index + 1])] ?? fallback, false) }
+            } else {
+                for index in 0..<count { body(table[Int(bytes[index])], bytes[index] == 0x20) }
+            }
+        }
+
         /// A font's widths, from its dictionary.
         static func read(_ font: CGPDFDictionaryRef) -> Widths {
             let widths = Widths()
@@ -662,8 +758,10 @@ final class Drawing {
                         }
                         index += 2
                     } else if index + 2 < count, CGPDFArrayGetInteger(list, index + 1, &last), CGPDFArrayGetNumber(list, index + 2, &width) {
-                        for code in first...max(first, min(last, 65_535)) { widths.cid[code] = width }
-                        written += max(1, min(last, 65_535) - first + 1)
+                        // A last CID far below the first, as a hostile file writes, stops at the first.
+                        let top = max(first, min(last, 65_535))
+                        for code in first...top { widths.cid[code] = width }
+                        written += top - first + 1
                         index += 3
                     } else {
                         break
@@ -869,9 +967,9 @@ final class Drawing {
         let stream = CGPDFContentStreamCreateWithPage(page)
         defer { CGPDFContentStreamRelease(stream) }
         run(stream)
-        // Images that together cover most of the page, counted on a grid so overlaps count once:
-        // all of them, as a scan's under its text layer, and those drawn after text, latest first,
-        // as a scan's over a text layer drawn under it.
+        // Opaque images along the page's axes that together cover most of the page, counted on a
+        // grid so overlaps count once: all of them, as a scan's under its text layer, and those
+        // drawn after text, latest first, as a scan's over a text layer drawn under it.
         let cells = 40
         func add(_ rect: CGRect, to covered: inout Set<Int>) {
             let area = rect.intersection(crop)
@@ -890,7 +988,7 @@ final class Drawing {
         underlay = covered.count * 10 >= cells * cells * 8
         // Opaque ones only: a page-size watermark drawn last that lets the page through is no scan.
         var over = Set<Int>()
-        for cover in coverings.reversed() where !cover.shape && cover.known && cover.mask == nil && cover.opacity >= 1 {
+        for cover in coverings.reversed() where !cover.shape && cover.exact && cover.known && cover.mask == nil && cover.opacity >= 1 {
             add(cover.rect, to: &over)
             if over.count * 10 >= cells * cells * 8 {
                 overlay = cover.order
@@ -909,6 +1007,22 @@ final class Drawing {
         let scanner = CGPDFScannerCreate(stream, Drawing.table, Unmanaged.passUnretained(self).toOpaque())
         defer { CGPDFScannerRelease(scanner) }
         CGPDFScannerScan(scanner)
+    }
+
+    /// The runs drawn to show whose bounds meet a band across the page, found through the bands
+    /// `runs(at:)` makes.
+    func shownRuns(across band: CGRect) -> [TextRun] {
+        func index(_ y: CGFloat) -> Int { Visibility.pixel(((y - crop.minY) / 24).rounded(.down)) }
+        _ = runs(at: CGPoint(x: crop.minX, y: band.midY))
+        var seen = Set<Int>()
+        var found: [TextRun] = []
+        for each in index(band.minY)...max(index(band.minY), index(band.maxY)) {
+            for at in (bands?[each] ?? []) + wide where seen.insert(at).inserted {
+                let run = runs[at]
+                if run.kind == .shown, run.bounds.intersects(band) { found.append(run) }
+            }
+        }
+        return found
     }
 
     /// The runs of text that may hold a point, found through bands of the page 24 pt tall, made
@@ -980,12 +1094,18 @@ final class Drawing {
     /// nested at most 8 deep. Nil when it is malformed.
     func shows(_ expression: CGPDFArrayRef, depth: Int) -> Bool? {
         var name: UnsafePointer<CChar>?
-        guard depth < 8, CGPDFArrayGetName(expression, 0, &name), let name else { return nil }
-        let operands: [Bool] = (1..<max(1, min(CGPDFArrayGetCount(expression), 1_000))).compactMap { index in
+        guard depth < 32, CGPDFArrayGetName(expression, 0, &name), let name else { return nil }
+        var operands: [Bool] = []
+        for index in 1..<max(1, min(CGPDFArrayGetCount(expression), 1_000)) {
             var layer: CGPDFDictionaryRef?, inner: CGPDFArrayRef?
-            if CGPDFArrayGetDictionary(expression, index, &layer), let layer { return !layersOff.contains(FactReader.identity(layer)) }
-            if CGPDFArrayGetArray(expression, index, &inner), let inner { return shows(inner, depth: depth + 1) }
-            return nil
+            if CGPDFArrayGetDictionary(expression, index, &layer), let layer {
+                operands.append(!layersOff.contains(FactReader.identity(layer)))
+            } else if CGPDFArrayGetArray(expression, index, &inner), let inner {
+                // An operand that cannot be told, as one nested past the limit, leaves the whole
+                // expression untold: dropping it could turn "and" into "on".
+                guard let shown = shows(inner, depth: depth + 1) else { return nil }
+                operands.append(shown)
+            }
         }
         switch String(cString: name) {
         case "Not": return operands.count == 1 ? !operands[0] : nil
@@ -996,23 +1116,73 @@ final class Drawing {
     }
 
     /// A string's text, its length in bytes and glyphs, how far it moves the pen in text space,
-    /// and how far its glyphs' own widths would, spacing and scaling aside.
-    typealias Measured = (text: String, bytes: Int, glyphs: Int, advance: CGFloat, nominal: CGFloat)
+    /// how far its glyphs' own widths would, spacing and scaling aside, and whether most of its
+    /// letters are set on one spot, word by word (`Smudge`).
+    typealias Measured = (text: String, bytes: Int, glyphs: Int, advance: CGFloat, nominal: CGFloat, smudged: Bool)
+
+    /// Letters set on one spot within a string, word by word: a run of letters, between spaces or
+    /// moves of the pen past a glyph's width, whose glyphs' places span under 40% of their widths.
+    /// A string whose letters mostly fall in such runs is a smudge, though moves between its
+    /// words carry the pen on past 40% of its glyphs' widths. Letters placed right to left, or
+    /// mirrored, span their widths.
+    struct Smudge {
+        private var pen: CGFloat = 0, low: CGFloat = 0, high: CGFloat = 0, widths: CGFloat = 0, run = 0
+        private var letters = 0, smudged = 0
+
+        /// A glyph `width` wide, as scaling turns it, that moves the pen by `step`.
+        mutating func glyph(step: CGFloat, width: CGFloat, space: Bool) {
+            if space {
+                end()
+            } else {
+                if run == 0 { (low, high) = (pen, pen) }
+                low = min(low, pen, pen + width)
+                high = max(high, pen, pen + width)
+                widths += abs(width)
+                run += 1
+            }
+            pen += step
+        }
+
+        /// The pen moved by a TJ array's number.
+        mutating func move(_ amount: CGFloat) {
+            if run > 0, abs(amount) > widths / CGFloat(run) { end() }
+            pen += amount
+        }
+
+        mutating func end() {
+            if run >= 2, high - low < 0.4 * widths { smudged += run }
+            letters += run
+            (run, widths) = (0, 0)
+        }
+
+        var isSmudge: Bool { letters >= 3 && smudged * 2 > letters }
+    }
 
     func measure(_ string: CGPDFStringRef) -> Measured {
+        var smudge = Smudge()
+        let measured = measure(string, smudge: &smudge)
+        smudge.end()
+        return (measured.text, measured.bytes, measured.glyphs, measured.advance, measured.nominal, smudge.isSmudge)
+    }
+
+    func measure(_ string: CGPDFStringRef, smudge: inout Smudge) -> Measured {
         let length = CGPDFStringGetLength(string)
         let text = (CGPDFStringCopyTextString(string) as String?) ?? ""
-        guard length > 0, let pointer = CGPDFStringGetBytePtr(string) else { return (text, length, 0, 0, 0) }
+        guard length > 0, let pointer = CGPDFStringGetBytePtr(string) else { return (text, length, 0, 0, 0, false) }
         let current = state
         let (width, glyphs, spaces) = current.font.measure(pointer, length)
         let size = current.fontSize
         // A font set down the page moves the pen down by the font size a glyph.
         if current.font.vertical {
-            return (text, length, glyphs, CGFloat(glyphs) * (current.characterSpacing - size), CGFloat(glyphs) * abs(size))
+            return (text, length, glyphs, CGFloat(glyphs) * (current.characterSpacing - size), CGFloat(glyphs) * abs(size), false)
         }
-        let advance = (width / 1000 * size + CGFloat(glyphs) * current.characterSpacing + CGFloat(spaces) * current.wordSpacing)
-            * current.horizontalScale
-        return (text, length, glyphs, advance, abs(width / 1000 * size * current.horizontalScale))
+        let scale = current.horizontalScale
+        current.font.each(pointer, length) { glyph, space in
+            smudge.glyph(step: (glyph / 1000 * size + current.characterSpacing + (space ? current.wordSpacing : 0)) * scale,
+                         width: glyph / 1000 * size * scale, space: space)
+        }
+        let advance = (width / 1000 * size + CGFloat(glyphs) * current.characterSpacing + CGFloat(spaces) * current.wordSpacing) * scale
+        return (text, length, glyphs, advance, abs(width / 1000 * size * scale), false)
     }
 
     /// A string drawn: where the pen is, as far as it moves the pen, which then moves on.
@@ -1046,6 +1216,7 @@ final class Drawing {
         // smudge; condensed type moves it by all of theirs, and so do letters placed right to
         // left, or mirrored.
         let crushed = abs(current.horizontalScale) < 0.25 || (!vertical && shown.glyphs >= 2 && abs(shown.advance) < 0.4 * shown.nominal)
+            || shown.smudged
         // The way the text runs on the page, and how tall its glyphs stand across that way.
         let direction = vertical ? CGPoint(x: -placed.c, y: -placed.d) : CGPoint(x: placed.a, y: placed.b)
         let height = size * (vertical ? hypot(placed.a, placed.b) : hypot(placed.c, placed.d))
@@ -1064,10 +1235,14 @@ final class Drawing {
         let current = state
         let rect = CGRect(x: 0, y: 0, width: 1, height: 1).applying(current.transform).intersection(current.clip)
         guard !rect.isNull, rect.width > 0, rect.height > 0 else { return }
-        images.append(rect)
+        let exact = current.transform.axisAligned && current.clipExact
+        // Only an opaque picture along the page's axes, filling its box, can be a scan's image of
+        // the page: a hairline image, one clipped to two dots or one that lets everything through
+        // spans the page by its bounds alone.
+        if exact, known, mask == nil, current.opacity >= 1, !current.seeThrough { images.append(rect) }
         guard textSeen else { return }
         coverings.append(Placed(order: order, rect: rect, transform: current.transform, opacity: current.opacity, mask: mask,
-                                known: known && !current.seeThrough, exact: current.transform.axisAligned && current.clipExact))
+                                known: known && !current.seeThrough, exact: exact))
     }
 
     /// A shape filled after text: an opaque rectangle along the page's axes, or a shading over
@@ -1403,20 +1578,25 @@ final class Drawing {
         on("TJ") { scanner, drawing in
             var array: CGPDFArrayRef?
             guard CGPDFScannerPopArray(scanner, &array), let array else { return }
-            var whole: Measured = ("", 0, 0, 0, 0)
+            var whole: Measured = ("", 0, 0, 0, 0, false)
+            var smudge = Drawing.Smudge()
             let current = drawing.state
             for index in 0..<CGPDFArrayGetCount(array) {
                 var string: CGPDFStringRef?
                 var number: CGPDFReal = 0
                 if CGPDFArrayGetString(array, index, &string), let string {
-                    let piece = drawing.measure(string)
+                    let piece = drawing.measure(string, smudge: &smudge)
                     whole = (whole.text + piece.text, whole.bytes + piece.bytes, whole.glyphs + piece.glyphs,
-                             whole.advance + piece.advance, whole.nominal + piece.nominal)
+                             whole.advance + piece.advance, whole.nominal + piece.nominal, false)
                 } else if CGPDFArrayGetNumber(array, index, &number) {
                     // A number moves the pen back by thousandths of the font size, a negative one on.
-                    whole.advance -= number / 1000 * current.fontSize * (current.font.vertical ? 1 : current.horizontalScale)
+                    let move = -number / 1000 * current.fontSize * (current.font.vertical ? 1 : current.horizontalScale)
+                    whole.advance += move
+                    smudge.move(move)
                 }
             }
+            smudge.end()
+            whole.smudged = !current.font.vertical && smudge.isSmudge
             drawing.show(whole)
         }
         on("Do") { scanner, drawing in
