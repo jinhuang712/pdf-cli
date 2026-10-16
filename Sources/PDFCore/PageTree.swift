@@ -5,9 +5,11 @@ import CoreGraphics
 /// flat tree of 30,000 pages page by page took 17 s.
 ///
 /// The walk serves only a tree it numbers as CGPDF does: each node a /Pages node with its /Kids
-/// and a true /Count, or a /Page; each kid naming its node as /Parent; no node twice; as many
-/// pages as CGPDF counts; and CGPDF's own first, middle and last pages where the walk puts them.
-/// For any other tree it gives nil, and the index asks CGPDF for each page, as before.
+/// and a true /Count, or a /Page with neither, which CGPDF would count as a node; each kid naming
+/// its node as /Parent; no node twice; as many pages as CGPDF counts; and CGPDF's own pages where
+/// the walk puts them, at five places through the file. For any other tree it gives nil, and the
+/// index asks CGPDF for each page, as before: a page numbered otherwise would store one page's
+/// text under another's key, which any file holding that other page would read.
 struct PageTree {
     static let maxDepth = 64
 
@@ -24,7 +26,7 @@ struct PageTree {
         var seen = Set<OpaquePointer>()
         guard Self.walk(root, parent: nil, depth: 0, limit: count, seen: &seen, into: &pages) != nil,
               pages.count == count else { return nil }
-        for number in Set([1, (count + 1) / 2, count]) {
+        for number in Set([1, (count + 3) / 4, (count + 1) / 2, (3 * count + 3) / 4, count].map { min(max($0, 1), count) }) {
             guard let dictionary = document.page(at: number)?.dictionary,
                   FactReader.identity(dictionary) == FactReader.identity(pages[number - 1]) else { return nil }
         }
@@ -43,6 +45,9 @@ struct PageTree {
         }
         switch FactReader.name(node, "Type") {
         case "Page":
+            // CGPDF takes a node with kids for a node, whatever its type says, and counts by its
+            // /Count: a page with either could number the pages after it otherwise.
+            guard PageKeyer.object(node, "Kids") == nil, PageKeyer.object(node, "Count") == nil else { return nil }
             pages.append(node)
             return 1
         case "Pages":
@@ -113,14 +118,15 @@ struct PageGeometry {
         self.rotation = rotation ?? 0
     }
 
-    /// A box of four numbers, with its corners in either order.
+    /// A box of four numbers, with its corners in either order. Nil for a box with -0, whose sign
+    /// CGPDF keeps in a way the key would hash otherwise.
     static func box(_ dictionary: CGPDFDictionaryRef, _ name: String) -> CGRect? {
         var array: CGPDFArrayRef?
         guard CGPDFDictionaryGetArray(dictionary, name, &array), let array, CGPDFArrayGetCount(array) == 4 else { return nil }
         var values: [CGFloat] = []
         for index in 0..<4 {
             var value: CGPDFReal = 0
-            guard CGPDFArrayGetNumber(array, index, &value) else { return nil }
+            guard CGPDFArrayGetNumber(array, index, &value), !(value == 0 && value.sign == .minus) else { return nil }
             values.append(value)
         }
         return CGRect(x: min(values[0], values[2]), y: min(values[1], values[3]),

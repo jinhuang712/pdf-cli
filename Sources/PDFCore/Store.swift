@@ -459,10 +459,11 @@ public final class Store: Sendable {
         let missing = found.filter { $0.value.verdict == nil }
         guard !missing.isEmpty else { return found }
         // A few hundred pages at a time, so no transaction holds the write lock long enough to
-        // stall a runner.
+        // stall a runner. Storing them only saves the next listing time: a write that fails, as
+        // on a cache another process holds locked, fails nothing.
         let entries = Array(missing)
         for start in stride(from: 0, to: entries.count, by: 200) {
-            try write { db in
+            try? write { db in
                 for (key, result) in entries[start..<min(start + 200, entries.count)] {
                     try db.execute(sql: """
                         UPDATE page_result SET verdict = ? WHERE page_key = ? AND parser_version = ? AND verdict IS NULL

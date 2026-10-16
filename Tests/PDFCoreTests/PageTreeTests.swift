@@ -117,6 +117,7 @@ import Testing
         let left = [
             "/CropBox [10 20 600]", "/CropBox [10 20 600 780 5]", "/CropBox (x)", "/MediaBox [0 0 612]",
             "/MediaBox [0 0 (a) 792]", "/Rotate 90.0", "/Rotate (90)", "/Rotate 9000000000",
+            "/MediaBox [0 0 -0.0 792]", "/CropBox [-0.0 0 612 792]",
         ]
         let entries = read + left
         let kids = (0..<entries.count).map { "\($0 + 3) 0 R" }.joined(separator: " ")
@@ -147,12 +148,28 @@ import Testing
             "a kid that is no dictionary": ["<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>", "<< \(page) >>", "(page)"],
             "a missing kid": ["<< /Type /Pages /Kids [3 0 R 9 0 R] /Count 2 >>", "<< \(page) >>"],
             "a root with a parent": ["<< /Type /Pages /Parent 1 0 R /Kids [3 0 R] /Count 1 >>", "<< \(page) >>"],
+            // CGPDF counts a page with kids as a node: its page 2 here is object 12, the walk's 4,
+            // and the count and the pages the walk compares with CGPDF's agree all the same.
+            "a page with kids": ["<< /Type /Pages /Kids [3 0 R 4 0 R 5 0 R 6 0 R 7 0 R 8 0 R 9 0 R 10 0 R 11 0 R] /Count 9 >>",
+                                 "<< \(page) >>",
+                                 "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Kids [12 0 R] /Count 1 >>"]
+                + Array(repeating: "<< \(page) >>", count: 7)
+                + ["<< /Type /Page /Parent 4 0 R /MediaBox [0 0 612 792] /Contents 13 0 R >>",
+                   "<< /Length 0 >>\nstream\n\nendstream"],
+            "a page with a count": ["<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>", "<< \(page) >>",
+                                    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Count 0 >>"],
         ]
         for (name, objects) in trees {
             let url = try makePDF(["<< /Type /Catalog /Pages 2 0 R >>"] + objects)
             defer { try? FileManager.default.removeItem(at: url) }
             let document = try #require(CGPDFDocument(url as CFURL))
             #expect(PageTree(document)?.pages == nil, "\(name)")
+            if name == "a page with kids" {
+                // CGPDF's page 2 is the kid, which has contents, not the page that holds it.
+                let second = try #require(document.page(at: 2)?.dictionary)
+                #expect(PageKeyer.object(second, "Contents") != nil && PageKeyer.object(second, "Kids") == nil)
+                #expect(document.numberOfPages == 9)
+            }
         }
     }
 
