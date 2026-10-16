@@ -19,7 +19,9 @@ Where pdf-cli stands, what is in flight, and how the work has been done, for who
 
 Under them: worker processes with time and memory limits and a shared pool of slots (M1.1, M1.15), the text layer with the space repair (M1.2), quality checks with failure and unsure blocks (M1.3), Apple OCR for scans (M1.4), and the hidden-text check (M1.10). `README.md` says how to read the rest of the docs.
 
-**M1.10, hidden text,** landed on 2026-10-16 after four reviews; `reports/M1.10-hidden.md` has every finding and its resolution. The design is in DESIGNS.md → "Decision: hidden text found by ink, with the drawing commands for what ink cannot tell" and "Decision: what an image over text hides, from the drawing commands, with OCR where they cannot tell"; the known limits are in FEATURES.md → F9 → Gap. The fourth review's fixes were not reviewed again: a fifth review could still find something. The reviewers' hostile pages live on as `testdata/hidden/hidden.pdf` (57 pages) and `broken.pdf` (10), both made by `scripts/make-hidden-fixture.swift`; their own generators were in `/private/tmp/claude-501/m110rev*`, outside the repo, which macOS clears.
+**M1.10, hidden text,** landed on 2026-10-16, and has had six reviews since; `reports/M1.10-hidden.md` has every finding and its resolution. The design is in DESIGNS.md → "Decision: hidden text found by ink, with the drawing commands for what ink cannot tell" and "Decision: what an image over text hides, from the drawing commands, with OCR where they cannot tell"; the known limits are in FEATURES.md → F9 → Gap. Each round found 8 to 20 problems, most of them ways through for a hostile file, and the limits list grows with each: the check catches the common tricks and many crafted ones, not every one. The reviewers' hostile pages live on as `testdata/hidden/hidden.pdf` (69 pages), `broken.pdf` (11) and `unread.pdf` (2), all made by `scripts/make-hidden-fixture.swift`; their own generators were in `/private/tmp/claude-501/m110rev*`, outside the repo, which macOS clears.
+
+**The TODO list is empty** (2026-10-16): the index walks the page tree once, `pdf ls` judges pages from a stored verdict column, a page's layer is decoded once per command, a locked file points to `--password-stdin`, which asks on a terminal, `pdf info`'s section table is capped, and a page whose drawn text PDFKit leaves out is flagged, or read by OCR when it lost 30% or more. The licence notices of `pdf setup`'s models moved to M2.11. Reports: `reports/TODO-page-tree-listing-password.md` and `reports/TODO-text-pdfkit-leaves-out.md`. Parser version 9, cache schema 8.
 
 **Docs:** GOALS, PHILOSOPHY and PROPOSAL are approved. ROADMAP and README were approved on 2026-10-15. DESIGNS and FEATURES say drafted: the review fixes changed them after that approval, and only the user approves.
 
@@ -31,7 +33,7 @@ Under them: worker processes with time and memory limits and a shared pool of sl
 4. **M1.13** comments, highlights, form fields and link targets at their positions; **M1.14** a marker with a crop command for every image and drawing.
 5. M1's exit criteria: GOALS.md G2, G4, G9, G12, G13, G16 and G17, plus a week of the author's own daily use. Every goal is still unmeasured.
 
-`TODO.md` holds the follow-ups without a milestone; the heaviest are making `pdf info`, `pdf ls` and `pdf search` cheap on large files, and making the index walk the page tree once.
+`TODO.md` holds the follow-ups without a milestone; it is empty.
 
 ## How the work has been done
 
@@ -60,3 +62,6 @@ Under them: worker processes with time and memory limits and a shared pool of sl
 - A local session has no claude.ai link for the commit trailer; M1.10's last commits carry the local session ID instead.
 - macOS clears `/private/tmp`: anything a reviewer makes there must go into `testdata` to last.
 - Run the unit tests through `scripts/test.sh`: with the Command Line Tools alone, a plain `swift test` cannot find the Swift Testing framework.
+- A `pdf read` or `pdf add` of a large file leaves a background runner parsing its other pages after the command returns. When timing, stop it (`pkill -f <the file's folder>`) before the next run, or it skews the next timing.
+- A fixture page for a fix must fail on the build before the fix: three of the sixth review's first pages passed on the old build too, and proved nothing. Compare with the old binary before trusting a page.
+- A real-file sweep for false marks: macOS's license in 41 languages, Xcode's acknowledgments, the samples, and TeX Live's manuals under `/usr/local/texlive/2026/texmf-dist/doc`, which hold Type 3 fonts and odd encodings.
