@@ -332,6 +332,25 @@ check "a locked PDF crops without its password only to say so" "could not be dra
 check "a locked PDF crops with its password on standard input" "/p1\.png  (~" \
     "$(echo "open sesame" | library crop $locked --page 1 --password-stdin)"
 
+# The agent guide, printed and installed as a Claude Code skill in a home of its own.
+guide() { env -u CLAUDE_CONFIG_DIR HOME=$work/guide $pdf agent-guide "$@" 2>&1; echo "exit $?"; }
+output=$(guide)
+check "pdf agent-guide prints the guide" "^# pdf: reading PDFs$" "$output"
+check "the guide names the hidden-text flag" "pdf read paper.pdf --page 1 --include-hidden" "$output"
+check "the guide exits 0" "^exit 0$" "$output"
+output=$(guide --install claude-code)
+check "--install claude-code writes the skill" "^installed the Claude Code skill: $work/guide/.claude/skills/pdf-cli/SKILL.md$" "$output"
+check "a new skills folder needs /reload-skills in a running session" "/reload-skills" "$output"
+skill=$(cat "$work/guide/.claude/skills/pdf-cli/SKILL.md")
+check "the skill starts with its frontmatter" "^---$" "$(head -1 <<<"$skill")"
+check "the skill is named pdf-cli" "^name: pdf-cli$" "$(sed -n 2p <<<"$skill")"
+check "the skill's description leads with when to use it" '^description: "Use whenever you need to read' "$skill"
+check "the skill holds the guide" "^## Hidden text$" "$skill"
+check "a second install changes nothing" "^the Claude Code skill is up to date: " "$(guide --install claude-code)"
+check "an install follows CLAUDE_CONFIG_DIR" "^installed the Claude Code skill: $work/config/skills/pdf-cli/SKILL.md$" \
+    "$(CLAUDE_CONFIG_DIR=$work/config $pdf agent-guide --install claude-code 2>&1)"
+check "an agent it does not know is refused" "exit 64" "$(guide --install codex)"
+
 # Pages nobody waits for parse slowly, at background priority, so runners get a minute to finish.
 for _ in $(seq 60); do
     pgrep -f 'pdf __' >/dev/null || break

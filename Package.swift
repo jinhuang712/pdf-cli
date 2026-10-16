@@ -31,5 +31,14 @@ let package = Package(
             name: "PDFCoreTests",
             dependencies: ["PDFCore"]
         ),
+        // Tests of the command line itself, such as the agent guide against the subcommands.
+        .testTarget(
+            name: "pdfTests",
+            dependencies: [
+                "pdf",
+                "PDFCore",
+                .product(name: "ArgumentParser", package: "swift-argument-parser"),
+            ]
+        ),
     ]
 )

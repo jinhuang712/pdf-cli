@@ -8,6 +8,6 @@ struct PDF: AsyncParsableCommand {
         version: "0.0.0-spike",
         subcommands: [AddCommand.self, InfoCommand.self, ReadCommand.self, SearchCommand.self, CropCommand.self, PickCommand.self,
                       ListCommand.self, RemoveCommand.self,
-                      GCCommand.self, Spike.self, DebugPages.self, DebugOCR.self, RunnerCommand.self, WorkerCommand.self]
+                      GCCommand.self, AgentGuideCommand.self, Spike.self, DebugPages.self, DebugOCR.self, RunnerCommand.self, WorkerCommand.self]
     )
 }

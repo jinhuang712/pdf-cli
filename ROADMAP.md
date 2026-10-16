@@ -1,4 +1,4 @@
-<!-- what-we-build: approved 2026-10-15 -->
+<!-- what-we-build: drafted 2026-10-16 -->
 # Roadmap
 
 **Current milestone:** M1. An agent reads born-digital and scanned PDFs through the cache.
@@ -62,7 +62,7 @@ The spike shipped no features. It answered the riskiest questions.
 - **Hidden text** (F9)
   - [x] M1.10 Hidden text replaced by a marker in place, with its words shown on request, text in layers switched off included
 - **Agent guide** (F13)
-  - [ ] M1.11 `pdf agent-guide` and its Claude Code skill
+  - [x] M1.11 `pdf agent-guide` and its Claude Code skill
 - **Tests**
   - [ ] M1.12 A smoke set of 10 PDFs, and a safety set of broken PDFs and hidden-text PDFs. The safety set holds one hidden-text PDF per trick: text in the background's color, tiny, clipped, covered by an image, off the page and in a layer switched off, plus white text on a dark box, which counts as visible. It also holds PDFs with comments, form fields, links, attachments and scripts.
 

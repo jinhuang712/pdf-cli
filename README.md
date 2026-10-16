@@ -1,4 +1,4 @@
-<!-- what-we-build: approved 2026-10-15 -->
+<!-- what-we-build: drafted 2026-10-16 -->
 # pdf-cli
 
 > A PDF CLI tool that lets you read fast, cheap and accurately.
@@ -23,7 +23,7 @@ Not available yet. The spike is done, and the first usable version is milestone 
 
 ## Use
 
-The first three work today, built from source, and so does cropping a page or a region of it with `pdf crop paper.pdf --page 7 --bbox 0.1,0.4,0.8,0.3`. Cropping a figure by its number and reading footnotes and references are planned.
+The first three work today, built from source, and so does cropping a page or a region of it with `pdf crop paper.pdf --page 7 --bbox 0.1,0.4,0.8,0.3`. Cropping a figure by its number and reading footnotes and references are planned. `pdf agent-guide --install claude-code` teaches Claude Code the tool, as a skill.
 
 | When the agent wants to | It runs |
 |---|---|
@@ -35,7 +35,7 @@ The first three work today, built from source, and so does cropping a page or a 
 
 ## Known limits
 
-- Only `pdf add`, `pdf info`, `pdf read`, `pdf search`, `pdf crop`, `pdf pick`, `pdf ls`, `pdf rm` and `pdf gc` are built so far, from source, and every target in [GOALS.md](GOALS.md) is still unmeasured.
+- Only `pdf add`, `pdf info`, `pdf read`, `pdf search`, `pdf crop`, `pdf pick`, `pdf ls`, `pdf rm`, `pdf gc` and `pdf agent-guide` are built so far, from source, and every target in [GOALS.md](GOALS.md) is still unmeasured.
 - It supports macOS 11 and newer, and no other platform.
 - The document structure of scanned pages needs macOS 26.
 - Scanned pages in Japanese or Korean need macOS 13.

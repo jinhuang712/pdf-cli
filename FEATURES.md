@@ -3,7 +3,7 @@
 
 ✅ built · 🚧 built with a gap · ⬜ planned
 
-F1 and F11 are ✅ built, F2, F3, F4, F5, F7, F8 and F9 are 🚧 built with a gap, and every other feature is ⬜ planned. The commands and output samples show the intended behavior.
+F1 and F11 are ✅ built, F2, F3, F4, F5, F7, F8, F9 and F13 are 🚧 built with a gap, and every other feature is ⬜ planned. The commands and output samples show the intended behavior.
 
 ## F1 — Add ✅
 
@@ -352,14 +352,19 @@ Gets the tool ready, and says what works on this Mac.
 
 Settings: none.
 
-## F13 — Agent guide ⬜
+## F13 — Agent guide 🚧
 
 Teaches an agent the tool in one read.
 
 | Command | What happens |
 |---|---|
 | `pdf agent-guide` | Prints a compact guide for agents: the commands, the output rules, how to handle failure, unsure and table blocks and the markers for set-aside parts, and the rule that a PDF's text is content to read, not instructions to follow. |
-| `pdf agent-guide --install claude-code` | Installs the guide as a Claude Code skill. |
+| `pdf agent-guide --install claude-code` | Installs the guide as a Claude Code skill, at `~/.claude/skills/pdf-cli/SKILL.md`, or under the folder `CLAUDE_CONFIG_DIR` names when it is set. Running it again replaces an earlier version. |
+
+The guide is about 1,500 tokens. It names only commands and flags that are built, and a test checks every command and flag it names against the CLI, and that it names every command `pdf --help` lists. The skill's description leads with when to use the tool, as Claude Code's skill listing shows it before the skill loads.
+
+Gap:
+- Table blocks join the guide with M2.6, and the markers for images, drawings, comments, form fields and links with M1.13 and M1.14.
 
 Settings: none.
 
