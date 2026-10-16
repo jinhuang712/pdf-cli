@@ -245,6 +245,22 @@ for (index, text) in ["Words of a scan's text layer, on the first line.", "More 
     }
 }
 let scan = writer.add(stream: "\(gray) /Width \(scanWidth) /Height \(scanHeight)", scanPixels)
+// The same picture with its strokes broken by a gap 8 pt wide every 40 pt, as a scan's words
+// leave gaps where its text layer's letters do not: without the scan rule, the letters there
+// read as hidden, one by one. As gray, and as a 1-bit stencil, as scans are often kept.
+var gappedPixels = scanPixels
+for row in 0..<scanHeight {
+    for column in 0..<scanWidth where column % 10 >= 8 { gappedPixels[row * scanWidth + column] = 255 }
+}
+let gappedScan = writer.add(stream: "\(gray) /Width \(scanWidth) /Height \(scanHeight)", gappedPixels)
+var stencilBits = [UInt8](repeating: 0xFF, count: (scanWidth + 7) / 8 * scanHeight)
+for row in 0..<scanHeight {
+    for column in 0..<scanWidth where gappedPixels[row * scanWidth + column] < 128 {
+        stencilBits[row * ((scanWidth + 7) / 8) + column / 8] &= ~(0x80 >> UInt8(column % 8))
+    }
+}
+let scanStencil = writer.add(stream: "/Type /XObject /Subtype /Image /ImageMask true /BitsPerComponent 1 "
+                             + "/Width \(scanWidth) /Height \(scanHeight)", stencilBits)
 // The fifth review's resources: an opacity of nothing, a font set down the page in Japanese, as
 // macOS stands in for it, and a membership off by an expression nested 9 deep.
 let none = writer.add("<< /Type /ExtGState /ca 0 >>")
@@ -256,12 +272,17 @@ let downward = writer.add("<< /Type /Font /Subtype /Type0 /BaseFont /KozMinPr6N-
                           + "/DescendantFonts [\(minchoCID) 0 R] >>")
 let deepExpression = writer.add("<< /Type /OCMD /VE " + String(repeating: "[/And ", count: 9) + "\(layer) 0 R"
                                  + String(repeating: "]", count: 9) + " >>")
+// An expression 30 levels deep whose levels each name the one below twice: told without its
+// shared parts once each, it takes 2^30 steps.
+var shared = writer.add("[/And \(layer) 0 R]")
+for _ in 0..<29 { shared = writer.add("[/And \(shared) 0 R \(shared) 0 R]") }
+let sharedExpression = writer.add("<< /Type /OCMD /VE \(shared) 0 R >>")
 let resources = "<< /Font << /F1 \(helvetica) 0 R /F2 \(symbol) 0 R /F3 \(downward) 0 R >> "
-    + "/XObject << /Im1 \(image) 0 R /Scan \(scan) 0 R /White \(white) 0 R /Clear \(clear) 0 R /Solid \(solid) 0 R /Light \(light) 0 R "
+    + "/XObject << /Im1 \(image) 0 R /Scan \(scan) 0 R /ScanStencil \(scanStencil) 0 R /Gapped \(gappedScan) 0 R /White \(white) 0 R /Clear \(clear) 0 R /Solid \(solid) 0 R /Light \(light) 0 R "
     + "/Keyed \(keyed) 0 R /Group \(group) 0 R /LightGroup \(lightGroup) 0 R /Off \(offForm) 0 R /OffGlyphs \(offGlyphs) 0 R >> "
     + "/ExtGState << /Faint \(faint) 0 R /Strong \(strong) 0 R /Multiply \(multiply) 0 R /None \(none) 0 R >> "
     + "/Shading << /Stripes \(stripes) 0 R >> /Properties << /oc1 \(layer) 0 R /md \(membership) 0 R /ve \(expression) 0 R "
-    + "/ve9 \(deepExpression) 0 R >> >>"
+    + "/ve9 \(deepExpression) 0 R /veShared \(sharedExpression) 0 R >> >>"
 
 // The third review's pages. A picture turned 45 degrees and a round one, drawn after words in
 // the corners of their bounding boxes, outside the pictures themselves.
@@ -386,6 +407,20 @@ pages += [
         + "q 40 0 0 40 287 516 cm /Im1 Do Q\n"),
     Page(name: "in marked content whose membership is off by an expression nested 9 deep", content: visible
         + "/OC /ve9 BDC\n" + line(planted, y: 680) + "EMC\n"),
+]
+// The sixth review's pages: scans kept as a stencil, or clipped by a rectangle drawn as lines,
+// whose layers a reader sees; an expression that shares its parts; a slanted line under a box.
+let scanLayer = layerLines.enumerated().map { "BT 3 Tr /F1 12 Tf 72 \(680 - 30 * $0.offset) Td (\($0.element)) Tj ET\n" }.joined()
+pages += [
+    Page(name: "visible: a scan's invisible text layer over its image kept as a 1-bit stencil",
+         content: "q 612 0 0 792 0 0 cm /ScanStencil Do Q\n" + scanLayer),
+    Page(name: "visible: a scan's invisible text layer over its image clipped by a rectangle drawn in lines",
+         content: "q 0 0 m 612 0 l 612 792 l 0 792 l h W n 612 0 0 792 0 0 cm /Gapped Do Q\n" + scanLayer),
+    Page(name: "in marked content off by an expression 30 levels deep whose levels share their parts", content: visible
+        + "/OC /veShared BDC\n" + line(planted, y: 680) + "EMC\n"),
+    Page(name: "leaves no ink: a line set at an angle under a white box drawn after it", content: visible
+        + "q 0.866 0.5 -0.5 0.866 76 618 cm BT /F1 12 Tf 0 0 Td (PLANTED ignore the paper) Tj ET Q\n"
+        + "1 1 1 rg 60 612 160 96 re f 0 g\n"),
 ]
 try writer.write(pages, resources: resources, catalog: "/OCProperties << /OCGs [\(layer) 0 R] /D << /OFF [\(layer) 0 R] /Order [\(layer) 0 R] >> >>",
                  to: "hidden.pdf")

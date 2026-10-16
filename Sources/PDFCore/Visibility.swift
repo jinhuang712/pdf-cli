@@ -262,7 +262,13 @@ struct Visibility {
         // there ink judges the word as a whole, as PDFKit's boxes for its letters may lie a letter
         // off, on another line even.
         let alongAxes = !own.isEmpty && own.allSatisfy { $0.toText.axisAligned }
-        guard straight || alongAxes else { return .seen(nil) }
+        guard straight || alongAxes else {
+            // An opaque rectangle drawn after the word over most of its box hides it all the same.
+            if let last = drawn.map(\.order).max(), drawing.coverings.contains(where: { cover in
+                cover.shape && cover.exact && cover.order > last && cover.rect.intersection(rect).area >= 0.5 * rect.area
+            }) { return .hidden(.invisible) }
+            return .seen(nil)
+        }
         // A point above and below the box, where PDFKit places some glyphs' boxes a little off
         // their ink; none to the sides, where the next word's ink starts.
         guard let ink = ink(in: rect.insetBy(dx: 0, dy: -1)) else { return .seen(nil) }
@@ -275,7 +281,9 @@ struct Visibility {
         // A word an image over it shows, as a scan's picture of the layer drawn under it, is
         // judged by the image, not letter by letter against the layer's places.
         case .shown: return .seen(nil)
-        case nil: return .seen(straight ? ink : nil)
+        // A word in the invisible mode has no ink of its own to check letter by letter: what
+        // shows there is the scan's, as where a note in the layer's size stood beside it.
+        case nil: return .seen(straight && !(!drawn.isEmpty && drawn.allSatisfy { $0.kind == .invisible }) ? ink : nil)
         }
     }
 
@@ -893,6 +901,9 @@ final class Drawing {
         var exact: Bool
         /// An opaque filled rectangle or shading, not an image.
         var shape = false
+        /// It fills its bounds, tilted a little at most, and clipped, if at all, to one rectangle
+        /// along the page's axes: a hairline image along the page's diagonal does not.
+        var fills = false
     }
 
     /// A soft mask's values, from 0, clear, to 255, solid, row by row from the top.
@@ -969,9 +980,15 @@ final class Drawing {
     var fonts: [OpaquePointer: Widths] = [:]
     /// The path being built, by its bounds in page space; whether it is one rectangle along the
     /// page's axes; and whether it then clips.
+    /// Visibility expressions told so far.
+    var told: [OpaquePointer: Bool?] = [:]
     var path = CGRect.null
     var rectangles = 0
     var curved = false
+    /// The corners of a path of straight lines, in page space, and how many times it moved to a
+    /// new start: four corners along the page's axes, from one start, are a rectangle too.
+    var corners: [CGPoint] = []
+    var starts = 0
     var clipNext = false
     var textSeen = false
     /// Marked content open on the page, each level switched off or not, and how many are off.
@@ -1043,7 +1060,7 @@ final class Drawing {
         underlay = covered.count * 10 >= cells * cells * 8
         // Opaque ones only: a page-size watermark drawn last that lets the page through is no scan.
         var over = Set<Int>()
-        for cover in coverings.reversed() where !cover.shape && cover.exact && cover.known && cover.mask == nil && cover.opacity >= 1 {
+        for cover in coverings.reversed() where !cover.shape && cover.fills && cover.known && cover.mask == nil && cover.opacity >= 1 {
             add(cover.rect, to: &over)
             if over.count * 10 >= cells * cells * 8 {
                 overlay = cover.order
@@ -1148,6 +1165,16 @@ final class Drawing {
     /// Whether a visibility expression shows: /Not, /And or /Or over layers and expressions,
     /// nested at most 8 deep. Nil when it is malformed.
     func shows(_ expression: CGPDFArrayRef, depth: Int) -> Bool? {
+        // Each expression is told once: one whose operands share deeper expressions would
+        // otherwise take twice as long a level, 30 s at 30 levels in the sixth review.
+        let identity = unsafeBitCast(expression, to: OpaquePointer.self)
+        if let known = told[identity] { return known }
+        let shown = tell(expression, depth: depth)
+        told[identity] = .some(shown)
+        return shown
+    }
+
+    func tell(_ expression: CGPDFArrayRef, depth: Int) -> Bool? {
         var name: UnsafePointer<CChar>?
         guard depth < 32, CGPDFArrayGetName(expression, 0, &name), let name else { return nil }
         var operands: [Bool] = []
@@ -1292,13 +1319,21 @@ final class Drawing {
         let rect = CGRect(x: 0, y: 0, width: 1, height: 1).applying(current.transform).intersection(current.clip)
         guard !rect.isNull, rect.width > 0, rect.height > 0 else { return }
         let exact = current.transform.axisAligned && current.clipExact
-        // Only an opaque picture along the page's axes, filling its box, can be a scan's image of
-        // the page: a hairline image, one clipped to two dots or one that lets everything through
-        // spans the page by its bounds alone.
-        if exact, known, mask == nil, current.opacity >= 1, !current.seeThrough { images.append(rect) }
+        let transform = current.transform
+        let spanned = CGRect(x: 0, y: 0, width: 1, height: 1).applying(transform)
+        let fills = current.clipExact && spanned.width * spanned.height > 0
+            && abs(transform.a * transform.d - transform.b * transform.c) >= 0.9 * spanned.width * spanned.height
+        let placed = Placed(order: order, rect: rect, transform: transform, opacity: current.opacity, mask: mask,
+                            known: known && !current.seeThrough, exact: exact, fills: fills)
+        // A scan's image of the page fills its bounds and shows: a hairline image along the
+        // diagonal, one clipped to two dots, or one drawn with no opacity, or with a soft mask
+        // clear all over, spans the page by its bounds alone. Images whose opacity the commands
+        // cannot read, as a stencil, a JPEG 2000 or an inline image, count, as scans are kept so:
+        // until the sixth review they did not, and their text layers got 150 marks a page.
+        let clear = mask != nil && (alpha(of: placed, over: rect)?.high ?? 1) < 0.5
+        if fills, current.opacity >= 0.5, !clear { images.append(rect) }
         guard textSeen else { return }
-        coverings.append(Placed(order: order, rect: rect, transform: current.transform, opacity: current.opacity, mask: mask,
-                                known: known && !current.seeThrough, exact: exact))
+        coverings.append(placed)
     }
 
     /// A shape filled after text: an opaque rectangle along the page's axes, or a shading over
@@ -1326,6 +1361,27 @@ final class Drawing {
         add(numbers)
     }
 
+    /// A straight line to a point, or a move to a new start.
+    func line(_ numbers: [CGFloat], start: Bool) {
+        if start { starts += 1 }
+        corners.append(CGPoint(x: numbers[0], y: numbers[1]).applying(state.transform))
+        add(numbers)
+    }
+
+    /// Whether the straight lines drawn make one rectangle along the page's axes.
+    var linesMakeRectangle: Bool {
+        var points: [CGPoint] = []
+        for point in corners where points.last.map({ hypot($0.x - point.x, $0.y - point.y) > 0.01 }) ?? true { points.append(point) }
+        if points.count == 5, let first = points.first, let last = points.last, hypot(first.x - last.x, first.y - last.y) <= 0.01 {
+            points.removeLast()
+        }
+        guard starts == 1, points.count == 4 else { return false }
+        return (0..<4).allSatisfy { index in
+            let from = points[index], to = points[(index + 1) % 4]
+            return (abs(from.x - to.x) <= 0.01) != (abs(from.y - to.y) <= 0.01)
+        }
+    }
+
     func add(_ numbers: [CGFloat]) {
         for index in stride(from: 0, to: numbers.count - 1, by: 2) {
             let point = CGPoint(x: numbers[index], y: numbers[index + 1]).applying(state.transform)
@@ -1336,7 +1392,7 @@ final class Drawing {
     /// The path ends: it clips if `W` asked, and a fill may cover text. Nil when the path is not
     /// one rectangle along the page's axes.
     func endPath(fills: Bool) {
-        let rectangle = rectangles == 1 && !curved ? path : nil
+        let rectangle = !curved && ((rectangles == 1 && corners.isEmpty) || (rectangles == 0 && linesMakeRectangle)) ? path : nil
         if fills { fill(rectangle) }
         if clipNext {
             state.clip = state.clip.intersection(path)
@@ -1345,6 +1401,8 @@ final class Drawing {
         path = .null
         rectangles = 0
         curved = false
+        corners = []
+        starts = 0
         clipNext = false
     }
 
@@ -1520,8 +1578,8 @@ final class Drawing {
         }
         for name in ["g", "rg", "k"] { on(name) { _, drawing in drawing.state.patternFill = false } }
         // The path, by its bounds, and the clip it makes.
-        on("m") { scanner, drawing in numbers(scanner, 2).map(drawing.extend) }
-        on("l") { scanner, drawing in numbers(scanner, 2).map(drawing.extend) }
+        on("m") { scanner, drawing in numbers(scanner, 2).map { drawing.line($0, start: true) } }
+        on("l") { scanner, drawing in numbers(scanner, 2).map { drawing.line($0, start: false) } }
         on("c") { scanner, drawing in numbers(scanner, 6).map(drawing.extend) }
         on("v") { scanner, drawing in numbers(scanner, 4).map(drawing.extend) }
         on("y") { scanner, drawing in numbers(scanner, 4).map(drawing.extend) }
