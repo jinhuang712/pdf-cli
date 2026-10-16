@@ -336,6 +336,12 @@ output=$(PDF_CLI_HOME=$work/terminal expect -c "spawn $pdf add $locked --passwor
 check "on a terminal, --password-stdin asks for the password" "Password for $locked: " "$output"
 check "the password typed there opens the file" "· 1 page · ok" "$output"
 check "the password typed there is not shown" "^0$" "$(grep -c "open sesame" <<<"$output")"
+output=$(PDF_CLI_HOME=$work/terminal expect -c "spawn $pdf add $locked --password-stdin
+    expect \"Password for $locked: \"
+    send \"open\003\"
+    set timeout 5
+    expect eof { puts ENDED } timeout { puts STILL }" 2>&1)
+check "Ctrl-C at the password prompt ends the command at once" "ENDED" "$output"
 check "a locked PDF crops without its password only to say so" "could not be drawn: locked by a password" "$(library crop $locked --page 1)"
 check "a locked PDF crops with its password on standard input" "/p1\.png  (~" \
     "$(echo "open sesame" | library crop $locked --page 1 --password-stdin)"

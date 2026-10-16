@@ -44,6 +44,25 @@ public struct FontCheck: Sendable, Equatable {
         var images = 0
         /// The page's resources, for an old form that has none of its own.
         var pageResources: CGPDFDictionaryRef?
+        /// The resources of the nodes above the page, nearest first, for a page read from its
+        /// dictionary: CGPDF looks a name the page's resources lack up there for the page's own
+        /// content, not for a form's.
+        var inherited: [CGPDFDictionaryRef] = []
+
+        /// A resource by name, from the stream's resources, or from those above the page.
+        func resource(_ stream: CGPDFContentStreamRef, _ category: String, _ name: UnsafePointer<CChar>) -> CGPDFObjectRef? {
+            if let object = CGPDFContentStreamGetResource(stream, category, name) { return object }
+            guard depth == 0 else { return nil }
+            for resources in inherited {
+                var dictionary: CGPDFDictionaryRef?
+                var object: CGPDFObjectRef?
+                if CGPDFDictionaryGetDictionary(resources, category, &dictionary), let dictionary,
+                   CGPDFDictionaryGetObject(dictionary, name, &object), let object {
+                    return object
+                }
+            }
+            return nil
+        }
 
         func add(_ counts: [UnsafeRawPointer: (gaps: Int, risky: Int)]) {
             for (font, entry) in counts {
@@ -65,7 +84,7 @@ public struct FontCheck: Sendable, Equatable {
             _ = CGPDFScannerPopNumber(scanner, &size)
             var name: UnsafePointer<CChar>?
             guard CGPDFScannerPopName(scanner, &name), let name,
-                  let object = CGPDFContentStreamGetResource(CGPDFScannerGetContentStream(scanner), "Font", name)
+                  let object = scan.resource(CGPDFScannerGetContentStream(scanner), "Font", name)
             else {
                 scan.font = nil
                 return
@@ -106,7 +125,7 @@ public struct FontCheck: Sendable, Equatable {
             var name: UnsafePointer<CChar>?
             let stream = CGPDFScannerGetContentStream(scanner)
             guard scan.operations <= operationLimit, scan.depth < 4, CGPDFScannerPopName(scanner, &name),
-                  let name, let object = CGPDFContentStreamGetResource(stream, "XObject", name) else { return }
+                  let name, let object = scan.resource(stream, "XObject", name) else { return }
             var form: CGPDFStreamRef?
             guard CGPDFObjectGetValue(object, .stream, &form), let form,
                   let dictionary = CGPDFStreamGetDictionary(form) else { return }
@@ -180,16 +199,28 @@ public struct FontCheck: Sendable, Equatable {
     }
 
     /// Measures the page whose dictionary is `dictionary`, as `init(page:)` does, reading its
-    /// content streams in turn. An operation split between two streams, which the format allows
-    /// and files hardly do, goes uncounted. Nil for a page whose contents are neither a stream nor
-    /// streams, or that has contents and no resources: the caller asks CGPDF for the page.
+    /// content streams in turn. A name the page's resources lack is looked up in the resources of
+    /// the nodes above it, nearest first, as CGPDF looks it up for a page (`Scan.resource`). An operation split between two
+    /// streams, which the format allows and files hardly do, goes uncounted. Nil for a page whose
+    /// contents are neither a stream nor streams, or that has contents and no resources: the
+    /// caller asks CGPDF for the page.
     init?(pageDictionary dictionary: CGPDFDictionaryRef) {
         let scan = Scan()
-        if let object = PageKeyer.inherited(dictionary, "Resources") {
-            var resources: CGPDFDictionaryRef?
-            guard CGPDFObjectGetValue(object, .dictionary, &resources) else { return nil }
-            scan.pageResources = resources
+        // The resources up the tree, nearest first.
+        var chain: [CGPDFDictionaryRef] = []
+        var node: CGPDFDictionaryRef? = dictionary
+        for _ in 0...PageTree.maxDepth + 1 {
+            guard let current = node else { break }
+            if let object = PageKeyer.object(current, "Resources") {
+                var resources: CGPDFDictionaryRef?
+                guard CGPDFObjectGetValue(object, .dictionary, &resources), let resources else { return nil }
+                chain.append(resources)
+            }
+            var parent: CGPDFDictionaryRef?
+            node = CGPDFDictionaryGetDictionary(current, "Parent", &parent) ? parent : nil
         }
+        scan.pageResources = chain.first
+        scan.inherited = Array(chain.dropFirst())
         var streams: [CGPDFStreamRef] = []
         if let object = PageKeyer.object(dictionary, "Contents") {
             var stream: CGPDFStreamRef?
@@ -207,7 +238,7 @@ public struct FontCheck: Sendable, Equatable {
             }
         }
         if !streams.isEmpty {
-            guard let resources = scan.pageResources, let create = Self.createContentStream else { return nil }
+            guard let resources = chain.first, let create = Self.createContentStream else { return nil }
             for stream in streams {
                 guard let content = create(stream, resources, nil) else { return nil }
                 defer { CGPDFContentStreamRelease(content) }

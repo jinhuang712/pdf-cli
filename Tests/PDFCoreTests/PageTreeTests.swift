@@ -173,6 +173,32 @@ import Testing
         }
     }
 
+    /// A font or form a page's resources do not name, named by a node above the page, is found
+    /// there, as CGPDF finds it for the page's own content.
+    @Test func resourcesNamedAboveThePageAreFound() throws {
+        let gap = "BT /F1 12 Tf [(a) -300 (b) -300 (c)] TJ ET"
+        let form = "BT /F1 12 Tf [(d) -300 (e)] TJ ET"
+        let url = try makePDF([
+            "<< /Type /Catalog /Pages 2 0 R >>",
+            "<< /Type /Pages /Kids [4 0 R] /Count 3 /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> "
+                + "/XObject << /Fm 10 0 R >> >> >>",
+            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+            "<< /Type /Pages /Parent 2 0 R /Kids [5 0 R 6 0 R 7 0 R] /Count 3 /Resources << /ProcSet [/PDF] >> >>",
+            "<< /Type /Page /Parent 4 0 R /Resources << >> /Contents 8 0 R >>",
+            "<< /Type /Page /Parent 4 0 R /Resources << /Font << >> >> /Contents 8 0 R >>",
+            "<< /Type /Page /Parent 4 0 R /Resources << >> /Contents 9 0 R >>",
+            "<< /Length \(gap.utf8.count) >>\nstream\n\(gap)\nendstream",
+            "<< /Length 6 >>\nstream\n/Fm Do\nendstream",
+            "<< /Type /XObject /Subtype /Form /BBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Length \(form.utf8.count) >>"
+                + "\nstream\n\(form)\nendstream",
+        ])
+        defer { try? FileManager.default.removeItem(at: url) }
+        #expect(try compare(url) == 0)
+        let document = try #require(CGPDFDocument(url as CFURL))
+        let tree = try #require(PageTree(document))
+        #expect(tree.pages.compactMap { FontCheck(pageDictionary: $0)?.gaps } == [2, 2, 1])
+    }
+
     /// A page's contents may be several streams, read in turn, and a page with no contents has
     /// nothing to check.
     @Test func contentsInSeveralStreamsOrNoneAreChecked() throws {

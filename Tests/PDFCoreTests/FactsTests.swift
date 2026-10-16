@@ -311,5 +311,12 @@ import Testing
         #expect(flat.contains("and 160 more sections; pdf info --json lists them"))
         let paper = info((0..<12).map { FileFacts.Section(title: "Section \($0 + 1)", level: 1 + $0 % 2, page: $0, top: nil) })
         #expect(paper.contains("Section 12") && !paper.contains("more sections") && !paper.contains("deeper sections"))
+        // A book under one root bookmark keeps its first chapters, not the root alone.
+        let rooted = info([FileFacts.Section(title: "The Whole Book", level: 1, page: 0, top: nil)]
+            + (0..<50).map { FileFacts.Section(title: "Chapter \($0 + 1)", level: 2, page: $0 + 1, top: nil) })
+        #expect(rooted.contains("Chapter 39 ") && !rooted.contains("Chapter 40 "))
+        #expect(rooted.contains("and 11 more sections; pdf info --json lists them"))
+        let one = info((0..<41).map { FileFacts.Section(title: "Entry \($0 + 1)", level: 1, page: $0, top: nil) })
+        #expect(one.contains("and 1 more section; pdf info --json lists them"))
     }
 }

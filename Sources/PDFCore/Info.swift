@@ -412,11 +412,16 @@ public struct Info: Encodable, Sendable {
         var cut = false
         if shown.count > Info.maxSectionRows {
             // A file with hundreds of bookmarks would fill the agent's context, 3,200 tokens for
-            // 200 of them, so a long table keeps to the top level, and to its first rows.
+            // 200 of them. A long table keeps to the top level where that holds 10 to 40 rows, as
+            // a book's chapters; else to its first rows, as under a book's one root bookmark.
             let top = sections.map(\.level).min() ?? 1
-            shown = sections.filter { $0.level == top }
-            cut = shown.count > Info.maxSectionRows
-            shown = Array(shown.prefix(Info.maxSectionRows))
+            let level = sections.filter { $0.level == top }
+            if level.count >= 10 && level.count <= Info.maxSectionRows {
+                shown = level
+            } else {
+                cut = true
+                shown = Array((level.count > Info.maxSectionRows ? level : shown).prefix(Info.maxSectionRows))
+            }
         }
         if !shown.isEmpty {
             let titles = shown.map { String(repeating: "  ", count: $0.level - 1) + $0.title }
@@ -432,7 +437,8 @@ public struct Info: Encodable, Sendable {
                              + (section.tokens.map { Info.thousands($0) } ?? "…"))
             }
             if sections.count > shown.count {
-                table.append("  and \(sections.count - shown.count) \(cut ? "more" : "deeper") sections; pdf info --json lists them")
+                let left = sections.count - shown.count
+                table.append("  and \(left) \(cut ? "more" : "deeper") section\(left == 1 ? "" : "s"); pdf info --json lists them")
             }
             lines.append("")
             lines.append(table.joined(separator: "\n"))

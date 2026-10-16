@@ -38,7 +38,9 @@ struct AddCommand: ParsableCommand {
             }
             for file in found where seen.insert(Reader.resolve(file)).inserted { files.append(file) }
         }
-        let password = passwordStdin ? Password.read(for: files.count == 1 ? files[0] : "the locked PDFs") : self.password
+        // No PDF found, no password to ask for.
+        let password = passwordStdin && !files.isEmpty ? Password.read(for: files.count == 1 ? files[0] : "the locked PDFs")
+            : self.password
         let store = try Store()
         let reader = Reader(store: store, library: try Library())
         let picks = try Picks()
