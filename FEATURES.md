@@ -162,7 +162,7 @@ A keyword finds its other forms, as "dropouts" finds "dropout", and ignores acce
 
 Gap:
 - Search by meaning, and so queries in another language, come with M3.1.
-- `--in` comes with notes, references and memos in M2.7, M2.8 and M3.4; search covers all the text until then.
+- `--in` comes with notes and references in M2.7 and M2.8, and memos when `pdf memo` is built, later; search covers all the text until then.
 - Hits name tables with M2.6 and hidden text with M1.10.
 
 Settings: none.

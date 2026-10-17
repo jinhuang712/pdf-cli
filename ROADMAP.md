@@ -8,7 +8,7 @@
 - ✅ **M0 — Spike.** Proven: Swift and Apple's engines carry the design. About 2 weeks.
 - ⬜ **M1 — Daily reader.** Usable: an agent reads born-digital and scanned PDFs through the cache, with keyword search and page crops. About 5–7 weeks, after M0.
 - ⬜ **M2 — Accurate layout.** Proven: two-column papers, footnotes, citations and figures read right. About 2–3 months, after M1.
-- ⬜ **M3 — Complete.** Usable: search by meaning, tables across pages, formulas, memos and a one-command install. About 1–2 months, after M2.
+- ⬜ **M3 — Complete.** Usable: search by meaning, tables across pages, formulas and a one-command install; then a final wrap-up of detailed tests and tuning. About 1–2 months, after M2.
 
 Each milestone groups its tasks by feature, in the order the tasks are built. A feature's number points to [FEATURES.md](FEATURES.md), and "Later" names the task that finishes it. A task's ID, such as M1.1, names its branches and commits.
 
@@ -70,10 +70,7 @@ The spike shipped no features. It answered the riskiest questions.
 
 ## M2 — Accurate layout ⬜
 
-- **Tests:** what the accuracy goals are measured on
-  - [ ] M2.1 The open test set: 60 open-access PDFs, labelled
-  - [ ] M2.2 The question set: 200 questions, each with its answer and page
-  - [ ] M2.3 A scorer that weighs a wrong block 3× a missing one, and a Docling baseline run on the same Mac
+- **Tests:** M2.1–M2.3, the sets the accuracy goals are measured on, wait for the final wrap-up, below.
 - **Under the hood**
   - [ ] M2.4 The layout model running on Core ML, only if a goal fails with rules alone. See DESIGNS.md → the decision on rules over a default layout model.
   - [ ] M2.5 Reading order across columns, with running headers, footers and publisher stamps set aside, counted in the summary line and shown with `--headers`
@@ -90,11 +87,10 @@ The spike shipped no features. It answered the riskiest questions.
   - [ ] M2.10 `pdf reparse`, plain and with `--step ocr`
   - Later: `--step vlm` (M3.3)
 - **Setup and doctor** (F12)
-  - [ ] M2.11 `pdf setup` and `pdf doctor`, with the licence notice of every model `pdf setup` downloads: MIT covers only our own code
-- **Failure reports** (F8)
-  - [ ] M2.12 The quality thresholds, tuned until G11 passes
+  - [ ] M2.11 `pdf setup` and `pdf doctor`, with the licence notice of every model `pdf setup` downloads: MIT covers only our own code. `pdf setup` asks how much memory parsing may take, as light, balanced or fastest with their numbers, or a number; the worker count follows from it and the cores, OCR pages weigh more, and fewer workers run under memory pressure. An agent says how soon it needs the pages, never how many workers. See DESIGNS.md → "Decision: the user sets parsing's memory, the tool the worker count".
+- **Failure reports** (F8): M2.12, the quality thresholds tuned until G11 passes, waits for the final wrap-up.
 
-**Exit criteria:** GOALS.md G3, G5, G6, G7, G8 and G11.
+**Exit criteria:** GOALS.md G3, G5, G6, G7, G8 and G11, measured at the final wrap-up.
 
 ## M3 — Complete ⬜
 
@@ -104,15 +100,24 @@ The spike shipped no features. It answered the riskiest questions.
   - [ ] M3.2 Tables that continue across pages, linked as one table with a crop per page
 - **Reparse** (F10) and **Setup** (F12): the local vision model
   - [ ] M3.3 A local vision model for hard pages and formulas, with `pdf setup vlm` and `pdf reparse --step vlm`
-- **Memos** (F16)
-  - [ ] M3.4 `pdf memo`
 - **Install**
   - [ ] M3.5 A Homebrew release that installs with one command
-- **Tests**
-  - [ ] M3.6 The question set run in Claude Code with pdf-cli and with the built-in Read tool, which measures G1 and G15
+**Exit criteria:** GOALS.md G1, G10, G14 and G15, measured at the final wrap-up.
 
-**Exit criteria:** GOALS.md G1, G10, G14 and G15.
+## Final wrap-up ⬜
+
+Until every milestone is built, each task gets its unit and end-to-end tests and one quick review; the detailed tests, measurements and tuning wait for here (the user, 2026-10-17).
+
+  - [ ] M2.1 The open test set: 60 open-access PDFs, labelled, from the local set in `private/testset/`, which stays out of git
+  - [ ] M2.2 The question set: 200 questions, each with its answer and page
+  - [ ] M2.3 A scorer that weighs a wrong block 3× a missing one, and a Docling baseline run on the same Mac
+  - [ ] M2.12 The quality thresholds, tuned until G11 passes
+  - [ ] M3.6 The question set run in Claude Code with pdf-cli and with the built-in Read tool, which measures G1 and G15
+  - [ ] Each worker's memory, on text pages and on OCR pages, which sets the budgets `pdf setup` offers; and how fast OCR runs one, two or three at a time
+  - [ ] Every goal measured, M1's again in full
 
 ## Later
+
+- `pdf memo` (F16), moved out of M3 on 2026-10-17: the user finds it not essential.
 
 See [FEATURES.md → Later, if needed](FEATURES.md#later-if-needed).
