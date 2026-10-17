@@ -96,6 +96,10 @@ struct ReadCommand: ParsableCommand {
         }
 
         let keys = try store.pageKeys(docID: docID)
+        // The file's annotations, from its facts, which belong to this version of the file.
+        let resolved = Reader.resolve(path)
+        let facts = try FileStat(path: resolved).flatMap { try store.facts(path: resolved, stat: $0) }
+        let annotations = Dictionary(grouping: facts?.annotations ?? [], by: \.page)
         let limit = Self.tokens(budget)!
         let picks = try Picks().picks(keys: keys)
         let flags = (raw ? " --raw" : "") + (includeHidden ? " --include-hidden" : "") + (format == .text ? " --format text" : "")
@@ -127,7 +131,7 @@ struct ReadCommand: ParsableCommand {
             }
             for (page, result) in results {
                 let resume = index == 0 && page + 1 == start?.page
-                let added = document.add(Output.Page(index: page, result: result, key: keys[page]),
+                let added = document.add(Output.Page(index: page, result: result, key: keys[page], annotations: annotations[page] ?? []),
                                          from: resume ? start?.block : nil, offset: resume ? start?.offset : nil)
                 if !added { break reading }
                 index += 1

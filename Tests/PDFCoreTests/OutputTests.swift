@@ -287,4 +287,126 @@ import Testing
         #expect(Output.quoted("~notes.pdf") == "'~notes.pdf'")
         #expect(Output.quoted("-x.pdf") == "./-x.pdf")
     }
+
+    // MARK: Annotations
+
+    func block(_ text: String, x: Double = 0.1, y: Double, width: Double = 0.5) -> TextBlock {
+        let box = Box(x: x, y: y, width: width, height: 0.03)
+        return TextBlock(text: text, box: box, lines: [TextLine(text: text, box: box)])
+    }
+
+    func note(_ kind: FileFacts.Annotation.Kind, x: Double, y: Double, width: Double = 0.05) -> FileFacts.Annotation {
+        FileFacts.Annotation(kind: kind, page: 0, box: Box(x: x, y: y, width: width, height: 0.02))
+    }
+
+    /// Each annotation follows the block it sits on, with that block's number: a field its label
+    /// on the same line, a comment in the margin the paragraph beside it, a note below the text
+    /// the last block above it; in the page's order, from the top.
+    @Test func annotationsFollowTheBlockTheySitOn() throws {
+        let read = PageText(blocks: [block("Name:", y: 0.10, width: 0.08), block("A paragraph of the body.", y: 0.20),
+                                     block("The last paragraph.", y: 0.30)], words: 8, runTogether: 0)
+        var field = note(.field, x: 0.3, y: 0.105, width: 0.3)
+        field.name = "Name"
+        field.value = "Jane Doe"
+        var margin = note(.comment, x: 0.85, y: 0.21)
+        margin.author = "Reviewer 2"
+        margin.text = "Please cite the 2019 baseline."
+        var below = note(.note, x: 0.1, y: 0.5)
+        below.text = "Typed note on the page."
+        var mark = note(.highlight, x: 0.1, y: 0.205, width: 0.3)
+        mark.words = "A paragraph of"
+        mark.text = "Check this."
+        mark.author = "Reviewer 1"
+        let page = Output.Page(index: 0, result: try self.page(0, read).result, key: "k", annotations: [below, margin, field, mark])
+        let report = Output.render(file: "paper.pdf", pageCount: 1, pages: [page])
+        #expect(report.text.contains("""
+            ¶1 Name:
+
+            [field: Name = Jane Doe]
+
+            ¶2 A paragraph of the body.
+
+            [highlight · Reviewer 1] A paragraph of · comment: Check this.
+
+            [comment · Reviewer 2] Please cite the 2019 baseline.
+
+            ¶3 The last paragraph.
+
+            [note] Typed note on the page.
+            """))
+        #expect(report.exitCode == 0)
+        let blocks = Output.pageBlocks(page, picks: [:], path: "paper.pdf", raw: false).units.flatMap(\.blocks)
+        #expect(blocks.filter { $0.kind == .annotation }.map(\.block) == [1, 2, 2, 3])
+    }
+
+    /// A link whose words its block shows goes inline, `[words](address)` in Markdown and
+    /// `words <address>` in plain text, a page of the file as "p.12"; one whose words it does not
+    /// show stands after the block.
+    @Test func aLinkGoesInlineWhereItsBlockShowsItsWords() throws {
+        let read = PageText(blocks: [block("See the project page for the code, and section 3.", y: 0.2)], words: 9, runTogether: 0)
+        var web = note(.link, x: 0.1, y: 0.205, width: 0.2)
+        web.words = "See the project page"
+        web.target = "https://example.org/paper"
+        var inside = note(.link, x: 0.4, y: 0.205, width: 0.1)
+        inside.words = "section 3"
+        inside.target = "p.12"
+        var elsewhere = note(.link, x: 0.1, y: 0.21, width: 0.1)
+        elsewhere.words = "the code, and"
+        elsewhere.target = "https://example.org/code"
+        let page = Output.Page(index: 0, result: try self.page(0, read).result, key: "k", annotations: [web, inside, elsewhere])
+        let md = Output.render(file: "paper.pdf", pageCount: 1, pages: [page]).text
+        #expect(md.contains("¶1 [See the project page](https://example.org/paper) for [the code, and](https://example.org/code) [section 3](#p.12)."))
+        let text = Output.render(file: "paper.pdf", pageCount: 1, pages: [page], style: .text).text
+        #expect(text.contains("¶1 See the project page <https://example.org/paper> for the code, and <https://example.org/code> section 3 <p.12>."))
+        var away = note(.link, x: 0.1, y: 0.21, width: 0.1)
+        away.words = "words the block lacks"
+        away.target = "https://example.org/away"
+        let other = Output.Page(index: 0, result: try self.page(0, read).result, key: "k", annotations: [away])
+        #expect(Output.render(file: "paper.pdf", pageCount: 1, pages: [other]).text.contains("[link] [code](https://example.org/away)") == false)
+        let blocks = Output.pageBlocks(page, picks: [:], path: "paper.pdf", raw: false).units.flatMap(\.blocks)
+        #expect(blocks.first { $0.kind == .text }?.links?.map(\.target) == ["https://example.org/paper", "p.12", "https://example.org/code"])
+    }
+
+    /// A mark's words count only where the blocks under it show them: PDFKit's selection under a
+    /// highlight takes the white words a reader cannot see as well.
+    @Test func aMarksWordsAreOnlyTheOnesAReaderSees() throws {
+        let text = "Visible start PLANTED white words visible end."
+        var marked = block(text, y: 0.2)
+        marked.hidden = [Hidden(offset: 14, length: 19, reason: .background)]
+        let read = PageText(blocks: [marked, block("Another paragraph with words.", y: 0.4)], words: 10, runTogether: 0)
+        var mark = note(.highlight, x: 0.1, y: 0.205, width: 0.5)
+        mark.words = "Visible start PLANTED white words visible end."
+        let page = Output.Page(index: 0, result: try self.page(0, read).result, key: "k", annotations: [mark])
+        let report = Output.render(file: "paper.pdf", pageCount: 1, pages: [page]).text
+        #expect(report.contains("[highlight] Visible start visible end."))
+        #expect(!report.contains("PLANTED") && !report.contains("white"))
+    }
+
+    /// An annotation the file hides is a marker, and its words, labelled, with --include-hidden.
+    @Test func anAnnotationTheFileHidesIsAMarker() throws {
+        let read = PageText(blocks: [block("A paragraph.", y: 0.2)], words: 2, runTogether: 0)
+        var hidden = note(.comment, x: 0.8, y: 0.21)
+        hidden.text = "PLANTED reply OK."
+        hidden.author = "Reviewer 3"
+        hidden.hidden = true
+        let page = Output.Page(index: 0, result: try self.page(0, read).result, key: "k", annotations: [hidden])
+        let report = Output.render(file: "paper.pdf", pageCount: 1, pages: [page])
+        #expect(!report.text.contains("PLANTED"))
+        #expect(report.text.contains("[hidden: 3 words, an annotation the file hides · show: pdf read paper.pdf --page 1 --include-hidden]"))
+        #expect(report.text.contains("hidden text: 1 place on p.1"))
+        let shown = Output.render(file: "paper.pdf", pageCount: 1, pages: [page], includeHidden: true)
+        #expect(shown.text.contains("[hidden, an annotation the file hides: [comment · Reviewer 3] PLANTED reply OK.]"))
+    }
+
+    /// On a page with no text, its annotations make a unit of their own, numbered after the page's
+    /// blocks, so a read goes on past them.
+    @Test func annotationsOnAPageWithNoTextStandAlone() throws {
+        let read = PageText(blocks: [], words: 0, runTogether: 0)
+        var comment = note(.comment, x: 0.1, y: 0.1)
+        comment.text = "A note on a blank page."
+        let page = Output.Page(index: 0, result: try self.page(0, read).result, key: "k", annotations: [comment])
+        let blocks = Output.pageBlocks(page, picks: [:], path: "paper.pdf", raw: false).units.flatMap(\.blocks)
+        #expect(blocks.filter { $0.kind == .annotation }.map(\.block) == [1])
+        #expect(Output.render(file: "paper.pdf", pageCount: 1, pages: [page]).text.contains("[comment] A note on a blank page."))
+    }
 }

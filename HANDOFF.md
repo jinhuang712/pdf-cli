@@ -4,7 +4,7 @@ Where pdf-cli stands, what is in flight, and how the work has been done, for who
 
 ## Where things stand
 
-**On `main`** (pushed): milestone M0 and tasks M1.1–M1.12 and M1.15 of milestone M1.
+**On `main`** (pushed): milestone M0 and tasks M1.1–M1.13 and M1.15 of milestone M1.
 
 | Command | Task | What it does |
 |---|---|---|
@@ -25,7 +25,9 @@ Under them: worker processes with time and memory limits and a shared pool of sl
 
 **M1.12, the test sets,** landed on 2026-10-17: `reports/M1.12-test-sets.md`. `scripts/smoke-check.sh` reads the 11 files of `testdata/smoke` whole and holds their flags to `testdata/smoke/expected-flags.tsv`; `scripts/safety-check.sh` runs the 20 files of `testdata/safety` and `hidden.pdf`, holds every planted string the generator lists in `testdata/safety/planted.tsv` to the normal output, and prints goal G16's line: 61 of 61 kept out, no crash or hang. Its review found that 4 of `hidden.pdf`'s pages let the last word of their planted line read, since M1.10; fixed. Both run inside `scripts/test-cache.sh`. The set found that a page whose content stream does not decode read as a fine empty page; it is now flagged low-quality, with a block that says part of the page is missing. Parser version 11, cache schema 8.
 
-**Sample PDFs stay local** (the user, 2026-10-16): PDFs downloaded to measure M1's goals, as many as can be gathered, are never committed. They live in the main checkout's `private/`, which `.gitignore` keeps out, and downloads wait for the user's OK on the sources.
+**M1.13, annotations,** landed on 2026-10-17: `reports/M1.13-annotations.md`. `pdf read` shows comments, notes, marks on words with the words a reader sees under them, filled-in fields and links, after the block each sits on, links inline in Markdown. They come from the file's facts, `Store.indexChecks` 8, so a file that gains highlights shows them with no page parsed again. Read them with CGPDF, never with PDFKit's annotation objects: PDFKit followed a link action chained to itself until it crashed.
+
+**Sample PDFs stay local** (the user, 2026-10-16): PDFs downloaded to measure M1's goals, as many as can be gathered, are never committed. 132 of them, 669 MB, live in the main checkout's `private/testset/`, which `.gitignore` keeps out: journal papers from PMC's open-access bucket and arXiv, "Attention Is All You Need" among them, which the user asked for, open textbooks, reports, essays, scans with and without a text layer, and Chinese, Japanese, Arabic, Hebrew and Russian files. `manifest.tsv` there gives each one's source, licence and SHA-256; `fetch_testset.py` downloads them again. 7 of the 139 listed failed: GAO refused, and NASA's and the CIA's links gave web pages. Further downloads wait for the user's OK on the sources.
 
 **Docs:** GOALS, PHILOSOPHY and PROPOSAL are approved. ROADMAP and README were approved on 2026-10-15. DESIGNS and FEATURES say drafted: the review fixes changed them after that approval, and only the user approves.
 
@@ -34,10 +36,10 @@ Under them: worker processes with time and memory limits and a shared pool of sl
 1. The user approves DESIGNS and FEATURES, or asks for changes.
 2. **M1.11** landed on 2026-10-16: `reports/M1.11-agent-guide.md`. The guide lives in `Sources/PDFCore/AgentGuide.swift`; a new command or flag needs a line there, or a place on the test's short list of flags left out, or `Tests/pdfTests/AgentGuideTests.swift` fails.
 3. **M1.12** landed on 2026-10-17; its `carries-*.pdf` are M1.13's fixtures.
-4. **M1.13** comments, highlights, form fields and link targets at their positions; **M1.14** a marker with a crop command for every image and drawing.
+4. **M1.13** landed on 2026-10-17: `reports/M1.13-annotations.md`. **M1.14** next: a marker with a crop command for every image and drawing, stamps, ink and shapes among them.
 5. M1's exit criteria: GOALS.md G2, G4, G9, G12, G13, G16 and G17, plus a week of the author's own daily use. Every goal is still unmeasured.
 
-`TODO.md` holds the follow-ups without a milestone: one, a content stream that inflates to 600 MB, which times its page out.
+`TODO.md` holds the follow-ups without a milestone: two, a content stream that inflates to 600 MB, which times its page out, and links past the first 1,000 of a file.
 
 ## How the work has been done
 

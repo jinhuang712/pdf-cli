@@ -41,6 +41,9 @@ public struct Info: Encodable, Sendable {
     public var highlights: Int?
     public var formFields: Int?
     public var filledFields: Int?
+    /// Annotations past the first `FactReader.maxAnnotations`, or past the time their read may
+    /// take, which `pdf read` does not show.
+    public var annotationsLeftOut: Int?
     public var attachments: [FileFacts.Attachment]
     public var moreAttachments: Int
     public var scripts: [FileFacts.Script]
@@ -92,6 +95,7 @@ public struct Info: Encodable, Sendable {
         self.highlights = known?.highlights
         self.formFields = known?.formFields
         self.filledFields = known?.filledFields
+        self.annotationsLeftOut = known.map(\.moreAnnotations).flatMap { $0 > 0 ? $0 : nil }
         self.attachments = facts.attachments
         self.moreAttachments = facts.moreAttachments
         self.scripts = facts.scripts
@@ -383,6 +387,9 @@ public struct Info: Encodable, Sendable {
         if let comments, let highlights, let formFields, let filledFields {
             counts = ["comments: \(comments)", "highlights: \(highlights)",
                       "form fields: \(formFields)" + (formFields > 0 ? " (\(filledFields) filled)" : "")]
+            if let annotationsLeftOut {
+                counts.append("annotations past the first \(Info.thousands(FactReader.maxAnnotations)) links and as many others: \(Info.thousands(annotationsLeftOut)) not shown by pdf read")
+            }
             if factsPartial { counts.append("counted in part of the file, which holds more objects than one read visits") }
         }
         counts.append("flagged pages: " + (flagged.isEmpty ? "none" : flagged.prefix(12).joined(separator: ", ")

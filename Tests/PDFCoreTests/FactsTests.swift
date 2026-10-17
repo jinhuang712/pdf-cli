@@ -319,4 +319,31 @@ import Testing
         let one = info((0..<41).map { FileFacts.Section(title: "Entry \($0 + 1)", level: 1, page: $0, top: nil) })
         #expect(one.contains("and 1 more section; pdf info --json lists them"))
     }
+
+    /// The annotations a reader sees beside the text reach the facts with their places: a comment
+    /// with its author, a highlight with its words and comment, a note, each filled field once,
+    /// a link with its words and address. A link that starts a program is a script, not a link,
+    /// and a comment the file hides says so.
+    @Test func annotationsReachTheFactsWithTheirPlaces() throws {
+        func read(_ name: String) throws -> [FileFacts.Annotation] {
+            let url = repoRoot.appendingPathComponent("testdata/safety/\(name).pdf")
+            return FactReader.read(try #require(CGPDFDocument(url as CFURL)), url: url).annotations
+        }
+        let comments = try read("carries-comments")
+        #expect(comments.map(\.kind) == [.comment, .highlight, .note])
+        #expect(comments[0].author == "Reviewer 2" && comments[0].text == "Please cite the 2019 baseline.")
+        #expect(abs(comments[0].box.x - 0.817) < 0.01 && abs(comments[0].box.y - 0.167) < 0.01)
+        #expect(comments[1].words == "The 2017 baseline reaches 71 percent on the held-out set")
+        #expect(comments[1].text == "Check this number." && comments[1].author == "Reviewer 1")
+        let fields = try read("carries-form-fields")
+        #expect(fields.map { "\($0.name ?? "")=\($0.value ?? "")" } == ["Name=Jane Doe", "Agree=Yes", "Country=France"])
+        let links = try read("carries-links")
+        #expect(links.map(\.target) == ["https://example.org/paper"])
+        #expect(links.first?.words == "See the project page for")
+        #expect(try read("carries-scripts").isEmpty)
+        let hiding = try read("hidden-annotations")
+        #expect(hiding.first { $0.kind == .comment }?.hidden == true)
+        // PDFKit selects the white words under the highlight; the output keeps only words a reader sees.
+        #expect(hiding.first { $0.kind == .highlight }?.words?.contains("PLANTED") == true)
+    }
 }

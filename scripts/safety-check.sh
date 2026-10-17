@@ -53,6 +53,9 @@ check_planted() {
             if ($0 ~ /^⚠/ || $0 ~ /^  / || $0 ~ /^next:/) next
             line = $0
             gsub(/\[hidden[^]]*\]/, " ", line)
+            # An annotation'"'"'s label and the word before a mark'"'"'s comment are the tool'"'"'s too.
+            sub(/^\[[a-z]+( · [^]]*)?\]/, " ", line)
+            gsub(/ · comment: /, " ", line)
             body[page] = body[page] norm(line)
             next
         }
@@ -115,11 +118,22 @@ expect_info carries-form-fields "form fields: 4 (3 filled)"
 expect_info carries-attachments "attachments: data.csv (23 bytes), notes.txt (26 bytes, p.1) · never opened"
 expect_info carries-scripts "JavaScript on document open"
 expect_info carries-scripts "Launch on link click (p.1), calc.exe · never run"
-output=$(run read testdata/safety/carries-links.pdf --budget all)
-status=$?
-if stopped $status "$output"; then stops=$((stops + 1)); fail "carries-links: crashed or hung (status $status)"
-elif [ $status -ne 0 ]; then fail "carries-links: exit $status"
-else ok "carries-links: reads"; fi
+# What the files carry reaches `pdf read` too, after the block it sits on (M1.13).
+expect_read() {
+    output=$(run read "testdata/safety/$1.pdf" --budget all)
+    status=$?
+    if stopped $status "$output"; then stops=$((stops + 1)); fail "$1: crashed or hung (status $status)"; return; fi
+    if [ $status -ne 0 ]; then fail "$1: exit $status"; return; fi
+    if printf '%s\n' "$output" | grep -q -F -x -- "$2"; then ok "$1: pdf read shows $2"; else fail "$1: pdf read lacks \"$2\""; fi
+}
+expect_read carries-comments "[comment · Reviewer 2] Please cite the 2019 baseline."
+expect_read carries-comments "[highlight · Reviewer 1] The 2017 baseline reaches 71 percent on the held-out set · comment: Check this number."
+expect_read carries-comments "[note] Typed note on the page."
+expect_read carries-form-fields "[field: Name = Jane Doe]"
+expect_read carries-form-fields "[field: Agree = Yes]"
+expect_read carries-form-fields "[field: Country = France]"
+expect_read carries-links "¶2 [See the project page for](https://example.org/paper) the code."
+expect_read carries-scripts "¶2 Open the calculator."
 
 for file in testdata/safety/broken-*.pdf testdata/hidden/broken.pdf; do
     name=$(basename "$file" .pdf)

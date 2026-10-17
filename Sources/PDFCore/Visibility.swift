@@ -6,6 +6,8 @@ import PDFKit
 /// Why a reader cannot see a run of text (FEATURES.md → F9).
 public enum HiddenReason: Int, Codable, Sendable, CaseIterable {
     case background, invisible, tiny, covered, offPage
+    /// An annotation the file hides, or sets off the page.
+    case annotation
 
     /// How the marker names it.
     public var words: String {
@@ -15,6 +17,7 @@ public enum HiddenReason: Int, Codable, Sendable, CaseIterable {
         case .tiny: return "too small to read: under 2 pt, squeezed or stacked"
         case .covered: return "covered by an image"
         case .offPage: return "off the page"
+        case .annotation: return "an annotation the file hides"
         }
     }
 }

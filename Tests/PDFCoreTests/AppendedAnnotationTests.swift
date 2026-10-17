@@ -21,6 +21,25 @@ import Testing
         #expect(try coreGraphicsKeys(updated) == coreGraphicsKeys(original))
     }
 
+    /// The appended highlight reaches the file's facts, with the words under it, while every page
+    /// keeps its key: a read shows it, and parses no page again (GOALS.md → G9).
+    @Test func anAppendedHighlightReachesTheFacts() throws {
+        let original = try makeTwoPagePDF()
+        let updated = try appendHighlight(to: original)
+        defer {
+            try? FileManager.default.removeItem(at: original)
+            try? FileManager.default.removeItem(at: updated)
+        }
+        func annotations(_ url: URL) throws -> [FileFacts.Annotation] {
+            FactReader.read(try #require(CGPDFDocument(url as CFURL)), url: url).annotations
+        }
+        #expect(try annotations(original).isEmpty)
+        let found = try annotations(updated)
+        #expect(found.map(\.kind) == [.highlight])
+        #expect(found.first?.page == 0)
+        #expect(found.first?.words?.contains("Page 1") == true)
+    }
+
     /// A small PDF written by Core Graphics, which keeps each object readable as text.
     func makeTwoPagePDF() throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("pdf-cli-\(UUID()).pdf")

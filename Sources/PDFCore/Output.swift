@@ -8,11 +8,16 @@ public enum Output {
         public var index: Int
         public var result: PageResult
         public var key: String
+        /// What the page's annotations show beside its text, from the file's facts: they belong
+        /// to this version of the file, not to the page's parse, so highlights added to a file
+        /// show without its pages read again.
+        public var annotations: [FileFacts.Annotation]
 
-        public init(index: Int, result: PageResult, key: String) {
+        public init(index: Int, result: PageResult, key: String, annotations: [FileFacts.Annotation] = []) {
             self.index = index
             self.result = result
             self.key = key
+            self.annotations = annotations
         }
     }
 
@@ -39,6 +44,15 @@ public enum Output {
             /// Text a reader cannot see that has no block of its own, as text off the page: a
             /// marker, or its words with `--include-hidden`.
             case hidden
+            /// What an annotation shows beside the text: a comment, a note, a mark on words, a
+            /// filled-in field or a link, after the block it sits on. `status` names which.
+            case annotation
+        }
+
+        /// A link inside a block's text: the words a reader clicks, and where they lead.
+        public struct Link: Encodable, Equatable, Sendable {
+            public var text: String
+            public var target: String
         }
 
         public var kind: Kind
@@ -58,6 +72,13 @@ public enum Output {
         public var readings: [String]?
         /// Ready-to-run commands: "crop", "raw", "pick" or "look".
         public var commands: [String: String]?
+        /// An annotation's author, a link's target, the comment a mark carries, and a field's name.
+        public var author: String?
+        public var target: String?
+        public var note: String?
+        public var name: String?
+        /// The links inside a text block's words.
+        public var links: [Link]?
 
         init(kind: Kind, page: Int, block: Int? = nil, box: Box = Box(x: 0, y: 0, width: 1, height: 1), text: String? = nil,
              printed: String? = nil, status: String? = nil, reason: String? = nil, score: Double? = nil,
@@ -120,6 +141,23 @@ public enum Output {
         let damaged = quality.doubts.first(where: { $0.reason == Quality.damagedReason }).map { doubt in
             Block(kind: .failure, page: number, status: doubt.kind.rawValue, reason: doubt.reason)
         }
+        // What the page's annotations show, each after the block it sits on, with that block's
+        // number, so a read cut there goes on as before.
+        let notes = annotations(page, layer: layer, path: path, includeHidden: includeHidden)
+        func numbered(_ note: Note, _ block: Int) -> Block {
+            var numbered = note.block
+            numbered.block = block
+            return numbered
+        }
+        // The annotations with no block to go with, on a page with no text or one in doubt as a
+        // whole: a unit of their own, after the page's blocks.
+        func rest(_ notes: [Note]) {
+            guard !notes.isEmpty else { return }
+            after += 1
+            var unit = Unit(blocks: notes.map { numbered($0, after) })
+            unit.hidden = notes.filter(\.hidden).count
+            result.units.append(unit)
+        }
 
         if let whole = quality.doubts.first(where: { $0.blocks == nil }) {
             var unit = Unit(blocks: [failureBlock(whole, page: number, block: nil, region: nil, path: path, raw: raw)],
@@ -141,6 +179,7 @@ public enum Output {
             // and a block numbered after it could never be reached.
             if let damaged { unit.blocks.append(damaged) }
             result.units.append(unit)
+            rest(notes)
         } else if let layer {
             for (index, block) in layer.blocks.enumerated() {
                 if let doubt = quality.doubts.first(where: { $0.blocks?.contains(index) == true }) {
@@ -154,6 +193,10 @@ public enum Output {
                                                  status: doubt.kind.rawValue))
                     } else {
                         unit.doubtful = 1
+                    }
+                    for note in notes where note.anchor == index {
+                        unit.blocks.append(numbered(note, index + 1))
+                        if note.hidden { unit.hidden += 1 }
                     }
                     result.units.append(unit)
                     continue
@@ -169,6 +212,17 @@ public enum Output {
                 var unit = Unit(blocks: [Block(kind: .text, page: number, block: index + 1, box: block.box, text: text)],
                                 holdsText: !block.visibleText.isEmpty)
                 unit.hidden = runs.count
+                // A link whose words the block shows goes inline; any other annotation follows it.
+                var links: [Block.Link] = []
+                for note in notes where note.anchor == index {
+                    if let link = note.link, Self.shows(text, link.text) {
+                        links.append(link)
+                    } else {
+                        unit.blocks.append(numbered(note, index + 1))
+                        if note.hidden { unit.hidden += 1 }
+                    }
+                }
+                if !links.isEmpty { unit.blocks[0].links = links }
                 if !choices.isEmpty && picked[index] == nil {
                     unit.blocks.append(unsureBlock(choices, block: block, page: number, index: index, path: path))
                     unit.flag = .unsure
@@ -218,6 +272,9 @@ public enum Output {
                 damaged.block = after
                 result.units.append(Unit(blocks: [damaged], flag: .lowQuality))
             }
+            rest(notes.filter { $0.anchor == nil })
+        } else {
+            rest(notes)
         }
         if let old = layer?.replacedText {
             if raw {
@@ -228,6 +285,95 @@ public enum Output {
             }
         }
         return result
+    }
+
+    /// An annotation as a page shows it: its block, the text block it follows, and, for a link
+    /// a reader sees, its words and target, to go inline when the block shows the words.
+    struct Note {
+        var block: Block
+        var anchor: Int?
+        var hidden = false
+        var link: Block.Link?
+    }
+
+    /// The page's annotations as blocks (FEATURES.md → F3). A mark's or a link's words count only
+    /// where the blocks under it show them: PDFKit's selection under it takes text a reader cannot
+    /// see too, as a white line under a highlight. An annotation the file hides is a marker, or
+    /// its block's words with `includeHidden`.
+    static func annotations(_ page: Page, layer: PageText?, path: String, includeHidden: Bool) -> [Note] {
+        let number = page.index + 1
+        let blocks = layer?.blocks ?? []
+        func seen(_ words: String?, under box: Box, anchor: Int?) -> String? {
+            let under = blocks.indices.filter { index in
+                let other = blocks[index].box
+                return other.x < box.x + box.width && box.x < other.x + other.width && other.y < box.y + box.height && box.y < other.y + other.height
+            }
+            let visible = Set((under.isEmpty ? [anchor].compactMap { $0 } : under).flatMap { index in
+                blocks[index].visibleText.split(whereSeparator: \.isWhitespace).map { Visibility.normalized(String($0)) }
+            })
+            let kept = (words ?? "").split(whereSeparator: \.isWhitespace).filter { word in
+                let letters = Visibility.normalized(String(word))
+                return !letters.isEmpty && visible.contains(letters)
+            }
+            return kept.isEmpty ? nil : kept.joined(separator: " ")
+        }
+        let ordered = page.annotations.filter { $0.page == page.index }.sorted { ($0.box.y, $0.box.x) < ($1.box.y, $1.box.x) }
+        return ordered.map { annotation in
+            let anchor = anchor(annotation.box, in: blocks)
+            var block = Block(kind: .annotation, page: number, box: annotation.box,
+                              status: annotation.reply == true ? "reply" : annotation.kind.rawValue)
+            block.author = annotation.author
+            switch annotation.kind {
+            case .comment, .note:
+                block.text = annotation.text
+            case .highlight, .underline, .squiggly, .strikeout:
+                block.text = seen(annotation.words, under: annotation.box, anchor: anchor)
+                block.note = annotation.text
+            case .field:
+                block.name = annotation.name
+                block.text = annotation.value
+            case .link:
+                block.text = seen(annotation.words, under: annotation.box, anchor: anchor)
+                block.target = annotation.target
+            }
+            var note = Note(block: block, anchor: anchor)
+            if annotation.hidden == true {
+                // The marker counts the annotation's own words; shown, they come with its label.
+                let words = includeHidden ? render(block, style: .text, raw: false) : block.text ?? block.target ?? ""
+                note.block = Block(kind: .hidden, page: number, box: annotation.box,
+                                   text: marker(words, reason: .annotation, includeHidden: includeHidden, path: path, page: number))
+                note.hidden = true
+            } else if annotation.kind == .link, let words = block.text, let target = block.target {
+                note.link = Block.Link(text: words, target: target)
+            }
+            return note
+        }
+    }
+
+    /// The block an annotation goes with: the one its center lies in; or else the nearest across
+    /// the page of those its center's height crosses, as a field goes with its label, and a note
+    /// in the margin with the paragraph beside it; or else, of the blocks above or below it, the
+    /// last in reading order whose top lies above its center, those in its column first. Nil on
+    /// a page with no blocks.
+    static func anchor(_ box: Box, in blocks: [TextBlock]) -> Int? {
+        guard !blocks.isEmpty else { return nil }
+        let x = box.x + box.width / 2, y = box.y + box.height / 2
+        if let inside = blocks.firstIndex(where: { $0.box.x <= x && x <= $0.box.x + $0.box.width && $0.box.y <= y && y <= $0.box.y + $0.box.height }) {
+            return inside
+        }
+        func gap(_ block: TextBlock) -> Double { max(0, block.box.x - (box.x + box.width), box.x - (block.box.x + block.box.width)) }
+        let row = blocks.indices.filter { blocks[$0].box.y <= y && y <= blocks[$0].box.y + blocks[$0].box.height }
+        if let nearest = row.min(by: { gap(blocks[$0]) < gap(blocks[$1]) }) { return nearest }
+        let column = blocks.indices.filter { gap(blocks[$0]) == 0 }
+        return (column.isEmpty ? Array(blocks.indices) : column).last { blocks[$0].box.y <= y } ?? column.first ?? 0
+    }
+
+    /// Whether a block's text shows a link's words, outside a hidden-text marker.
+    static func shows(_ text: String, _ words: String) -> Bool {
+        guard let range = text.range(of: words) else { return false }
+        let before = text[..<range.lowerBound]
+        guard let open = before.range(of: "[hidden", options: .backwards) else { return true }
+        return before[open.upperBound...].contains("]")
     }
 
     /// The output of a read, built page by page within a token budget.
@@ -426,8 +572,9 @@ public enum Output {
 
     /// Every page in full, with no budget: the hidden `pdf debug-read` and the tests use it.
     public static func render(file: String, pageCount: Int, pages: [Page], picks: [String: [Pick]] = [:],
-                              savedByPDFKit: Bool = false, raw: Bool = false) -> Report {
-        var document = Document(file: file, pageCount: pageCount, raw: raw, picks: picks)
+                              savedByPDFKit: Bool = false, raw: Bool = false, style: Style = .md,
+                              includeHidden: Bool = false) -> Report {
+        var document = Document(file: file, pageCount: pageCount, style: style, raw: raw, includeHidden: includeHidden, picks: picks)
         for page in pages { _ = document.add(page) }
         return document.report(savedByPDFKit: savedByPDFKit)
     }
@@ -539,7 +686,24 @@ public enum Output {
             let heading = "p.\(block.page)" + (block.printed.map { " (printed \($0))" } ?? "")
             return style == .md ? "## \(heading)" : "=== \(heading) ==="
         case .text:
-            return "\(address(block)) \(block.text ?? "")"
+            var text = block.text ?? ""
+            for link in block.links ?? [] {
+                if let range = text.range(of: link.text) { text.replaceSubrange(range, with: linked(link.text, to: link.target, style: style)) }
+            }
+            return "\(address(block)) \(text)"
+        case .annotation:
+            let kind = block.status ?? "comment"
+            let by = block.author.map { " · \($0)" } ?? ""
+            switch kind {
+            case "field":
+                return "[field: \(block.name ?? "") = \(block.text ?? "")]"
+            case "link":
+                return "[link] " + linked(block.text ?? block.target ?? "", to: block.target ?? "", style: style)
+            case "comment", "reply", "note":
+                return "[\(kind)\(by)] \(block.text ?? "")"
+            default:
+                return "[\(kind)\(by)]" + (block.text.map { " \($0)" } ?? "") + (block.note.map { " · comment: \($0)" } ?? "")
+            }
         case .doubtful:
             return "\(address(block)) [\(block.status ?? "low-quality")] \(block.text ?? "")"
         case .oldOCR:
@@ -570,6 +734,16 @@ public enum Output {
                   look: \(commands["look"] ?? "")
                 """
         }
+    }
+
+    /// Words that lead somewhere: `[words](https://…)` in Markdown, `words <https://…>` in plain
+    /// text. A page of the file is "p.12", as `--from` writes it.
+    static func linked(_ words: String, to target: String, style: Style) -> String {
+        guard style == .md else { return "\(words) <\(target)>" }
+        let label = words.replacingOccurrences(of: "[", with: "\\[").replacingOccurrences(of: "]", with: "\\]")
+        let address = target.hasPrefix("p.") ? "#" + target
+            : target.replacingOccurrences(of: "(", with: "%28").replacingOccurrences(of: ")", with: "%29").replacingOccurrences(of: " ", with: "%20")
+        return "[\(label)](\(address))"
     }
 
     /// The address a text block starts with: its number on the page, under the page's heading.

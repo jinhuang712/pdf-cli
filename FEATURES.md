@@ -96,7 +96,10 @@ Without a page or section flag, `pdf read` starts at the first page and stops at
 
 Gap:
 - `--section` takes one section per read so far. `--styles` and `--format html` come later.
-- Tables, figures and equations read as plain text until M2.6, and images and annotations get no marker until M1.13 and M1.14.
+- Tables, figures and equations read as plain text until M2.6, and images and drawings get no marker until M1.14.
+- An annotation goes after the block its center lies in, or the nearest block on its line, or the last block above it: a comment on a word in a paragraph comes after the whole paragraph.
+- The words under a mark or a link are PDFKit's selection there, kept only where the blocks under it show them; a mark over text a reader cannot see shows no words. A link goes inline where its block's text holds its words as one run; else it stands after the block.
+- At most 1,000 links a file are read, and 1,000 other annotations, the words under them for at most 3 s; `pdf info` counts the rest. TeX Live's PGF manual holds 44,700 links. Stamps, ink, shapes and other annotations come with M1.14's drawings; a link that starts a program is a script, which `pdf info` lists.
 
 Apple OCR reads a scanned page, a page whose text layer is stray marks or broken characters, and every page of a file whose text layer disagrees with its own image. Its blocks carry addresses like any other, and the text layer it replaced shows with `--raw`, labelled `[old OCR]`.
 
@@ -117,10 +120,13 @@ The rest of the page reaches the text too, at its position:
 
 | What | How it shows |
 |---|---|
-| Comments and sticky notes | `[comment · Reviewer 2] Please cite the 2019 baseline.`, with the author when the file names one |
-| Highlights | `[highlight] the highlighted words`, with the comment attached to it, if any |
+| Comments and sticky notes | `[comment · Reviewer 2] Please cite the 2019 baseline.`, with the author when the file names one; `[reply · …]` for a reply, `[note] …` for a note typed on the page |
+| Highlights | `[highlight] the highlighted words`, with the comment attached to it, if any, as `· comment: …`; `[underline]`, `[squiggly]` and `[strikeout]` alike |
 | Filled-in form fields | `[field: Name = …]` |
-| Links | `[here](https://…)` in Markdown, and `here <https://…>` in plain text |
+| Links | `[here](https://…)` in Markdown, and `here <https://…>` in plain text; `[here](#p.12)` for a page of the file |
+| An annotation the file hides | A hidden-text marker, `an annotation the file hides` (F9) |
+
+They come from the file's facts, read for each version of the file, not from its pages' parse: a file that only gains highlights shows them without a page read again (GOALS.md → G9).
 
 Settings: none.
 
@@ -370,7 +376,7 @@ Teaches an agent the tool in one read.
 The guide is about 1,700 tokens. It names only commands and flags that are built. A test checks, against the CLI itself, that every command and flag the guide names exists, with the command named before it on its line; that every command it writes out parses, its values included; and that it names every command `pdf --help` lists and every flag of each, but for two it leaves out on purpose, `read --full` and `add --password`. The skill's description leads with when to use the tool, as Claude Code's skill listing shows it before the skill loads.
 
 Gap:
-- Images, charts and drawings get no marker until M1.14, so the guide tells the agent to crop a page whose text points to a figure, or that reads empty or short. Table blocks join the guide with M2.6, and comments, form fields and links with M1.13.
+- Images, charts and drawings get no marker until M1.14, so the guide tells the agent to crop a page whose text points to a figure, or that reads empty or short. Table blocks join the guide with M2.6.
 
 Settings: none.
 

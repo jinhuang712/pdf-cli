@@ -546,6 +546,18 @@ When PDFKit cannot open a file, the whole file fails with a reason the agent can
 | PDFium as a fallback | Opens many damaged files. | A non-Apple library in the binary, which the PDFKit decision keeps out. |
 | A repair tool the user has installed, such as qpdf | Repairs many damaged files. | Depends on what each Mac has, so one file gives different answers on different Macs. |
 
+## Decision: annotations from the file's facts, their words checked against what a reader sees — 2026-10-17
+
+Comments, notes, marks on words, filled-in form fields and links reach `pdf read` after the block each sits on (FEATURES.md → F3). They come from the file's facts, which a worker reads for each version of the file with CGPDF, apart from the pages' parse; the words under a mark or a link come from PDFKit's selection there, in the same worker, and the output keeps only the words the blocks under it show a reader.
+
+| Option | For | Against |
+|---|---|---|
+| **The file's facts, read with CGPDF; words from PDFKit's selection, checked against the page's visible text** | A file that gains highlights, appended as Acrobat saves them, shows them with no page parsed again (GOALS.md → G9). A mark over text a reader cannot see shows none of it. The walk is bounded and follows no loop. | A mark's words are kept word by word: a hidden word that the same block also shows passes. A link goes inline only where its block holds its words as one run. |
+| From each page's parse | The words and the hidden-text check in one place. | An appended highlight changes no page key, so it would never show; or the key must change, and every page be parsed again. |
+| PDFKit's annotation objects for everything | Less code: PDFKit resolves fields, destinations and actions. | PDFKit followed a link's action chained to itself until it crashed, which cost the file all its facts, its counts and outline included. |
+
+The facts' version, `Store.indexChecks`, went to 8, so every file's facts are read again, without a page parsed again. A worker that reads facts stops reading words after 3 s, and lists at most 1,000 annotations.
+
 ## Decision: a file that PDFKit saved counts as a new file, with a warning — 2026-10-15
 
 A PDFKit save, the way macOS Preview saves a highlight, rewrites every page. Task M1.1 found that it re-embeds the fonts in the MacRoman encoding and drops their Unicode maps, so characters outside MacRoman read back wrong: on an arXiv sample, "∗" came back as "→" and the math letter "𝑒" as "!". Users have reported the same damage from Preview for years ([Zotero forum](https://forums.zotero.org/discussion/comment/274497)). The test ran on PDFKit's own save, not on Preview itself.
