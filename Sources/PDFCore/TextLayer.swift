@@ -75,11 +75,11 @@ public struct Unsure: Codable, Equatable, Sendable {
 }
 
 /// A place where a page draws text, with ink, that PDFKit left out of the page's text: where, in
-/// fractions of the page from its top left, and what the strings there spell by their codes, which
-/// for a font without a text map may not be what they show.
+/// fractions of the page from its top left. What its strings spell is not kept: the place check
+/// cannot tell every way of hiding a string, and its codes, in a font without a text map, need
+/// not spell what it shows. The page's image shows it.
 public struct Unread: Codable, Equatable, Sendable {
     public var box: Box
-    public var text: String
 }
 
 /// A page's text layer, as the parse stores it.
@@ -310,9 +310,10 @@ enum TextLayer {
         if visibility?.drawing.incomplete == true { layer.hiddenCheckIncomplete = true }
         if let visibility {
             let width = max(crop.width, 1), height = max(crop.height, 1)
-            // A box the size of a glyph, no taller than twice its character's font size and no wider
-            // than 1.5 times: PDFKit gave one a box a line long, whose center lay on the next line's
-            // empty place, and one beside a word it left out a box over the word. Letters placed
+            // A box the size of a glyph, no taller than 3.5 times its character's font size and no
+            // wider than 1.5 times: PDFKit gave one a box a line long, whose center lay on the next
+            // line's empty place, and one beside a word it left out a box over the word. Integrals
+            // and large delimiters of display maths get boxes up to 3 times their size. Letters placed
             // right to left get boxes of a negative width, which `width` gives as positive.
             // Where PDFKit gives no sizes, as on a page whose two texts differ in length, as
             // right-to-left pages, each box is weighed against the page's usual box height.
@@ -320,7 +321,7 @@ enum TextLayer {
             let usualHeight = heights.isEmpty ? 0 : heights[heights.count / 2]
             let usable = zip(glyphs.boxes, glyphs.sizes).compactMap { box, size -> CGRect? in
                 let scale = size > 0 ? size : usualHeight
-                guard let box, scale > 0, box.width > 0, box.height > 0, box.height <= 2 * scale, box.width <= 1.5 * scale else { return nil }
+                guard let box, scale > 0, box.width > 0, box.height > 0, box.height <= 3.5 * scale, box.width <= 1.5 * scale else { return nil }
                 return box
             }
             let found = visibility.unread(near: usable, or: {
@@ -330,14 +331,13 @@ enum TextLayer {
                     guard !TextLayer.isSpace(text.character(at: index)) else { return nil }
                     let box = page.characterBounds(at: index)
                     let size = glyphs.sizes.indices.contains(index) && glyphs.sizes[index] > 0 ? glyphs.sizes[index] : usualHeight
-                    guard size > 0, box.width > 0, box.height > 0, box.height <= 2 * size, box.width <= 1.5 * size else { return nil }
+                    guard size > 0, box.width > 0, box.height > 0, box.height <= 3.5 * size, box.width <= 1.5 * size else { return nil }
                     return box
                 }
             }, in: raw)
             let unread = found.places.map { place in
-                Unread(box: Box(x: Double((place.rect.minX - crop.minX) / width), y: Double((crop.maxY - place.rect.maxY) / height),
-                                width: Double(place.rect.width / width), height: Double(place.rect.height / height)),
-                       text: place.text)
+                Unread(box: Box(x: Double((place.minX - crop.minX) / width), y: Double((crop.maxY - place.maxY) / height),
+                                width: Double(place.width / width), height: Double(place.height / height)))
             }
             if !unread.isEmpty {
                 layer.unread = unread

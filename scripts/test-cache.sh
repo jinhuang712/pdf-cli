@@ -265,6 +265,8 @@ unread=$(reading read testdata/hidden/unread.pdf --budget all)
 check "text PDFKit leaves out flags the page" "flagged: p.1 (low-quality)" "$unread"
 check "a failure block says where it is drawn" "^⚠ p.1 ¶3 low-quality: the page draws text here that PDFKit left out of its text$" "$unread"
 check "its crop command covers the place" "read it as an image: pdf crop testdata/hidden/unread.pdf --page 1 --bbox 0.10,0.11," "$unread"
+check "--raw spells no place, which only its image shows" "^0$" \
+    "$(reading read testdata/hidden/unread.pdf --page 1 --raw | grep -c -e ABC -e 'codes spell')"
 check "white on a dark box stays text" "^¶2 White on a dark box, which a reader can see\.$" "$output"
 check "a scan's text layer stays text" "^¶1 Words of a scan, under its image's own text\.$" "$output"
 check "no planted word reaches normal output" "^0$" "$(echo "$output" | grep -c PLANTED)"

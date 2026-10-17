@@ -171,7 +171,7 @@ import Testing
         var unsure = plain
         unsure.unsure = [Unsure(block: 0, offset: 0, readings: ["Plaintext", "Plain text"], box: box)]
         var unread = plain
-        unread.unread = [Unread(box: box, text: "ABC")]
+        unread.unread = [Unread(box: box)]
         plain.label = "iv"
         let layers = [plain, garbled, spaces, unchecked, disagreeing, oneBlock, unsure, unread]
         let store = try makeStore()

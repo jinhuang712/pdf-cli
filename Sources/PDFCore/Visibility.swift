@@ -322,14 +322,13 @@ struct Visibility {
     /// Strings the page draws to show, with ink, where PDFKit has no text: no box of a character
     /// of PDFKit's near them, and no text of the page's that spells them, as when its text map
     /// leaves out a Type 3 font's glyphs. Strings of at least 3 glyphs, along the page's axes,
-    /// on the page; those on one line join. At most 20 places a page, each with what its
-    /// strings spell, which for a font without a text map may not be what it shows.
+    /// on the page; those that touch join. At most 20 places a page.
     /// - Parameters:
     ///   - boxes: PDFKit's boxes of the page's characters, in page space, those of use: PDFKit gives
     ///     some a box a line long, whose center lies between lines.
     ///   - text: PDFKit's text of the page.
     /// - Returns: the places, and the share of the glyphs the page draws to show that they hold.
-    func unread(near boxes: [CGRect], or raw: () -> [CGRect], in text: String) -> (places: [(rect: CGRect, text: String)], share: Double) {
+    func unread(near boxes: [CGRect], or raw: () -> [CGRect], in text: String) -> (places: [CGRect], share: Double) {
         let cell: CGFloat = 12
         func index(_ value: CGFloat) -> Int { Visibility.pixel((value / cell).rounded(.down)) }
         func key(_ x: Int, _ y: Int) -> Int { x &* 100_003 &+ y }
@@ -373,7 +372,7 @@ struct Visibility {
             return false
         }
         let spelled = Visibility.normalized(text)
-        var found: [(rect: CGRect, text: String)] = []
+        var found: [CGRect] = []
         var drawn = 0, missing = 0
         for run in drawing.runs where run.kind == .shown && crop.contains(CGPoint(x: run.bounds.midX, y: run.bounds.midY)) {
             drawn += run.glyphs
@@ -390,17 +389,17 @@ struct Visibility {
             // characters off, as "(8)", is no text to flag.
             let own = Visibility.normalized(run.shown)
             guard own.count >= 3, !spelled.contains(own) else { continue }
-            // Nor is a frame or rule drawn as one glyph over and over, as "abbbbbbc".
-            let most = Dictionary(grouping: own, by: { $0 }).values.map(\.count).max() ?? 0
+            // Nor is a frame or rule drawn as one glyph over and over, as "abbbbbbc". Digits may
+            // repeat, as in "$1,000,000.00".
+            let most = Dictionary(grouping: own.filter { !$0.isNumber }, by: { $0 }).values.map(\.count).max() ?? 0
             guard own.count < 6 || most * 10 < own.count * 6, !pdfKitHasText(on: run) else { continue }
             guard !drawing.coverings.contains(where: { $0.order > run.order && $0.rect.intersection(rect).area >= 0.5 * rect.area }),
                   let ink = ink(in: rect), ink.count >= 2, ink.share >= 0.005 else { continue }
             missing += run.glyphs
-            let line = TextCleanup.line(run.shown)
-            if let last = found.last, last.rect.insetBy(dx: -run.height, dy: -0.3 * run.height).intersects(rect) {
-                found[found.count - 1] = (last.rect.union(rect), String((last.text + " " + line).prefix(300)))
+            if let last = found.last, last.insetBy(dx: -run.height, dy: -0.3 * run.height).intersects(rect) {
+                found[found.count - 1] = last.union(rect)
             } else if found.count < 20 {
-                found.append((rect, String(line.prefix(300))))
+                found.append(rect)
             }
         }
         return (found, drawn > 0 ? Double(missing) / Double(drawn) : 0)
@@ -796,8 +795,9 @@ final class Drawing {
         var twoBytes = false
         var vertical = false
         /// How tall the font's glyphs stand, in units of its size: 1 but for a Type 3 font, whose
-        /// glyphs stand as tall as its box, scaled by its matrix. A TeX file's Type 3 fonts draw
-        /// 12-pt letters at a size of 0.12, in glyphs 100 units tall under a matrix of 1.
+        /// glyphs stand as tall as its box, scaled by its matrix, or as an em by its widths where
+        /// that is less. A TeX file's Type 3 fonts draw 12-pt letters at a size of 0.12, in glyphs
+        /// 100 units tall under a matrix of 1.
         var height: CGFloat = 1
 
         nonisolated(unsafe) static let unknown = Widths()
@@ -878,15 +878,17 @@ final class Drawing {
             }
             // A Type 3 font's widths are in its glyph space, which its matrix scales.
             var scale: CGFloat = 1
-            var matrix: CGPDFArrayRef?, first: CGPDFReal = 0.001
-            if subtype == "Type3", CGPDFDictionaryGetArray(font, "FontMatrix", &matrix), let matrix,
-               CGPDFArrayGetNumber(matrix, 0, &first) {
+            var matrix: CGPDFArrayRef?, first: CGPDFReal = 0.001, vertical: CGPDFReal = 0
+            var boxTall: CGFloat?
+            let type3 = subtype == "Type3" && CGPDFDictionaryGetArray(font, "FontMatrix", &matrix) && matrix != nil
+                && CGPDFArrayGetNumber(matrix!, 0, &first) && CGPDFArrayGetNumber(matrix!, 3, &vertical)
+            if type3 {
                 scale = abs(first) * 1000
-                var vertical: CGPDFReal = 0, box: CGPDFArrayRef?, low: CGPDFReal = 0, high: CGPDFReal = 0
-                if CGPDFArrayGetNumber(matrix, 3, &vertical), CGPDFDictionaryGetArray(font, "FontBBox", &box), let box,
-                   CGPDFArrayGetNumber(box, 1, &low), CGPDFArrayGetNumber(box, 3, &high) {
-                    let tall = abs(high - low) * abs(vertical)
-                    if tall.isFinite, tall > 0.01, tall < 100_000 { widths.height = tall }
+                var box: CGPDFArrayRef?, low: CGPDFReal = 0, high: CGPDFReal = 0
+                if CGPDFDictionaryGetArray(font, "FontBBox", &box), let box, CGPDFArrayGetNumber(box, 1, &low),
+                   CGPDFArrayGetNumber(box, 3, &high) {
+                    boxTall = abs(high - low) * abs(vertical)
+                    if let boxTall, boxTall.isFinite, boxTall > 0.01, boxTall < 100_000 { widths.height = boxTall }
                 }
             }
             var list: CGPDFArrayRef?, firstCode: CGPDFInteger = 0
@@ -904,6 +906,16 @@ final class Drawing {
                 // average of those given.
                 var descriptor: CGPDFDictionaryRef?, missing: CGPDFReal = 0
                 let nonzero = given.filter { $0 > 0 }
+                if type3 {
+                    // As tall as the font's box, but no taller than an em by its widths, twice the
+                    // median advance: a box can hold the tallest glyph, or be a placeholder, as the
+                    // [0 0 1000 1000] of MusiXTeX's files, which stood their 10-pt letters 120 pt tall
+                    // over the lines above; or be empty, as the standard allows.
+                    let sorted = nonzero.sorted()
+                    let em = sorted.isEmpty || first == 0 ? nil : 2 * sorted[sorted.count / 2] / (abs(first) * 1000) * abs(vertical)
+                    let tall = [boxTall, em].compactMap { $0 }.filter { $0.isFinite && $0 > 0.01 && $0 < 100_000 }.min()
+                    if let tall { widths.height = tall }
+                }
                 var other = nonzero.isEmpty ? 600 * scale : nonzero.reduce(0, +) / CGFloat(nonzero.count)
                 if CGPDFDictionaryGetDictionary(font, "FontDescriptor", &descriptor), let descriptor,
                    CGPDFDictionaryGetNumber(descriptor, "MissingWidth", &missing), missing > 0 {
@@ -1030,9 +1042,12 @@ final class Drawing {
     var fonts: [OpaquePointer: Widths] = [:]
     /// The path being built, by its bounds in page space; whether it is one rectangle along the
     /// page's axes; and whether it then clips.
-    /// Visibility expressions told so far for the membership being read, and at what depth: an
-    /// inline membership's arrays are freed after it, and others may take their addresses.
+    /// Visibility expressions told so far, and at what depth, by their arrays: those of named
+    /// memberships, which last, and of the inline membership being read, whose arrays are freed
+    /// after it, when others may take their addresses. Memberships named in the resources told so
+    /// far, by their dictionaries.
     var told: [OpaquePointer: (shown: Bool?, depth: Int)] = [:]
+    var namedOff: [OpaquePointer: Bool] = [:]
     var path = CGRect.null
     var rectangles = 0
     var curved = false
@@ -1180,15 +1195,27 @@ final class Drawing {
     }
 
     /// Whether a layer, or a membership dictionary over layers, is switched off.
-    func off(_ properties: CGPDFDictionaryRef) -> Bool {
+    /// - Parameter inline: the dictionary stands in the content stream, which frees it, and its
+    ///   arrays, after the operator; one named in the resources lasts as long as the file.
+    func off(_ properties: CGPDFDictionaryRef, inline: Bool = false) -> Bool {
         var type: UnsafePointer<CChar>?
         guard CGPDFDictionaryGetName(properties, "Type", &type), let type, String(cString: type) == "OCMD" else {
             return layersOff.contains(FactReader.identity(properties))
         }
+        // A membership named in the resources is told once, though tens of thousands of spans name it.
+        let identity = FactReader.identity(properties)
+        if !inline, let known = namedOff[identity] { return known }
+        let off = membershipOff(properties)
+        // The expressions an inline membership told are forgotten with it, as their addresses
+        // may be taken by others; those of a named one stay.
+        if inline { told.removeAll(keepingCapacity: true) } else { namedOff[identity] = off }
+        return off
+    }
+
+    func membershipOff(_ properties: CGPDFDictionaryRef) -> Bool {
         // A visibility expression, when the membership has one, decides before its layers and
         // policy (PDF 32000, 8.11.2.2).
         var expression: CGPDFArrayRef?
-        told.removeAll(keepingCapacity: true)
         if CGPDFDictionaryGetArray(properties, "VE", &expression), let expression, let shown = shows(expression, depth: 0) {
             return !shown
         }
@@ -1228,8 +1255,10 @@ final class Drawing {
     }
 
     func tell(_ expression: CGPDFArrayRef, depth: Int) -> Bool? {
+        // Each expression told counts against the page's limit, past which the check is incomplete.
+        operations += 1
         var name: UnsafePointer<CChar>?
-        guard depth < 32, CGPDFArrayGetName(expression, 0, &name), let name else { return nil }
+        guard operations <= Drawing.operationLimit, depth < 32, CGPDFArrayGetName(expression, 0, &name), let name else { return nil }
         var operands: [Bool] = []
         for index in 1..<max(1, min(CGPDFArrayGetCount(expression), 1_000)) {
             var layer: CGPDFDictionaryRef?, inner: CGPDFArrayRef?
@@ -1676,18 +1705,24 @@ final class Drawing {
         // Marked content, which a layer switched off hides.
         on("BMC") { _, drawing in drawing.marked.append(false) }
         on("BDC") { scanner, drawing in
+            // Each counts, so a flood of them ends the check as incomplete, not the page by time.
+            drawing.operations += 1
             // The properties: a dictionary in place, or the name of one in the resources.
             var properties: CGPDFDictionaryRef?
             var name: UnsafePointer<CChar>?
             var operand: CGPDFObjectRef?
-            if CGPDFScannerPopObject(scanner, &operand), let operand, !CGPDFObjectGetValue(operand, .dictionary, &properties),
-               CGPDFObjectGetValue(operand, .name, &name), let name,
-               let object = CGPDFContentStreamGetResource(CGPDFScannerGetContentStream(scanner), "Properties", name) {
-                _ = CGPDFObjectGetValue(object, .dictionary, &properties)
+            var inline = false
+            if CGPDFScannerPopObject(scanner, &operand), let operand {
+                if CGPDFObjectGetValue(operand, .dictionary, &properties) {
+                    inline = true
+                } else if CGPDFObjectGetValue(operand, .name, &name), let name,
+                          let object = CGPDFContentStreamGetResource(CGPDFScannerGetContentStream(scanner), "Properties", name) {
+                    _ = CGPDFObjectGetValue(object, .dictionary, &properties)
+                }
             }
             var tag: UnsafePointer<CChar>?
             let layered = CGPDFScannerPopName(scanner, &tag) && tag.map { String(cString: $0) } == "OC"
-            let off = layered && properties.map(drawing.off) == true
+            let off = layered && properties.map { drawing.off($0, inline: inline) } == true
             drawing.marked.append(off)
             if off { drawing.offDepth += 1 }
         }
@@ -1789,7 +1824,7 @@ final class Drawing {
             // A form or an image in a layer switched off is not shown, though CoreGraphics
             // draws some.
             var layer: CGPDFDictionaryRef?
-            let off = CGPDFDictionaryGetDictionary(dictionary, "OC", &layer) && layer.map(drawing.off) == true
+            let off = CGPDFDictionaryGetDictionary(dictionary, "OC", &layer) && layer.map { drawing.off($0) } == true
             switch String(cString: subtype) {
             case "Image":
                 guard !off else { return }

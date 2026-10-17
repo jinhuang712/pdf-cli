@@ -165,7 +165,6 @@ import Testing
         let missing = try layer(0, in: url)
         let place = try #require(missing.unread?.first)
         #expect(missing.unread?.count == 1)
-        #expect(place.text == "ABCABCABC")
         #expect(abs(place.box.y - 0.124) < 0.02 && abs(place.box.x - 0.112) < 0.02)
         let data = String(decoding: try JSONEncoder().encode(missing), as: UTF8.self)
         let result = PageResult(status: .ok, method: "pdfkit", text: missing.text, reason: "", parseMillis: 1, data: data)
@@ -175,17 +174,62 @@ import Testing
         let failure = try #require(normal.first { $0.kind == .failure })
         #expect(failure.reason == "the page draws text here that PDFKit left out of its text")
         #expect(failure.commands?["crop"]?.hasPrefix("pdf crop unread.pdf --page 1 --bbox 0.10,0.11,") == true)
+        #expect(failure.commands?["raw"] == nil)
+        // What its strings spell never goes out, even with `--raw`: the image shows the place.
         let raw = Output.pageBlocks(page, picks: [:], path: "unread.pdf", raw: true).units.flatMap(\.blocks)
-        #expect(raw.contains { $0.kind == .doubtful && $0.block == missing.blocks.count + 1 && $0.text == "as its codes spell it: ABCABCABC" })
+        #expect(raw.filter { $0.kind == .failure } == [failure])
+        #expect(!raw.contains { $0.kind == .doubtful })
+        #expect(!raw.contains { ($0.text ?? "").contains("ABC") })
         let mapped = try layer(1, in: url)
         #expect(mapped.unread == nil)
         #expect(mapped.text.contains("ABCABCABC"))
-        // A hidden string stays out, so `--raw` cannot spell it; a word left out inside a line
-        // PDFKit keeps, and a TeX-style Type 3 font drawn at a size of 0.12, are found.
+        // A hidden string makes no place; a word left out inside a line PDFKit keeps, and a
+        // TeX-style Type 3 font drawn at a size of 0.12, are found.
         #expect(try layer(2, in: url).unread == nil)
         #expect(try layer(3, in: url).unread == nil)
-        #expect(try layer(4, in: url).unread?.map(\.text) == ["ABCABC"])
-        #expect(try layer(5, in: url).unread?.map(\.text) == ["ABCABCABC"])
+        #expect(try layer(4, in: url).unread?.count == 1)
+        #expect(try layer(5, in: url).unread?.count == 1)
+        // Such a font with a placeholder box, between two lines, is found on its own line; with an
+        // empty box too; and an amount, its digits repeated.
+        let between = try #require(try layer(6, in: url).unread)
+        #expect(between.count == 1 && abs(between[0].box.y - 0.13) < 0.02 && between[0].box.height < 0.04)
+        #expect(try layer(7, in: url).unread?.count == 1)
+        #expect(try layer(8, in: url).unread?.count == 1)
+    }
+
+    /// Tens of thousands of spans naming one membership, whose expression is 30 levels deep with
+    /// 999 shared operands a level, tell it once: told once a span, 40,000 spans took 30 s.
+    @Test func spansNamingOneMembershipTellItOnce() throws {
+        let spans = String(repeating: "/OC /M BDC EMC\n", count: 20_000) + "BT /F1 12 Tf 72 700 Td (Visible words on the page.) Tj ET"
+        var objects = [
+            "<< /Type /Catalog /Pages 2 0 R >>", "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R "
+                + "/Resources << /Font << /F1 5 0 R >> /Properties << /M 6 0 R >> >> >>",
+            "<< /Length \(spans.utf8.count) >>\nstream\n\(spans)\nendstream",
+            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+            "<< /Type /OCMD /VE 8 0 R >>",
+            "<< /Type /OCG /Name (Layer) >>",
+        ]
+        for level in 0..<30 {
+            objects.append(level == 29 ? "[/And 7 0 R]" : "[/And " + String(repeating: "\(9 + level) 0 R ", count: 999) + "]")
+        }
+        var data = "%PDF-1.7\n"
+        var offsets: [Int] = []
+        for (index, body) in objects.enumerated() {
+            offsets.append(data.utf8.count)
+            data += "\(index + 1) 0 obj\n\(body)\nendobj\n"
+        }
+        let table = data.utf8.count
+        data += "xref\n0 \(objects.count + 1)\n0000000000 65535 f \n"
+        for offset in offsets { data += String(format: "%010d 00000 n \n", offset) }
+        data += "trailer\n<< /Size \(objects.count + 1) /Root 1 0 R >>\nstartxref\n\(table)\n%%EOF\n"
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("pdf-cli-spans-\(UUID()).pdf")
+        try Data(data.utf8).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let started = Date()
+        let read = try layer(0, in: url)
+        #expect(Date().timeIntervalSince(started) < 5)
+        #expect(read.text.contains("Visible words on the page."))
     }
 
     /// A read cut by its budget at a place PDFKit left text out of goes on past it.

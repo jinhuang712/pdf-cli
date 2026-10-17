@@ -168,22 +168,17 @@ public enum Output {
                 result.units.append(unit)
             }
             // Text the page draws that PDFKit left out has no block either: a failure block for
-            // each place says where to look, and `--raw` gives what its strings spell.
+            // each place says where to look. The image alone shows it: what its strings spell
+            // never goes out, even with `--raw`, as a string hidden in a way the place check
+            // misses would go out with it.
             if let unread = layer.unread, let doubt = quality.doubts.first(where: { $0.blocks?.isEmpty == true }) {
                 for (position, place) in unread.enumerated() {
                     let region = Box(x: max(0, place.box.x - 0.01), y: max(0, place.box.y - 0.01),
                                      width: min(1, place.box.width + 0.02), height: min(1, place.box.height + 0.02))
                     // Numbered after the page's last block, so a read cut here goes on past it.
-                    var unit = Unit(blocks: [failureBlock(doubt, page: number, block: layer.blocks.count + 1 + position, region: region,
-                                                          path: path, raw: raw)],
-                                    flag: .lowQuality)
-                    if raw {
-                        unit.blocks.append(Block(kind: .doubtful, page: number, block: layer.blocks.count + 1 + position, box: place.box,
-                                                 text: "as its codes spell it: " + place.text, status: doubt.kind.rawValue))
-                    } else {
-                        unit.doubtful = 1
-                    }
-                    result.units.append(unit)
+                    result.units.append(Unit(blocks: [failureBlock(doubt, page: number, block: layer.blocks.count + 1 + position,
+                                                                   region: region, path: path, raw: raw, offersRaw: false)],
+                                             flag: .lowQuality))
                 }
             }
             // Text placed off the page has no block: PDFKit leaves it out of the page's text,
@@ -491,9 +486,11 @@ public enum Output {
     }
 
     /// The failure block: what is in doubt, why, and how to read it instead.
-    static func failureBlock(_ doubt: Doubt, page: Int, block: Int?, region: Box?, path: String, raw: Bool) -> Block {
+    /// - Parameter offersRaw: `--raw` has text of the doubt's to show.
+    static func failureBlock(_ doubt: Doubt, page: Int, block: Int?, region: Box?, path: String, raw: Bool,
+                             offersRaw: Bool = true) -> Block {
         var commands = ["crop": "pdf crop \(path) --page \(page)" + (region.map { " --bbox \(format($0))" } ?? "")]
-        if doubt.kind == .lowQuality && !raw { commands["raw"] = "pdf read \(path) --page \(page) --raw" }
+        if doubt.kind == .lowQuality && !raw && offersRaw { commands["raw"] = "pdf read \(path) --page \(page) --raw" }
         return Block(kind: .failure, page: page, block: block, box: region ?? Box(x: 0, y: 0, width: 1, height: 1),
                      status: doubt.kind.rawValue, reason: doubt.reason, score: doubt.score, commands: commands)
     }

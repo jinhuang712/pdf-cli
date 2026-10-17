@@ -50,3 +50,30 @@ Found while fixing:
 - PDFKit's own boxes sit a character off, so a space beside a word it left out lent the next character a box over the word, and for a Type 3 font with a font descriptor PDFKit lays the next words' boxes over the word it leaves out. Boxes now count only the size of a glyph; the second case stays a limit, recorded in FEATURES.
 - A frame drawn as one glyph over and over in an Arabic manual was a place: such strings no longer count.
 - The OCR-cap test, bounded at 3 s on a page whose OCR stops at 3 s, took 3.1 s in 2 of 4 full runs beside the other suites, and 2.2 s alone; its bound is now 4 s.
+
+## Second review
+
+A second reviewer new to the code checked the fixes above (`6e0b3f7`) against the build before them (`9c74f1e`), the item `TODO.md` held, with pages of its own in `/private/tmp/claude-501/finalrev/`, the macOS license in 41 languages, Xcode's acknowledgments, 373 other PDFs on this Mac and 86 TeX Live manuals. It found 10 problems, 9 reproduced. Fixed on 2026-10-17.
+
+| # | Finding | Verdict | Resolution |
+|---|---|---|---|
+| 1 | `--raw` spelled hidden text again: a white line between two visible lines, whose ascenders and descenders lent it ink, and a line at 2% opacity or clipped by a path of two small squares. | Confirmed, high, regression | Fixed by design: what a place's strings spell goes out nowhere, `--raw` included. Its failure block gives the crop alone, which shows only what a reader sees. Each review found a new way past the rules of what a reader sees there; now a hidden string the rules miss costs a false flag and a crop, never its words. |
+| 2 | `sottigra.pdf` p.9 lost its prose: the page no longer went to OCR, and its top quarter was in no block, place or crop. | Confirmed, high-medium, regression | Fixed. The cause was not the one the reviewer guessed, PDFKit's own boxes: MusiXTeX's Type 3 fonts carry the placeholder box [0 0 1000 1000], so at a size of 0.12 their 10-pt letters stood 120 pt tall, over the lines above, whose characters then stood for them. A Type 3 font's strings now stand no taller than an em by its widths, twice the median advance. p.9 goes to OCR and reads whole. `unread.pdf` p.7. |
+| 3 | A string hidden in part, by a clip or by images drawn after it, was spelled whole. | Confirmed, medium-high | Fixed by 1: it can flag its page; its words stay out. Its visible part is text PDFKit left out, so the flag is right. |
+| 4 | A line squeezed by its text matrix, not by `Tz`, was spelled. | Confirmed, medium-high | Fixed by 1. |
+| 5 | Integrals and large delimiters PDFKit keeps were places: their boxes stand 2.2 to 3 times their size, over the 2 times allowed. | Confirmed, medium, regression | Fixed: boxes up to 3.5 times their character's size count. `LeteSansMath.pdf` p.8 and `firamath-otf-doc.pdf` p.7 flag nothing. |
+| 6 | A dropped "$1,000,000.00" was no place: the rule for frames drawn as one glyph over and over counted its zeros. | Confirmed, medium, regression | Fixed: the rule counts letters, not digits. `unread.pdf` p.9. |
+| 7 | 40,000 spans naming one membership whose expression is 30 levels deep, with 999 shared operands a level, timed the page out at 30 s: the memo of expressions held for one membership at a time. | Confirmed, low-medium, regression | Fixed: a membership named in the resources, which lasts as long as the file, is told once, and the expressions told for it stay; only an inline membership's are forgotten after it. Each marked span and each expression told count against the page's limit of operations, past which the check says it is incomplete. The file reads in under a second; a unit test builds 20,000 such spans. |
+| 8 | The parser version stayed 9, so pages cached before the fixes kept their places. | Confirmed, low-medium | Fixed: parser version 10. |
+| 9 | Visible music chords on `sottigra.pdf` p.9 were marked too small to read. | Confirmed, low | Gone from the output by 2, as before `6e0b3f7`: OCR reads p.9 again, in place of PDFKit's layer. The mark is older than the fix and stays in the layer: PDFKit boxes a chord's notes on one spot, as it boxes letters stacked to hide them, and the strings that draw them stand three times taller than the boxes, so none counts as the notes' own. Loosening the test would let stacked letters through; kept, in FEATURES.md → F9. |
+| 10 | A Type 3 font with an empty box, [0 0 0 0], drawn at 0.12, was no place. | Confirmed, low | Fixed by 2: its strings stand an em tall by its widths. `unread.pdf` p.8. |
+
+Kept as a limit, in FEATURES.md → F8: a string hidden in a way the place check misses can flag its page. On the reviewer's 10 files of tricks, 23 places remain, over strings hidden in whole or in part and over text PDFKit does leave out; no output holds a word of a hidden string.
+
+Checked after the fixes, release build, against `6e0b3f7`: 143 PDFs, macOS's license in 41 languages, the test fixtures and the reviewer's 86 TeX Live manuals, read whole with each build. 138 read the same: hidden markers, places and flagged pages. The rest:
+
+- `unread.pdf`: its 3 new pages are flagged, as they should be; the old build missed them.
+- `sottigra.pdf`: p.9 goes to OCR and is no longer flagged; `LeteSansMath.pdf` p.8 lost its 4 false places; `pennstander-otf-samples.pdf` has 5 places on the same 4 pages, one fewer.
+- `lshortru.pdf` p.34: the false mark "лой." is back, as before `6e0b3f7`. PDFKit's boxes for that word lie a line off the string that draws it and nearly on one spot, so no string counts as the word's own, and the boxes read as stacked letters. The strings 120 pt tall of `6e0b3f7` reached it by chance. Kept: loosening the test for stacked letters would let hidden words through.
+
+The reviewer's 10 cases, rerun: no planted word in any output, `--raw` included; sottigra p.9 read by OCR with its prose; both amounts and the font with an empty box flagged; the maths pages unflagged; the 40,000 spans read in under a second, against 30 s.

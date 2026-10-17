@@ -493,12 +493,24 @@ let texGlyph = unread.add(stream: "", "60 0 0 0 50 100 d1 0 0 50 100 re f\n")
 let texFont = unread.add("<< /Type /Font /Subtype /Type3 /FontBBox [0 0 50 100] /FontMatrix [1 0 0 1 0 0] "
                          + "/FontDescriptor \(boxesDescriptor) 0 R /CharProcs << /box \(texGlyph) 0 R >> "
                          + "/Encoding << /Type /Encoding /Differences [65 /box 66 /box 67 /box] >> /FirstChar 65 /LastChar 67 /Widths [60 60 60] >>")
+// The same, with the placeholder box [0 0 1000 1000] of MusiXTeX's files, and with an empty box.
+let placeholderFont = unread.add("<< /Type /Font /Subtype /Type3 /FontBBox [0 0 1000 1000] /FontMatrix [1 0 0 1 0 0] "
+                                 + "/CharProcs << /box \(texGlyph) 0 R >> "
+                                 + "/Encoding << /Type /Encoding /Differences [65 /box 66 /box 67 /box] >> /FirstChar 65 /LastChar 67 /Widths [60 60 60] >>")
+let emptyBoxFont = unread.add("<< /Type /Font /Subtype /Type3 /FontBBox [0 0 0 0] /FontMatrix [1 0 0 1 0 0] "
+                              + "/CharProcs << /box \(texGlyph) 0 R >> "
+                              + "/Encoding << /Type /Encoding /Differences [65 /box 66 /box 67 /box] >> /FirstChar 65 /LastChar 67 /Widths [60 60 60] >>")
 let unreadImage = unread.add(stream: "\(gray) /Width 4 /Height 4", texture)
 // The font with no descriptor: PDFKit then moves its pen over the glyphs it leaves out, as it
 // does not for the font with one, whose next words' boxes it lays over them.
 let bare = unread.add("<< /Type /Font /Subtype /Type3 /FontBBox [0 0 500 700] /FontMatrix [0.001 0 0 0.001 0 0] "
                       + "/CharProcs << /box \(unreadGlyph) 0 R >> /Encoding << /Type /Encoding /Differences [65 /box 66 /box 67 /box] >> "
                       + "/FirstChar 65 /LastChar 67 /Widths [600 600 600] >>")
+// Digits and the signs of an amount, in the font with no descriptor.
+let amounts = unread.add("<< /Type /Font /Subtype /Type3 /FontBBox [0 0 500 700] /FontMatrix [0.001 0 0 0.001 0 0] "
+                         + "/CharProcs << /box \(unreadGlyph) 0 R >> /Encoding << /Type /Encoding /Differences [36 /box 44 /box 46 /box 48 "
+                         + String(repeating: "/box ", count: 10) + "] >> /FirstChar 36 /LastChar 57 /Widths ["
+                         + String(repeating: "600 ", count: 22) + "] >>")
 try unread.write([
     Page(name: "text in a Type 3 font with no text map", content: visible + "BT /U 12 Tf 72 680 Td (ABCABCABC) Tj ET\n"),
     Page(name: "visible: the same font with a text map", content: visible + "BT /M 12 Tf 72 680 Td (ABCABCABC) Tj ET\n"),
@@ -510,5 +522,12 @@ try unread.write([
     Page(name: "a word in a Type 3 font with no text map inside a line", content: visible
         + "BT /F1 12 Tf 72 680 Td (The value is ) Tj /B 12 Tf (ABCABC) Tj /F1 12 Tf ( and more words follow here.) Tj ET\n"),
     Page(name: "text in a TeX-style Type 3 font with no text map", content: visible + "BT /X 0.12 Tf 72 680 Td (ABCABCABC) Tj ET\n"),
-], resources: "<< /Font << /F1 \(unreadFont) 0 R /U \(unmapped) 0 R /M \(mapped) 0 R /X \(texFont) 0 R /B \(bare) 0 R >> "
+    // A box far taller than the font's letters made its strings reach over the lines around them,
+    // whose characters then stood for them.
+    Page(name: "the same with a placeholder box, between two lines", content: visible + line("A line just above the gap.", y: 694)
+        + "BT /P 0.12 Tf 72 680 Td (ABCABCABC) Tj ET\n" + line("A line just below the gap.", y: 666)),
+    Page(name: "the same with an empty box", content: visible + "BT /E 0.12 Tf 72 680 Td (ABCABCABC) Tj ET\n"),
+    Page(name: "amounts in a Type 3 font with no text map", content: visible + "BT /D 12 Tf 72 680 Td ($1,000,000.00) Tj ET\n"),
+], resources: "<< /Font << /F1 \(unreadFont) 0 R /U \(unmapped) 0 R /M \(mapped) 0 R /X \(texFont) 0 R /B \(bare) 0 R "
+    + "/P \(placeholderFont) 0 R /E \(emptyBoxFont) 0 R /D \(amounts) 0 R >> "
     + "/XObject << /Im \(unreadImage) 0 R >> >>", to: "unread.pdf")
