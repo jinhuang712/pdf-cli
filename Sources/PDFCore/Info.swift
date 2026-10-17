@@ -176,20 +176,14 @@ public struct Info: Encodable, Sendable {
         for page in pages {
             guard let blocks = page.result.pageText?.blocks, let kinds = furniture[page.index] else { continue }
             for (index, kind) in kinds.sorted(by: { $0.key < $1.key }) where blocks.indices.contains(index) {
-                let key = Furniture.letters(blocks[index].visibleText)
-                let alone = key.count < 3
-                if let at = found.firstIndex(where: {
-                    $0.header.kind == kind.rawValue
-                        && (alone ? $0.key.count < 3 : Furniture.alike($0.key, key))
-                }) {
+                let text = blocks[index].visibleText
+                let alone = Furniture.pageNumber(text.trimmingCharacters(in: .whitespaces)) != nil
+                let key = alone ? "" : Furniture.key(text)
+                if let at = found.firstIndex(where: { $0.header.kind == kind.rawValue && ($0.key == key || Furniture.alike($0.key, key)) }) {
                     found[at].header.pages += 1
                 } else {
-                    let text =
-                        alone
-                        ? ""
-                        : blocks[index].visibleText
-                            .replacingOccurrences(of: #"^\s*\d+\s+|\s+\d+\s*$"#, with: "", options: .regularExpression)
-                    found.append((RunningHeader(kind: kind.rawValue, text: text, pages: 1), key))
+                    let shown = alone ? "" : text.replacingOccurrences(of: #"^\s*\d+\s+|\s+\d+\s*$"#, with: "", options: .regularExpression)
+                    found.append((RunningHeader(kind: kind.rawValue, text: shown, pages: 1), key))
                 }
             }
         }

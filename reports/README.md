@@ -28,4 +28,4 @@ The spike's reports (M0) are in [spike/](../spike/README.md).
 | M1.12 Smoke set and safety set | 2026-10-17 | 2 high, 1 medium, 5 smaller; 7 fixed, 1 in part | [M1.12](M1.12-test-sets.md) |
 | M1.13 Comments, highlights, form fields and links | 2026-10-17 | 3 high, 2 medium-high, 2 smaller; 6 fixed, 1 kept | [M1.13](M1.13-annotations.md) |
 | M1.14 Images and drawings marked in place | 2026-10-17 | 2 high, 6 medium, 3 low; 8 fixed, 1 in part, 2 kept | [M1.14](M1.14-pictures.md) |
-| M2.5 Reading order across columns, running headers set aside | 2026-10-17 | not yet reviewed | [M2.5](M2.5-columns-headers.md) |
+| M2.5 Reading order across columns, running headers set aside | 2026-10-17 | 2 high, 4 medium, 4 low; 7 fixed, 3 kept | [M2.5](M2.5-columns-headers.md) |

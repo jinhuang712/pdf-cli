@@ -22,56 +22,44 @@ public enum Furniture {
     /// provisional, as its headings can change too.
     public static let reach = 4
 
-    /// The blocks of a page that are furniture, by their index on the page.
+    /// A block at a page's edge that may be furniture.
+    struct Edge {
+        var index: Int
+        var zone: Kind
+        /// Its letters and digits, lowercased, without a page number at either end.
+        var key: String
+        /// For a page number alone, its value.
+        var number: Int?
+    }
+
+    /// The blocks of a page that are furniture, by their index on the page. `index` is the
+    /// page's, counted from 0, and `near` the pages around it with theirs.
     ///
-    /// A block is furniture when it sits at the page's edge, in its top 12%, its bottom 12% or
-    /// its outer 10% at either side, holds three lines at most, and either repeats at the same
-    /// edge of a page nearby, its letters the same (a page number changes, the words stay),
-    /// or nearly the same when they are many, as OCR reads a running header a new way on each
-    /// page; or is a page number, as "12", "- 12 -", "Page 12 of 30" or "xii"; or is arXiv's
-    /// stamp, set sideways in the margin of a paper's first page. A page number may also stand
-    /// a little further in, within 15% of the edge, as the page's highest or lowest block: an
-    /// old TeX paper sets it 87.6% down. What repeats at the top or the bottom is the page's
-    /// outermost text there, within 2.5% of the page's highest or lowest block: a textbook's box
-    /// headed "EXPLORING FURTHER", below the running header on two pages a page apart, is not.
-    public static func find(_ page: PageText, near: [PageText]) -> [Int: Kind] {
+    /// The candidates are the page's outermost text at its edges (`edges`). One is furniture when
+    /// it repeats at the same edge of a page nearby, its letters and digits the same, or nine in
+    /// ten alike for twenty or more, as OCR reads a running header a new way on each page, and
+    /// on two pages for a short one, as "ENDNOTES" can head two pages of a report; or is a page
+    /// number that agrees with the page's own, printed or by position, or with a page number
+    /// nearby, at the top or the bottom; or is arXiv's stamp, set sideways in the margin.
+    static func find(_ page: PageText, index: Int, near: [(index: Int, layer: PageText)]) -> [Int: Kind] {
+        let others = near.map { (index: $0.index, edges: edges($0.layer)) }
         var found: [Int: Kind] = [:]
-        let others = near.map { edges($0) }
-        let highest = page.blocks.indices.min { page.blocks[$0].box.y < page.blocks[$1].box.y }
-        let lowest = page.blocks.indices.max {
-            page.blocks[$0].box.y + page.blocks[$0].box.height < page.blocks[$1].box.y + page.blocks[$1].box.height
-        }
-        for (index, block) in page.blocks.enumerated() {
-            let text = block.visibleText.trimmingCharacters(in: .whitespaces)
-            guard !text.isEmpty, text.count <= 200, block.lines.count <= 3 else { continue }
-            if text.range(of: pageNumber, options: [.regularExpression, .caseInsensitive]) != nil {
-                if index == highest && block.box.y + block.box.height <= 0.15 {
-                    found[index] = .header
-                    continue
-                }
-                if index == lowest && block.box.y >= 0.85 {
-                    found[index] = .footer
-                    continue
-                }
+        for edge in edges(page) {
+            let text = page.blocks[edge.index].visibleText.trimmingCharacters(in: .whitespaces)
+            if edge.zone == .stamp, text.range(of: arXivStamp, options: .regularExpression) != nil {
+                found[edge.index] = .stamp
+            } else if let number = edge.number, edge.zone != .stamp {
+                let own = page.label.flatMap(value) ?? index + 1
+                let agrees =
+                    number == own
+                    || others.contains { other in
+                        other.edges.contains { $0.zone == edge.zone && $0.number.map { number - $0 == index - other.index } == true }
+                    }
+                if agrees { found[edge.index] = edge.zone }
+            } else if edge.key.count >= 3 {
+                let matches = others.filter { $0.edges.contains { $0.zone == edge.zone && $0.number == nil && alike($0.key, edge.key) } }
+                if matches.count >= (edge.key.count < 15 ? 2 : 1) { found[edge.index] = edge.zone }
             }
-            guard let zone = zone(block) else { continue }
-            if text.range(of: arXivStamp, options: .regularExpression) != nil {
-                found[index] = .stamp
-                continue
-            }
-            if zone != .stamp, text.range(of: pageNumber, options: [.regularExpression, .caseInsensitive]) != nil {
-                found[index] = zone
-                continue
-            }
-            let key = letters(text)
-            guard key.count >= 3 else { continue }
-            if zone == .header, let highest, block.box.y > page.blocks[highest].box.y + 0.025 { continue }
-            if zone == .footer, let lowest,
-                block.box.y + block.box.height < page.blocks[lowest].box.y + page.blocks[lowest].box.height - 0.025
-            {
-                continue
-            }
-            if others.contains(where: { $0.contains { $0.zone == zone && alike($0.key, key) } }) { found[index] = zone }
         }
         return found
     }
@@ -82,8 +70,8 @@ public enum Furniture {
         var found: [Int: [Int: Kind]] = [:]
         for page in pages {
             guard let layer = layers[page] else { continue }
-            let near = (page - reach...page + reach).filter { $0 != page }.compactMap { layers[$0] }
-            let blocks = find(layer, near: near)
+            let near = (page - reach...page + reach).filter { $0 != page }.compactMap { other in layers[other].map { (other, $0) } }
+            let blocks = find(layer, index: page, near: near)
             if !blocks.isEmpty { found[page] = blocks }
         }
         return found
@@ -99,58 +87,132 @@ public enum Furniture {
         return find(pages: pages, in: layers)
     }
 
-    /// The page's blocks at its edges, each with its zone and its letters.
-    static func edges(_ page: PageText) -> [(zone: Kind, key: String)] {
-        page.blocks.compactMap { block in
-            guard let zone = zone(block), block.lines.count <= 3 else { return nil }
-            let key = letters(block.visibleText)
-            return key.count >= 3 && key.count <= 400 ? (zone, key) : nil
+    /// The page's candidates: blocks of three lines at most and 200 characters, in its top or
+    /// bottom 12% or its outer 10% at a side, with no text a reader cannot see in them, at most
+    /// the 4 nearest each edge.
+    ///
+    /// - At the top and the bottom, only the page's outermost text, within 2.5% of its highest
+    ///   or lowest block: a textbook's box headed "EXPLORING FURTHER", below the running header
+    ///   on two pages a page apart, is none, nor a chart's tick labels or a footnote's number.
+    /// - A page number may stand a little further in, within 15% of the edge, as the page's
+    ///   highest or lowest block: an old TeX paper sets it 87.6% down.
+    /// - A block that holds hidden text stays in the text, with its marker: set aside, a page
+    ///   number with words planted after it hid them from the count of hidden text.
+    /// - At most 4 an edge, so a page of a thousand blocks in its margins costs no more than a
+    ///   page of four.
+    static func edges(_ page: PageText) -> [Edge] {
+        let blocks = page.blocks
+        guard let highest = blocks.map(\.box.y).min(), let lowest = blocks.map({ $0.box.y + $0.box.height }).max() else { return [] }
+        var found: [Kind: [(edge: Edge, distance: Double)]] = [:]
+        var left: [(edge: Edge, distance: Double)] = []
+        var right: [(edge: Edge, distance: Double)] = []
+        for (index, block) in blocks.enumerated() {
+            let text = block.visibleText.trimmingCharacters(in: .whitespaces)
+            guard !text.isEmpty, text.count <= 200, block.lines.count <= 3, block.hidden?.isEmpty ?? true else { continue }
+            let box = block.box
+            let number = pageNumber(text)
+            let top = box.y <= highest + 0.025 && box.y + box.height <= (number == nil ? 0.12 : 0.15)
+            let bottom = box.y + box.height >= lowest - 0.025 && box.y >= (number == nil ? 0.88 : 0.85)
+            let edge = Edge(index: index, zone: top ? .header : bottom ? .footer : .stamp, key: key(text), number: number)
+            if top {
+                found[.header, default: []].append((edge, box.y))
+            } else if bottom {
+                found[.footer, default: []].append((edge, 1 - box.y - box.height))
+            } else if box.x + box.width <= 0.1 {
+                left.append((edge, box.x))
+            } else if box.x >= 0.9 {
+                right.append((edge, 1 - box.x - box.width))
+            }
         }
+        // A page number is one an edge: the outermost.
+        func nearest(_ list: [(edge: Edge, distance: Double)]) -> [Edge] {
+            var numbered = false
+            return list.sorted { $0.distance < $1.distance }.prefix(4).compactMap { item in
+                guard item.edge.number != nil else { return item.edge }
+                defer { numbered = true }
+                return numbered ? nil : item.edge
+            }
+        }
+        return nearest(found[.header] ?? []) + nearest(found[.footer] ?? []) + nearest(left) + nearest(right)
     }
 
-    /// Where on the page's edge a block sits: in its top 12%, its bottom 12%, or its outer 10%
-    /// at either side, as a stamp set sideways in the margin. Nil inside. On the smoke set's
-    /// papers the body starts 7–10% down and the page numbers sit 93–95% down.
-    static func zone(_ block: TextBlock) -> Kind? {
-        let box = block.box
-        if box.y + box.height <= 0.12 { return .header }
-        if box.y >= 0.88 { return .footer }
-        if box.x + box.width <= 0.1 || box.x >= 0.9 { return .stamp }
-        return nil
+    /// A block's letters and digits, lowercased, without a page number at either end: a running
+    /// header's page number and punctuation change from page to page, its words and other
+    /// numbers do not. Digits stay: "Table B-1." and "Table B-2." head different tables.
+    static func key(_ text: String) -> String {
+        let trimmed = text.replacingOccurrences(of: #"^\s*\d{1,5}\s+|\s+\d{1,5}\s*$"#, with: "", options: .regularExpression)
+        return String(trimmed.lowercased().filter { $0.isLetter || $0.isNumber })
     }
 
-    /// A block's letters, lowercased: the page numbers and the punctuation of a running header
-    /// change from page to page, its words do not.
-    static func letters(_ text: String) -> String {
-        String(text.lowercased().filter(\.isLetter))
-    }
-
-    /// The same letters, or, for ten or more, nine in ten the same, by the edits that turn one
-    /// into the other.
+    /// The same, or, for twenty or more, nine in ten the same, by the edits that turn one into
+    /// the other.
     static func alike(_ a: String, _ b: String) -> Bool {
         if a == b { return true }
-        guard a.count >= 10, b.count >= 10, abs(a.count - b.count) * 10 <= max(a.count, b.count) else { return false }
-        return distance(Array(a), Array(b)) * 10 <= max(a.count, b.count)
+        let x = Array(a.unicodeScalars)
+        let y = Array(b.unicodeScalars)
+        guard x.count >= 20, y.count >= 20 else { return false }
+        let limit = max(x.count, y.count) / 10
+        return abs(x.count - y.count) <= limit && within(x, y, limit: limit)
     }
 
-    /// The edits, a letter added, dropped or changed, that turn one string into the other.
-    static func distance(_ a: [Character], _ b: [Character]) -> Int {
-        guard !a.isEmpty else { return b.count }
-        guard !b.isEmpty else { return a.count }
-        var previous = Array(0...b.count)
-        var current = Array(repeating: 0, count: b.count + 1)
+    /// Whether at most `limit` edits, a character added, dropped or changed, turn one string
+    /// into the other. Only the cells within `limit` of the diagonal count, and a row that
+    /// exceeds it ends the search: on 200 characters, 40 steps a row, not 200.
+    static func within(_ a: [Unicode.Scalar], _ b: [Unicode.Scalar], limit: Int) -> Bool {
+        guard !a.isEmpty, !b.isEmpty else { return max(a.count, b.count) <= limit }
+        let over = limit + 1
+        var previous = (0...b.count).map { min($0, over) }
+        var current = Array(repeating: over, count: b.count + 1)
         for i in 1...a.count {
-            current[0] = i
-            for j in 1...b.count {
-                current[j] = min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1))
+            let low = max(1, i - limit)
+            let high = min(b.count, i + limit)
+            guard low <= high else { return false }
+            current[0] = min(i, over)
+            if low > 1 { current[low - 1] = over }
+            var best = current[0]
+            for j in low...high {
+                let changed = previous[j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1)
+                current[j] = min(previous[j] + 1, current[j - 1] + 1, changed, over)
+                best = min(best, current[j])
             }
+            if high < b.count { current[high + 1] = over }
+            if best > limit { return false }
             swap(&previous, &current)
         }
-        return previous[b.count]
+        return previous[b.count] <= limit
     }
 
-    /// A page number alone: "12", "- 12 -", "Page 12", "Page 12 of 30", "12 / 30" or "xii".
-    static let pageNumber = #"^[\s\-–—|·•]*((page|p\.|pp\.)\s*)?(\d{1,4}|[ivxlcdm]{1,7})(\s*(of|/)\s*\d{1,4})?[\s\-–—|·•]*$"#
+    /// A page number alone, as "12", "- 12 -", "Page 12", "Page 12 of 30", "12 / 30", "11841" or "xii",
+    /// and its value. A roman numeral counts only in lowercase and well formed: "MIX", "Civil"
+    /// and a drop cap "I" are words.
+    static func pageNumber(_ text: String) -> Int? {
+        let pattern = #"^[\s\-–—|·•]*(?:(?:page|p\.)\s*)?(\d{1,5}|[ivxlcdm]{1,7})(?:\s*(?:of|/)\s*\d{1,5})?[\s\-–—|·•]*$"#
+        guard let match = text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) else { return nil }
+        let token =
+            String(text[match]).components(separatedBy: CharacterSet(charactersIn: "-–—|·•/ ")).first {
+                !$0.isEmpty && $0.lowercased() != "page" && $0.lowercased() != "p." && $0.lowercased() != "of"
+            } ?? ""
+        return value(token)
+    }
+
+    /// A page label's value: its digits, or a lowercase roman numeral, well formed.
+    static func value(_ label: String) -> Int? {
+        if let number = Int(label), number >= 0 { return number }
+        guard label == label.lowercased(),
+            label.range(
+                of: #"^m{0,3}(cm|cd|d?c{0,3})(xc|xl|l?x{0,3})(ix|iv|v?i{0,3})$"#,
+                options: .regularExpression) != nil, !label.isEmpty
+        else { return nil }
+        let values: [Character: Int] = ["i": 1, "v": 5, "x": 10, "l": 50, "c": 100, "d": 500, "m": 1000]
+        var total = 0
+        var last = 0
+        for digit in label.reversed() {
+            let value = values[digit] ?? 0
+            total += value < last ? -value : value
+            last = max(last, value)
+        }
+        return total
+    }
 
     /// arXiv's stamp: "arXiv:2609.23257v2 [cs.LG] 8 Oct 2026".
     static let arXivStamp = #"^arXiv:\d{4}\.\d{4,5}(v\d+)?\s*\["#

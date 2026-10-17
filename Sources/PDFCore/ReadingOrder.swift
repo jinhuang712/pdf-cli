@@ -79,6 +79,18 @@ enum ReadingOrder {
         func columns(_ left: [Int], _ right: [Int]) -> Bool {
             left.filter { rects[$0].width >= 0.8 * leftWidth }.count >= 2 && right.filter { rects[$0].width >= 0.8 * rightWidth }.count >= 2
         }
+        // A side that is itself two columns of running text, as two of three columns beside a
+        // figure's title, is no column: the band keeps PDFKit's order. Taken for one, on a census
+        // report's page of three, a column's last line went after the whole figure.
+        func split(_ side: [Int]) -> Bool {
+            let lines = side.filter { rects[$0].height <= 3 * usual }
+            guard lines.count >= 4, let inner = ReadingOrder.gutter(lines, rects: rects) else { return false }
+            let area = lines.reduce(CGRect.null) { $0.union(rects[$1]) }
+            let left = lines.filter { rects[$0].maxX <= inner }
+            let right = lines.filter { rects[$0].minX >= inner }
+            return left.filter { rects[$0].width >= 0.8 * (inner - area.minX) }.count >= 2
+                && right.filter { rects[$0].width >= 0.8 * (area.maxX - inner) }.count >= 2
+        }
         // The bands of two columns, from the top down, each in its order, and the full lines of
         // each, where it goes out.
         var arranged: [[Int]] = []
@@ -87,7 +99,7 @@ enum ReadingOrder {
         for band in bands {
             var left = band.filter { rects[$0].midX < gutter }
             var right = band.filter { rects[$0].midX >= gutter }
-            guard columns(left, right) else { continue }
+            guard columns(left, right), !split(left), !split(right) else { continue }
             // A short line between the columns' edges, as a page number set at the page's
             // middle, is neither column's, and keeps its place.
             let leftEdge = left.filter { rects[$0].width >= 0.8 * leftWidth }.map { rects[$0].maxX }.max() ?? gutter

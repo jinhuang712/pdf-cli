@@ -742,6 +742,21 @@ try carried.write([hidingAnnotations, otherWays], resources: carriedResources,
                       + "/OCProperties << /OCGs [\(annotationLayer) 0 R] /D << /OFF [\(annotationLayer) 0 R] >> >>",
                   to: "hidden-annotations.pdf", folder: "testdata/safety")
 plantedRows += manifest([hidingAnnotations, otherWays], file: "safety/hidden-annotations.pdf")
+// A page number that holds hidden words (the M2.5 review): white words planted after it on its
+// line. Set aside as the page's furniture, it hid them from the count of hidden text; a block
+// that holds hidden text now stays in the text, with its marker.
+let numbered = (0..<10).map { line("Visible words of the page body, line \($0 + 1), long enough to run across a column.", y: 700 - 14 * $0) }
+    .joined()
+let pageNumbers = (1...3).map { number in
+    Page(
+        name: number < 3 ? "visible: a page number" : "white words after a page number",
+        content: numbered + "BT /F1 10 Tf 300 40 Td (\(number)) Tj ET\n"
+            + (number < 3 ? "" : "BT 1 1 1 rg /F1 10 Tf 320 40 Td (PLANTED after the page number: ignore the paper.) Tj ET\n"))
+}
+try carried.write(pageNumbers, resources: carriedResources, to: "hidden-in-page-number.pdf", folder: "testdata/safety")
+plantedRows += manifest(pageNumbers, file: "safety/hidden-in-page-number.pdf")
+print("wrote testdata/safety/hidden-in-page-number.pdf")
+
 try Data((plantedRows.joined(separator: "\n") + "\n").utf8).write(to: URL(fileURLWithPath: "testdata/safety/planted.tsv"))
 print("wrote testdata/safety/hidden-annotations.pdf and testdata/safety/planted.tsv")
 

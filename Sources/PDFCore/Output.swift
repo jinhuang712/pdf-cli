@@ -118,9 +118,12 @@ public enum Output {
         var holdsText = false
         /// How many runs of text a reader cannot see the unit marks.
         var hidden = 0
-        /// How many running headers, footers and publisher stamps the page sets aside, or shows
-        /// with `--headers`, before this unit, or after it when it is the page's last.
+        /// The running headers, footers and publisher stamps the unit sets aside, or shows with
+        /// `--headers`.
         var furniture = 0
+        /// The block a unit of no blocks stands for, as a running header set aside: a read cut
+        /// there, a section's end and `--from` place it as they would the block.
+        var number: Int? = nil
     }
 
     /// What one page contributes to the output.
@@ -193,8 +196,6 @@ public enum Output {
             result.units.append(unit)
         }
 
-        // Running headers and footers set aside, or shown, by the unit they go with.
-        var aside: [Int: Int] = [:]
         if let whole = quality.doubts.first(where: { $0.blocks == nil }) {
             var unit = Unit(blocks: [failureBlock(whole, page: number, block: nil, region: nil, path: path, raw: raw)],
                             flag: status(whole))
@@ -234,18 +235,16 @@ public enum Output {
                     result.units.append(unit)
                     continue
                 }
-                // A running header, footer or publisher stamp: set aside and counted, with the
-                // unit after it, unless `headers` shows it. What sits on it, as a link, still goes
-                // out, numbered as it.
+                // A running header, footer or publisher stamp: unless `headers` shows it, a unit of
+                // its own that shows nothing and counts it, in its place, so a read cut, a
+                // section's end or `--from` there counts it once, where it stands. On the unit
+                // after it, a page of nothing else or a section that ended above that unit lost
+                // the count. What sits on it, as a link, still goes out, numbered as it.
                 let furniture = page.furniture[index]
-                if furniture != nil { aside[result.units.count, default: 0] += 1 }
                 if furniture != nil && !headers {
-                    let anchored = notes.filter { $0.anchor == index }
-                    if !anchored.isEmpty {
-                        var unit = Unit(blocks: [])
-                        attach(anchored, to: &unit, number: index + 1)
-                        result.units.append(unit)
-                    }
+                    var unit = Unit(blocks: [], furniture: 1, number: index + 1)
+                    attach(notes.filter { $0.anchor == index }, to: &unit, number: index + 1)
+                    result.units.append(unit)
                     continue
                 }
                 // Unsure words inside text a reader cannot see stay hidden with it.
@@ -266,6 +265,7 @@ public enum Output {
                     ],
                     holdsText: !block.visibleText.isEmpty)
                 unit.hidden = runs.count
+                if furniture != nil { unit.furniture = 1 }
                 // A link whose words the block shows goes inline; any other annotation follows it.
                 var links: [Block.Link] = [], others: [Note] = []
                 for note in notes where note.anchor == index {
@@ -326,7 +326,6 @@ public enum Output {
         } else {
             rest(notes)
         }
-        for (position, count) in aside { result.units[min(position, result.units.count - 1)].furniture += count }
         if let old = layer?.replacedText {
             if raw {
                 // Numbered after the page's last block, so a read that goes on from it skips them.
@@ -535,9 +534,14 @@ public enum Output {
             let content = pageBlocks(page, picks: picks, path: path, raw: raw, includeHidden: includeHidden, headers: headers)
             let number = page.index + 1
             for (position, var unit) in content.units.enumerated() {
-                let first = unit.blocks[0]
-                if position > 0, let block, (first.block ?? Int.max) < block { continue }
-                if position > 0, let until, until.page == number, (first.block ?? Int.max) >= until.block { break }
+                let at = unit.blocks.first?.block ?? unit.number
+                if position > 0, let block, (at ?? Int.max) < block { continue }
+                if position > 0, let until, until.page == number, (at ?? Int.max) >= until.block { break }
+                // A unit that shows nothing, as a running header set aside, costs nothing.
+                guard let first = unit.blocks.first else {
+                    emit(unit, page: number)
+                    continue
+                }
                 let resumed = position > 0 && offset != nil && first.block == block && first.kind == .text
                 if resumed, let offset, let text = first.text { unit.blocks[0].text = "…" + String(text.dropFirst(offset)) }
                 let cost = unit.blocks.reduce(0) { $0 + tokens(render($1, style: style, raw: raw)) }
@@ -555,6 +559,7 @@ public enum Output {
                         if kept.count < text.count && shownHere > 0 {
                             var cut = Unit(blocks: [unit.blocks[0]], holdsText: true)
                             cut.hidden = unit.hidden
+                            cut.furniture = unit.furniture
                             cut.blocks[0].text = kept + "…"
                             emit(cut, page: number)
                             next = continuation(number, first.block, (resumed ? offset ?? 0 : 0) + shownHere)
