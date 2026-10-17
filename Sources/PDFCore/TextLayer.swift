@@ -363,10 +363,12 @@ enum TextLayer {
 
     /// A block's text without the marks, and its hidden runs. Runs of one reason become one where
     /// only spaces part them, or what a reader sees between them holds no 3 letters or digits in
-    /// a row, as the one letter a word shows when the rest is hidden. A run without 3 letters or
-    /// digits in a row counts as seen, unless it is part of a word: a maths symbol whose box
-    /// PDFKit places off its ink, or the stray marks of a scan's old OCR layer, as "I I I", carry
-    /// no instruction, but the rest of a word whose first letter shows does.
+    /// a row, as the one letter a word shows when the rest is hidden. A run with neither 3 letters
+    /// or digits in a row nor 5 in all counts as seen, unless it is part of a word: a maths symbol
+    /// whose box PDFKit places off its ink, or the stray marks of a scan's old OCR layer, as
+    /// "I I I", carry no instruction, but the rest of a word whose first letter shows does, and so
+    /// does a line spaced out letter by letter, as "I G N O R E", which PDFKit splits into words
+    /// of one letter.
     static func hiddenRuns(_ marked: String) -> (text: String, hidden: [Hidden]) {
         guard marked.unicodeScalars.contains(where: isMark) else { return (marked, []) }
         var text = String.UnicodeScalarView()
@@ -404,7 +406,8 @@ enum TextLayer {
         }
         let kept = merged.filter { run in
             let end = run.offset + run.length
-            return pieces(run.offset..<end).contains { $0.count >= 3 }
+            let found = pieces(run.offset..<end)
+            return found.contains { $0.count >= 3 } || found.reduce(0, { $0 + $1.count }) >= 5
                 || (run.offset > 0 && wordy(units[run.offset - 1])) || (end < units.count && wordy(units[end]))
         }
         return (plain, kept)
@@ -473,7 +476,18 @@ enum TextLayer {
                 }
                 return parts
             }
-            for word in words.flatMap(bySize) where !word.isEmpty {
+            // The whole word is judged first: hidden whole, it stays so, as letters squeezed by the
+            // text matrix at sizes that alternate; seen whole, its parts are judged each.
+            var units: [(word: [Int], start: Int, whole: Bool)] = []
+            for word in words where !word.isEmpty {
+                let parts = bySize(word)
+                units.append((word, word[0], parts.count > 1))
+                if parts.count > 1 { units += parts.map { ($0, word[0], false) } }
+            }
+            var settled = Set<Int>()
+            for unit in units {
+                let word = unit.word
+                if !unit.whole, settled.contains(unit.start) { continue }
                 defer { previous = hiddenStart[word[0]] }
                 let end = word[word.count - 1] + (widths[word[word.count - 1]] ?? 1)
                 guard var rect = visibility.box(of: NSRange(location: word[0], length: end - word[0])) else { continue }
@@ -532,6 +546,14 @@ enum TextLayer {
                 }
                 let verdict = visibility.check(rect, text: spelled, size: size, color: colors.compactMap { $0 }.first,
                                                straight: straight, squeezed: squeezed, stacked: stacked)
+                if unit.whole {
+                    if case .hidden(let reason) = verdict {
+                        hiddenStart[word[0]] = reason
+                        hiddenEnd.insert(word[word.count - 1])
+                        settled.insert(unit.start)
+                    }
+                    continue
+                }
                 if case .hidden(let reason) = verdict {
                     hiddenStart[word[0]] = reason
                     hiddenEnd.insert(word[word.count - 1])

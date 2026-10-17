@@ -912,14 +912,16 @@ final class Drawing {
                 var descriptor: CGPDFDictionaryRef?, missing: CGPDFReal = 0
                 let nonzero = given.filter { $0 > 0 }
                 if type3 {
-                    // As tall as the font's box, but no taller than an em by its widths, twice the
-                    // median advance: a box can hold the tallest glyph, or be a placeholder, as the
-                    // [0 0 1000 1000] of MusiXTeX's files, which stood their 10-pt letters 120 pt tall
-                    // over the lines above; or be empty, as the standard allows.
+                    // As tall as the font's box, unless the box stands over 3 ems by its widths,
+                    // twice the median advance, as the placeholder [0 0 1000 1000] of MusiXTeX's
+                    // files, which stood their 10-pt letters 120 pt tall over the lines above; an
+                    // empty box, as the standard allows, takes the em. Taking the smaller of the two
+                    // always marked visible words of French and Bengali TeX files hidden.
                     let sorted = nonzero.sorted()
                     let em = sorted.isEmpty || first == 0 ? nil : 2 * sorted[sorted.count / 2] / (abs(first) * 1000) * abs(vertical)
-                    let tall = [boxTall, em].compactMap { $0 }.filter { $0.isFinite && $0 > 0.01 && $0 < 100_000 }.min()
-                    if let tall { widths.height = tall }
+                    func usable(_ value: CGFloat?) -> CGFloat? { value.flatMap { $0.isFinite && $0 > 0.01 && $0 < 100_000 ? $0 : nil } }
+                    let box = usable(boxTall), wide = usable(em)
+                    if let box, let wide, box > 3 * wide { widths.height = wide } else if let tall = box ?? wide { widths.height = tall }
                 }
                 var other = nonzero.isEmpty ? 600 * scale : nonzero.reduce(0, +) / CGFloat(nonzero.count)
                 if CGPDFDictionaryGetDictionary(font, "FontDescriptor", &descriptor), let descriptor,
@@ -1377,8 +1379,20 @@ final class Drawing {
         let size = max(abs(current.fontSize) * current.font.height, 0.5)
         // Negative spacing pulls the pen back after the last glyph, short of its ink: letters
         // stacked by -7 Tc ended 7 pt past the string's end, so its last word had no string.
-        let back = vertical ? 0 : max(0, -current.characterSpacing, -current.wordSpacing) * abs(current.horizontalScale)
-        let margin = 0.3 * size, low = min(0, shown.advance) - margin, high = max(0, shown.advance) + back + margin
+        // Word spacing moves only past a space, and the ink reaches back no farther than the
+        // glyphs' own widths: -400 Tw on a string of no space stretched a string 400 pt.
+        let spacing = max(0, -current.characterSpacing, shown.text.contains(" ") ? -current.wordSpacing : 0)
+        let back = vertical ? 0 : min(shown.nominal, spacing * abs(current.horizontalScale))
+        // Spaces at the string's end move the pen and leave no ink: an invisible "x " set with
+        // 500 Tw reached 500 pt over a layer's words, which then read as text.
+        var reach = shown.advance
+        if !vertical, !current.font.twoBytes {
+            let trailing = shown.text.reversed().prefix { $0 == " " }.count
+            let step = (current.font.table[32] / 1000 * current.fontSize + current.characterSpacing + current.wordSpacing)
+                * current.horizontalScale
+            if trailing > 0, step.isFinite, abs(reach - CGFloat(trailing) * step) < abs(reach) { reach -= CGFloat(trailing) * step }
+        }
+        let margin = 0.3 * size, low = min(0, reach) - margin, high = max(0, reach) + back + margin
         let local = vertical ? CGRect(x: -0.8 * size, y: low, width: 1.6 * size, height: high - low)
             : CGRect(x: low, y: -0.5 * size, width: high - low, height: 1.7 * size)
         let kind: TextRun.Kind = offDepth > 0 ? .off
@@ -1394,7 +1408,7 @@ final class Drawing {
         let height = size * (vertical ? hypot(placed.a, placed.b) : hypot(placed.c, placed.d))
         anyOff = anyOff || kind == .off
         anyCrushed = anyCrushed || crushed
-        runs.append(TextRun(order: order, toText: placed.inverted(), reach: shown.advance, vertical: vertical, size: size, kind: kind,
+        runs.append(TextRun(order: order, toText: placed.inverted(), reach: reach, vertical: vertical, size: size, kind: kind,
                             crushed: crushed, text: spelling ?? "", height: height,
                             across: abs(direction.x) >= abs(direction.y), bounds: local.applying(placed),
                             glyphs: shown.glyphs, shown: shown.text, clipped: Self.clippedAway(local.applying(placed), by: current.clip),

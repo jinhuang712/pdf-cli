@@ -206,8 +206,9 @@ public struct FontCheck: Sendable, Equatable {
     /// Whether one of the streams declares 64 bytes or more and holds no operator: a stream whose
     /// filter cannot give its data back gives the scanner nothing. An empty stream, compressed,
     /// takes a few bytes, ASCII85 and Flate together about 20. Each stream is scanned, never copied
-    /// out: one of 600 KB that inflates to 600 MB took that much memory copied. A stream whose
-    /// length is missing or no number is not judged, nor a page with no resources to scan by.
+    /// out but a short one with no operator: one of 600 KB that inflates to 600 MB took that much
+    /// memory copied. A stream whose length is missing or no number is not judged, nor a page with
+    /// no resources to scan by.
     static func damaged(_ content: CGPDFContentStreamRef, resources: CGPDFDictionaryRef?) -> Bool {
         guard let resources, let create = createContentStream, let streams = CGPDFContentStreamGetStreams(content) else { return false }
         for index in 0..<CFArrayGetCount(streams) {
@@ -223,7 +224,13 @@ public struct FontCheck: Sendable, Equatable {
                 defer { CGPDFScannerRelease(scanner) }
                 CGPDFScannerScan(scanner)
             }
-            if operators == 0 { return true }
+            // A stream of only a comment, spaces, or operands whose operator is in the next
+            // stream holds no operator either, but decodes to something. It is copied out to tell,
+            // only up to 64 KB as declared, since a short stream can inflate a thousandfold.
+            guard operators == 0 else { continue }
+            if declared > 65_536 { return true }
+            var format = CGPDFDataFormat.raw
+            if (CGPDFStreamCopyData(stream, &format).map(CFDataGetLength) ?? 0) == 0 { return true }
         }
         return false
     }

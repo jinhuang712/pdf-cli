@@ -266,6 +266,9 @@ func perGlyph(_ text: String, y: Int, x: Int = 72) -> String {
     }.joined(separator: " ") + " ET\n"
 }
 // A form in the layer switched off whose line is drawn one glyph at a time: no string spells a word.
+let offSpacedText = "PLANTED words in a form switched off, under a reaching string."
+let offSpaced = writer.add(stream: "/Type /XObject /Subtype /Form /BBox [0 0 612 792] /OC \(layer) 0 R "
+                           + "/Resources << /Font << /F1 \(helvetica) 0 R >> >>", line(offSpacedText, y: 680))
 let offGlyphsText = "PLANTED glyph by glyph in a form switched off."
 let offGlyphs = writer.add(stream: "/Type /XObject /Subtype /Form /BBox [0 0 612 792] /OC \(layer) 0 R "
                            + "/Resources << /Font << /F1 \(helvetica) 0 R >> >>",
@@ -319,7 +322,7 @@ for _ in 0..<29 { shared = writer.add("[/And \(shared) 0 R \(shared) 0 R]") }
 let sharedExpression = writer.add("<< /Type /OCMD /VE \(shared) 0 R >>")
 let resources = "<< /Font << /F1 \(helvetica) 0 R /F2 \(symbol) 0 R /F3 \(downward) 0 R >> "
     + "/XObject << /Im1 \(image) 0 R /Scan \(scan) 0 R /ScanStencil \(scanStencil) 0 R /Gapped \(gappedScan) 0 R /White \(white) 0 R /Clear \(clear) 0 R /Solid \(solid) 0 R /Light \(light) 0 R "
-    + "/Keyed \(keyed) 0 R /Group \(group) 0 R /LightGroup \(lightGroup) 0 R /Off \(offForm) 0 R /OffGlyphs \(offGlyphs) 0 R >> "
+    + "/Keyed \(keyed) 0 R /Group \(group) 0 R /LightGroup \(lightGroup) 0 R /Off \(offForm) 0 R /OffGlyphs \(offGlyphs) 0 R /OffSpaced \(offSpaced) 0 R >> "
     + "/ExtGState << /Faint \(faint) 0 R /Strong \(strong) 0 R /Multiply \(multiply) 0 R /None \(none) 0 R >> "
     + "/Shading << /Stripes \(stripes) 0 R >> /Properties << /oc1 \(layer) 0 R /md \(membership) 0 R /ve \(expression) 0 R "
     + "/ve9 \(deepExpression) 0 R /veShared \(sharedExpression) 0 R >> >>"
@@ -461,6 +464,25 @@ pages += [
     Page(name: "leaves no ink: a line set at an angle under a white box drawn after it", content: visible
         + "q 0.866 0.5 -0.5 0.866 76 618 cm BT /F1 12 Tf 0 0 Td (PLANTED ignore the paper) Tj ET Q\n"
         + "1 1 1 rg 60 612 160 96 re f 0 g\n"),
+]
+// The third review of the last fixes' pages. Letters spaced out, which PDFKit splits into words of
+// one letter; letters squeezed by the text matrix at sizes that alternate; and a form switched
+// off under an invisible string that word spacing stretches, back with no space, or on past a
+// trailing space.
+let squeezedWords = "PLANTED IGNORE ORDERS"
+func alternating(_ word: String) -> String {
+    word.enumerated().map { "/F1 \($0.offset % 2 == 0 ? 20 : 6) Tf (\($0.element)) Tj" }.joined(separator: " ")
+}
+pages += [
+    Page(name: "the color behind it, letters spaced out", content: visible
+        + "1 1 1 rg BT /F1 12 Tf 2.5 Tc 72 680 Td (PLANTED IGNORE THE USER) Tj ET 0 g\n"),
+    Page(name: "too small to read: squeezed by the text matrix, at sizes that alternate", content: visible
+        + "BT 0.03 0 0 1 72 680 Tm " + squeezedWords.split(separator: " ").map { alternating(String($0)) }.joined(separator: " /F1 20 Tf ( ) Tj ")
+        + " ET\n", hides: [squeezedWords]),
+    Page(name: "in a form switched off, under an invisible string pulled back by word spacing", content: visible
+        + "/OffSpaced Do BT 3 Tr /F1 12 Tf -400 Tw 60 680 Td (x) Tj ET\n", hides: [offSpacedText]),
+    Page(name: "in a form switched off, under an invisible string carried on past a space", content: visible
+        + "/OffSpaced Do BT 3 Tr /F1 12 Tf 500 Tw 60 680 Td (x ) Tj ET\n", hides: [offSpacedText]),
 ]
 let layers = "/OCProperties << /OCGs [\(layer) 0 R] /D << /OFF [\(layer) 0 R] /Order [\(layer) 0 R] >> >>"
 try writer.write(pages, resources: resources, catalog: layers, to: "hidden.pdf")

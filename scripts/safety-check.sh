@@ -39,7 +39,27 @@ stopped() {
 # "kept K of N".
 check_planted() {
     awk -F '\t' -v file="$1" -v manifest=testdata/safety/planted.tsv -v normal="$home/normal" '
-        function norm(s) { gsub(/[][ \t.,;:!?"()]+/, " ", s); return " " s " " }
+        # Words apart: spaces, punctuation, hyphens, curly quotes and the marks of raised and
+        # lowered characters part them.
+        function norm(s) {
+            gsub(/\^\{|_\{|\}/, " ", s)
+            gsub(/“|”|‘|’|—|–/, " ", s)
+            gsub(/[][ \t.,;:!?"()\/-]+/, " ", s)
+            return " " s " "
+        }
+        # Whether a planted word stands in a text: a short word as a word of its own, a longer one
+        # anywhere, glued to another or not, and one of 5 letters or more spaced out letter by
+        # letter as well. Words of letters outside ASCII, as Japanese, which has no spaces, count
+        # anywhere.
+        function stands(word, text,    squeezed) {
+            if (word ~ /[^ -~]/) return index(text, word) > 0
+            if (length(word) < 4) return index(text, " " word " ") > 0
+            if (index(text, word)) return 1
+            if (length(word) < 5) return 0
+            squeezed = text
+            gsub(/ /, "", squeezed)
+            return index(squeezed, word) > 0
+        }
         FILENAME == manifest {
             if ($1 != file) next
             if ($3 == "hides") { count++; at[count] = $2; text[count] = $4 }
@@ -49,12 +69,15 @@ check_planted() {
         match($0, /^## p\.[0-9]+/) { page = substr($0, 6, RLENGTH - 5) + 0; next }
         FILENAME == normal {
             if (index($0, "[hidden")) flagged[page] = 1
-            # Failure blocks and their commands are the tool'"'"'s own words.
-            if ($0 ~ /^⚠/ || $0 ~ /^  / || $0 ~ /^next:/) next
+            # Failure blocks, the commands under blocks and the next line are the tool'"'"'s own
+            # words; the readings of an unsure block are the page'"'"'s.
+            if ($0 ~ /^⚠/ || $0 ~ /^next:/ || $0 ~ /^  (read it as an image|raw|pick|look):/) next
             line = $0
             gsub(/\[hidden[^]]*\]/, " ", line)
-            # An annotation'"'"'s label and the word before a mark'"'"'s comment are the tool'"'"'s too.
+            # An annotation'"'"'s label, a reading'"'"'s label and the word before a mark'"'"'s comment are
+            # the tool'"'"'s too.
             sub(/^\[[a-z]+( · [^]]*)?\]/, " ", line)
+            gsub(/\[(a|b|unsure|picked [0-9-]+)\]/, " ", line)
             gsub(/ · comment: /, " ", line)
             body[page] = body[page] norm(line)
             next
@@ -66,11 +89,8 @@ check_planted() {
                 for (j = 1; j <= n; j++) {
                     word = w[j]
                     if (length(word) < 2 || ((p SUBSEP word) in shows)) continue
-                    # Words of letters outside ASCII, as Japanese, which has no spaces, count where
-                    # they stand anywhere in the text.
-                    plain = word !~ /[^ -~]/
-                    if (plain ? index(body[p], " " word " ") : index(body[p], word)) leaks = leaks " " word
-                    if (plain ? index(told[p], " " word " ") : index(told[p], word)) shown = 1
+                    if (stands(word, body[p])) leaks = leaks " " word
+                    if (stands(word, told[p])) shown = 1
                 }
                 if (leaks != "") print "FAIL  " file " p." p ": planted words read as text:" leaks
                 else if (!flagged[p]) print "FAIL  " file " p." p ": no hidden-text marker"
