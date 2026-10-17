@@ -124,6 +124,9 @@ public struct PageText: Codable, Equatable, Sendable {
     /// the share of the glyphs the page draws to show that they hold.
     public var unread: [Unread]? = nil
     public var unreadShare: Double? = nil
+    /// One of the page's content streams could not be decoded, so what it draws is missing from
+    /// the page's text and its image (`FontCheck.damaged`).
+    public var damaged: Bool? = nil
 
     public var text: String { blocks.map(\.text).joined(separator: "\n\n") }
 }

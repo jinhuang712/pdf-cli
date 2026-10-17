@@ -1,4 +1,4 @@
-<!-- what-we-build: drafted 2026-10-16 -->
+<!-- what-we-build: drafted 2026-10-17 -->
 # Roadmap
 
 **Current milestone:** M1. An agent reads born-digital and scanned PDFs through the cache.
@@ -64,7 +64,7 @@ The spike shipped no features. It answered the riskiest questions.
 - **Agent guide** (F13)
   - [x] M1.11 `pdf agent-guide` and its Claude Code skill
 - **Tests**
-  - [ ] M1.12 A smoke set of 10 PDFs, and a safety set of broken PDFs and hidden-text PDFs. The safety set holds one hidden-text PDF per trick: text in the background's color, tiny, clipped, covered by an image, off the page and in a layer switched off, plus white text on a dark box, which counts as visible. It also holds PDFs with comments, form fields, links, attachments and scripts.
+  - [x] M1.12 A smoke set of 10 PDFs, and a safety set of broken PDFs and hidden-text PDFs. The safety set holds one hidden-text PDF per trick: text in the background's color, tiny, clipped, covered by an image, off the page and in a layer switched off, plus white text on a dark box, which counts as visible. It also holds PDFs with comments, form fields, links, attachments and scripts.
 
 **Exit criteria:** GOALS.md G2, G4, G9, G12, G13, G16 and G17, plus the author's own report after one week of daily use.
 

@@ -4,7 +4,7 @@ Where pdf-cli stands, what is in flight, and how the work has been done, for who
 
 ## Where things stand
 
-**On `main`** (pushed): milestone M0 and tasks M1.1–M1.11 and M1.15 of milestone M1.
+**On `main`** (pushed): milestone M0 and tasks M1.1–M1.12 and M1.15 of milestone M1.
 
 | Command | Task | What it does |
 |---|---|---|
@@ -21,7 +21,11 @@ Under them: worker processes with time and memory limits and a shared pool of sl
 
 **M1.10, hidden text,** landed on 2026-10-16, and has had six reviews since; `reports/M1.10-hidden.md` has every finding and its resolution. The design is in DESIGNS.md → "Decision: hidden text found by ink, with the drawing commands for what ink cannot tell" and "Decision: what an image over text hides, from the drawing commands, with OCR where they cannot tell"; the known limits are in FEATURES.md → F9 → Gap. Each round found 8 to 20 problems, most of them ways through for a hostile file, and the limits list grows with each: the check catches the common tricks and many crafted ones, not every one. The reviewers' hostile pages live on as `testdata/hidden/hidden.pdf` (69 pages), `broken.pdf` (11) and `unread.pdf` (2), all made by `scripts/make-hidden-fixture.swift`; their own generators were in `/private/tmp/claude-501/m110rev*`, outside the repo, which macOS clears.
 
-**The TODO list is done** (2026-10-16, its last review fixed on 2026-10-17): the index walks the page tree once, `pdf ls` judges pages from a stored verdict column, a page's layer is decoded once per command, a locked file points to `--password-stdin`, which asks on a terminal, `pdf info`'s section table is capped, and a page whose drawn text PDFKit leaves out is flagged, or read by OCR when it lost 30% or more. The licence notices of `pdf setup`'s models moved to M2.11. Reports: `reports/TODO-page-tree-listing-password.md` and `reports/TODO-text-pdfkit-leaves-out.md`. The second review of the last fixes found 10 problems; 9 are fixed, and the chords a music font stacks stay a limit. Since then a place PDFKit left text out of shows only as its crop: what its strings spell goes out nowhere, `--raw` included, as each review found a new hidden string that `--raw` spelled. Parser version 10, cache schema 8.
+**The TODO list is done** (2026-10-16, its last review fixed on 2026-10-17): the index walks the page tree once, `pdf ls` judges pages from a stored verdict column, a page's layer is decoded once per command, a locked file points to `--password-stdin`, which asks on a terminal, `pdf info`'s section table is capped, and a page whose drawn text PDFKit leaves out is flagged, or read by OCR when it lost 30% or more. The licence notices of `pdf setup`'s models moved to M2.11. Reports: `reports/TODO-page-tree-listing-password.md` and `reports/TODO-text-pdfkit-leaves-out.md`. The second review of the last fixes found 10 problems; 9 are fixed, and the chords a music font stacks stay a limit. Since then a place PDFKit left text out of shows only as its crop: what its strings spell goes out nowhere, `--raw` included, as each review found a new hidden string that `--raw` spelled.
+
+**M1.12, the test sets,** landed on 2026-10-17: `reports/M1.12-test-sets.md`. `scripts/smoke-check.sh` reads the 11 files of `testdata/smoke` whole; `scripts/safety-check.sh` runs the 20 files of `testdata/safety` and prints goal G16's line, 52 of 52 planted hidden texts kept out and no crash or hang. Both run inside `scripts/test-cache.sh`. The set found that a page whose content stream does not decode read as a fine empty page; it is now flagged low-quality, with a block that says part of the page is missing. Parser version 11, cache schema 8.
+
+**Sample PDFs stay local** (the user, 2026-10-16): PDFs downloaded to measure M1's goals, as many as can be gathered, are never committed. They live in the main checkout's `private/`, which `.gitignore` keeps out, and downloads wait for the user's OK on the sources.
 
 **Docs:** GOALS, PHILOSOPHY and PROPOSAL are approved. ROADMAP and README were approved on 2026-10-15. DESIGNS and FEATURES say drafted: the review fixes changed them after that approval, and only the user approves.
 
@@ -29,7 +33,7 @@ Under them: worker processes with time and memory limits and a shared pool of sl
 
 1. The user approves DESIGNS and FEATURES, or asks for changes.
 2. **M1.11** landed on 2026-10-16: `reports/M1.11-agent-guide.md`. The guide lives in `Sources/PDFCore/AgentGuide.swift`; a new command or flag needs a line there, or a place on the test's short list of flags left out, or `Tests/pdfTests/AgentGuideTests.swift` fails.
-3. **M1.12** the smoke set and the safety set of broken and hidden-text PDFs. `testdata/hidden/hidden.pdf` and `broken.pdf` are a start.
+3. **M1.12** landed on 2026-10-17; its `carries-*.pdf` are M1.13's fixtures.
 4. **M1.13** comments, highlights, form fields and link targets at their positions; **M1.14** a marker with a crop command for every image and drawing.
 5. M1's exit criteria: GOALS.md G2, G4, G9, G12, G13, G16 and G17, plus a week of the author's own daily use. Every goal is still unmeasured.
 

@@ -4,8 +4,11 @@
 // "visible: …", hold text a reader can see in an unusual way, which must read as text.
 //
 // Also testdata/hidden/broken.pdf: pages drawn in ways that once crashed the check, each with
-// visible lines that must read as text; and testdata/hidden/unread.pdf: a page whose drawn text
-// PDFKit leaves out of the page's text, and a control it reads.
+// visible lines that must read as text; testdata/hidden/unread.pdf: a page whose drawn text
+// PDFKit leaves out of the page's text, and a control it reads; and the safety set,
+// testdata/safety (ROADMAP.md → M1.12): one file per way of hiding text, the visible controls,
+// files that carry comments, form fields, links, attachments and scripts, and files broken as a
+// whole. scripts/safety-check.sh runs it.
 //
 // The PDFs are written by hand, so each trick is exactly the drawing command it names.
 //
@@ -142,7 +145,11 @@ final class Writer {
 
     func add(stream dictionary: String, _ text: String) -> Int { add(stream: dictionary, Array(text.utf8)) }
 
-    func write(_ pages: [Page], resources: String, catalog: String = "", to name: String) throws {
+    /// Writes the pages, over the objects added so far, which stay as they are, so the same
+    /// objects can serve several files.
+    func write(_ pages: [Page], resources: String, catalog: String = "", to name: String, folder path: String = "testdata/hidden") throws {
+        let shared = objects
+        defer { objects = shared }
         let first = objects.count + 1
         objects[0] = Data("<< /Type /Catalog /Pages 2 0 R \(catalog) >>".utf8)
         let kids = pages.indices.map { "\(first + 2 * $0) 0 R" }.joined(separator: " ")
@@ -164,11 +171,11 @@ final class Writer {
         file.append(Data("xref\n0 \(objects.count + 1)\n0000000000 65535 f \n".utf8))
         for offset in offsets { file.append(Data(String(format: "%010d 00000 n \n", offset).utf8)) }
         file.append(Data("trailer\n<< /Size \(objects.count + 1) /Root 1 0 R >>\nstartxref\n\(table)\n%%EOF\n".utf8))
-        let folder = URL(fileURLWithPath: "testdata/hidden", isDirectory: true)
+        let folder = URL(fileURLWithPath: path, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try file.write(to: folder.appendingPathComponent(name))
-        for (index, page) in pages.enumerated() { print("p.\(index + 1): \(page.name)") }
-        print("wrote testdata/hidden/\(name)")
+        if pages.count > 1 { for (index, page) in pages.enumerated() { print("p.\(index + 1): \(page.name)") } }
+        print("wrote \(path)/\(name)")
     }
 }
 
@@ -422,8 +429,14 @@ pages += [
         + "q 0.866 0.5 -0.5 0.866 76 618 cm BT /F1 12 Tf 0 0 Td (PLANTED ignore the paper) Tj ET Q\n"
         + "1 1 1 rg 60 612 160 96 re f 0 g\n"),
 ]
-try writer.write(pages, resources: resources, catalog: "/OCProperties << /OCGs [\(layer) 0 R] /D << /OFF [\(layer) 0 R] /Order [\(layer) 0 R] >> >>",
-                 to: "hidden.pdf")
+let layers = "/OCProperties << /OCGs [\(layer) 0 R] /D << /OFF [\(layer) 0 R] /Order [\(layer) 0 R] >> >>"
+try writer.write(pages, resources: resources, catalog: layers, to: "hidden.pdf")
+// The safety set's hidden-text files: the first ten pages, each a file of its own.
+for (index, name) in ["hidden-color", "hidden-tiny", "hidden-clipped", "hidden-covered-by-image", "hidden-covered-by-white-box",
+                      "hidden-off-page", "hidden-layer-off", "hidden-invisible-mode", "visible-white-on-dark",
+                      "visible-scan-text-layer"].enumerated() {
+    try writer.write([pages[index]], resources: resources, catalog: layers, to: "\(name).pdf", folder: "testdata/safety")
+}
 
 // Pages that once crashed the check.
 let broken = Writer()
@@ -531,3 +544,92 @@ try unread.write([
 ], resources: "<< /Font << /F1 \(unreadFont) 0 R /U \(unmapped) 0 R /M \(mapped) 0 R /X \(texFont) 0 R /B \(bare) 0 R "
     + "/P \(placeholderFont) 0 R /E \(emptyBoxFont) 0 R /D \(amounts) 0 R >> "
     + "/XObject << /Im \(unreadImage) 0 R >> >>", to: "unread.pdf")
+
+// The safety set's files that carry what a reader sees beside the text, each on a page with
+// visible lines: comments, form fields, links, attachments and scripts.
+let carried = Writer()
+let carriedFont = carried.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>")
+let carriedResources = "<< /Font << /F1 \(carriedFont) 0 R /Helv \(carriedFont) 0 R >> >>"
+let body = line("The 2017 baseline reaches 71 percent on the held-out set.", y: 650)
+// Comments: a sticky note, a highlight with its comment, a typed note on the page and a popup.
+let freeLook = carried.add(stream: "/Type /XObject /Subtype /Form /BBox [0 0 228 20] /Resources \(carriedResources)",
+                           "BT /F1 10 Tf 2 6 Td (Typed note on the page.) Tj ET\n")
+let popup = carried.add("<< /Type /Annot /Subtype /Popup /Rect [520 600 700 660] /Open false >>")
+let comments = [
+    carried.add("<< /Type /Annot /Subtype /Text /Rect [500 640 520 660] /Contents (Please cite the 2019 baseline.) "
+                + "/T (Reviewer 2) /Name /Comment /F 4 /Popup \(popup) 0 R >>"),
+    carried.add("<< /Type /Annot /Subtype /Highlight /Rect [72 646 380 662] /QuadPoints [72 662 380 662 72 646 380 646] "
+                + "/C [1 1 0] /Contents (Check this number.) /T (Reviewer 1) /F 4 >>"),
+    carried.add("<< /Type /Annot /Subtype /FreeText /Rect [72 560 300 580] /Contents (Typed note on the page.) "
+                + "/DA (/Helv 10 Tf 0 g) /F 4 /AP << /N \(freeLook) 0 R >> >>"),
+    popup,
+]
+// Form fields: a filled text field, a checked box, a choice and an empty field.
+func look(_ text: String, width: Int = 250) -> Int {
+    carried.add(stream: "/Type /XObject /Subtype /Form /BBox [0 0 \(width) 20] /Resources \(carriedResources)",
+                text.isEmpty ? "" : "BT /F1 11 Tf 2 5 Td (\(text)) Tj ET\n")
+}
+let checked = look("X", width: 14), unchecked = look("", width: 14)
+let fieldName = carried.add("<< /Type /Annot /Subtype /Widget /FT /Tx /T (Name) /V (Jane Doe) /Rect [150 680 400 700] /F 4 "
+                            + "/DA (/Helv 11 Tf 0 g) /AP << /N \(look("Jane Doe")) 0 R >> >>")
+let fieldAgree = carried.add("<< /Type /Annot /Subtype /Widget /FT /Btn /T (Agree) /V /Yes /AS /Yes /Rect [150 640 164 654] /F 4 "
+                             + "/AP << /N << /Yes \(checked) 0 R /Off \(unchecked) 0 R >> >> >>")
+let fieldCountry = carried.add("<< /Type /Annot /Subtype /Widget /FT /Ch /T (Country) /V (France) /Opt [(France) (Japan)] "
+                               + "/Rect [150 600 400 620] /F 4 /DA (/Helv 11 Tf 0 g) /AP << /N \(look("France")) 0 R >> >>")
+let fieldNotes = carried.add("<< /Type /Annot /Subtype /Widget /FT /Tx /T (Notes) /Rect [150 560 400 580] /F 4 "
+                             + "/DA (/Helv 11 Tf 0 g) /AP << /N \(look("")) 0 R >> >>")
+let fields = [fieldName, fieldAgree, fieldCountry, fieldNotes]
+let formLabels = line("Name:", y: 685) + line("I agree to the terms:", y: 645) + line("Country:", y: 605) + line("Notes:", y: 565)
+// Links: one to a web page.
+let links = [
+    carried.add("<< /Type /Annot /Subtype /Link /Rect [72 646 200 662] /Border [0 0 0] /A << /S /URI /URI (https://example.org/paper) >> >>"),
+]
+// Attachments: one in the document's name tree, and one on the page.
+let csv = "name,score\nbaseline,71\n"
+let embedded = carried.add(stream: "/Type /EmbeddedFile /Params << /Size \(csv.utf8.count) >>", csv)
+let spec = carried.add("<< /Type /Filespec /F (data.csv) /UF (data.csv) /EF << /F \(embedded) 0 R >> >>")
+let note = "Notes kept with the page.\n"
+let noteFile = carried.add(stream: "/Type /EmbeddedFile /Params << /Size \(note.utf8.count) >>", note)
+let noteSpec = carried.add("<< /Type /Filespec /F (notes.txt) /UF (notes.txt) /EF << /F \(noteFile) 0 R >> >>")
+let attachedOnPage = carried.add("<< /Type /Annot /Subtype /FileAttachment /Rect [500 640 516 660] /FS \(noteSpec) 0 R "
+                                 + "/Contents (notes.txt) /Name /Paperclip /F 4 >>")
+// Scripts: on opening the document, on opening the page, and a link that launches a program.
+let openScript = carried.add("<< /S /JavaScript /JS (app.alert\\(\"Opened\"\\);) >>")
+let launch = carried.add("<< /Type /Annot /Subtype /Link /Rect [72 646 200 662] /Border [0 0 0] /A << /S /Launch /F (calc.exe) >> >>")
+try carried.write([Page(name: "comments", content: visible + body, extra: "/Annots [\(comments.map { "\($0) 0 R" }.joined(separator: " "))]")],
+                  resources: carriedResources, to: "carries-comments.pdf", folder: "testdata/safety")
+try carried.write([Page(name: "form fields", content: formLabels, extra: "/Annots [\(fields.map { "\($0) 0 R" }.joined(separator: " "))]")],
+                  resources: carriedResources,
+                  catalog: "/AcroForm << /Fields [\(fields.map { "\($0) 0 R" }.joined(separator: " "))] /DA (/Helv 0 Tf 0 g) "
+                      + "/DR << /Font << /Helv \(carriedFont) 0 R >> >> >>",
+                  to: "carries-form-fields.pdf", folder: "testdata/safety")
+try carried.write([Page(name: "links", content: visible + line("See the project page for the code.", y: 650),
+                        extra: "/Annots [\(links.map { "\($0) 0 R" }.joined(separator: " "))]")],
+                  resources: carriedResources, to: "carries-links.pdf", folder: "testdata/safety")
+try carried.write([Page(name: "attachments", content: visible + body, extra: "/Annots [\(attachedOnPage) 0 R]")],
+                  resources: carriedResources, catalog: "/Names << /EmbeddedFiles << /Names [(data.csv) \(spec) 0 R] >> >>",
+                  to: "carries-attachments.pdf", folder: "testdata/safety")
+try carried.write([Page(name: "scripts", content: visible + line("Open the calculator.", y: 650),
+                        extra: "/Annots [\(launch) 0 R] /AA << /O << /S /JavaScript /JS (this.print\\(\\);) >> >>")],
+                  resources: carriedResources, catalog: "/OpenAction \(openScript) 0 R",
+                  to: "carries-scripts.pdf", folder: "testdata/safety")
+
+// Files broken as a whole: not a PDF, empty, cut short, with a cross-reference table that points
+// nowhere, and with a page whose content stream is not what its filter says.
+let safety = URL(fileURLWithPath: "testdata/safety", isDirectory: true)
+try Data("This is not a PDF, only text with a .pdf name.\n".utf8).write(to: safety.appendingPathComponent("broken-not-a-pdf.pdf"))
+try Data().write(to: safety.appendingPathComponent("broken-empty.pdf"))
+let whole = try Data(contentsOf: safety.appendingPathComponent("carries-comments.pdf"))
+try whole.prefix(whole.count * 6 / 10).write(to: safety.appendingPathComponent("broken-cut-short.pdf"))
+var pointless = String(decoding: whole, as: UTF8.self)
+// Every object marked free, so a reader must find the objects itself.
+pointless = pointless.replacingOccurrences(of: " 00000 n ", with: " 00000 f ")
+try Data(pointless.utf8).write(to: safety.appendingPathComponent("broken-xref.pdf"))
+let corrupt = Writer()
+let corruptFont = corrupt.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>")
+try corrupt.write([Page(name: "a page whose content stream is not what its filter says", content: visible)],
+                  resources: "<< /Font << /F1 \(corruptFont) 0 R >> >>", to: "broken-stream.pdf", folder: "testdata/safety")
+var stream = String(decoding: try Data(contentsOf: safety.appendingPathComponent("broken-stream.pdf")), as: UTF8.self)
+stream = stream.replacingOccurrences(of: "<<  /Length", with: "<< /Filter /FlateDecode /Length")
+try Data(stream.utf8).write(to: safety.appendingPathComponent("broken-stream.pdf"))
+print("wrote testdata/safety: broken-not-a-pdf.pdf, broken-empty.pdf, broken-cut-short.pdf, broken-xref.pdf, broken-stream.pdf")

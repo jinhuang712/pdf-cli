@@ -171,7 +171,7 @@ public enum Output {
             // each place says where to look. The image alone shows it: what its strings spell
             // never goes out, even with `--raw`, as a string hidden in a way the place check
             // misses would go out with it.
-            if let unread = layer.unread, let doubt = quality.doubts.first(where: { $0.blocks?.isEmpty == true }) {
+            if let unread = layer.unread, let doubt = quality.doubts.first(where: { $0.reason == Quality.unreadReason }) {
                 for (position, place) in unread.enumerated() {
                     let region = Box(x: max(0, place.box.x - 0.01), y: max(0, place.box.y - 0.01),
                                      width: min(1, place.box.width + 0.02), height: min(1, place.box.height + 0.02))
@@ -209,6 +209,14 @@ public enum Output {
             } else {
                 result.oldLayers = 1
             }
+        }
+        // A damaged content stream: nothing of it shows, in the text or the image, so the block
+        // names no command. Numbered after every block before it, so a read cut here goes on past it.
+        if let layer, let doubt = quality.doubts.first(where: { $0.reason == Quality.damagedReason }) {
+            let last = max(layer.blocks.count, result.units.flatMap(\.blocks).compactMap(\.block).max() ?? 0)
+            result.units.append(Unit(blocks: [Block(kind: .failure, page: number, block: last + 1, status: doubt.kind.rawValue,
+                                                    reason: doubt.reason)],
+                                     flag: .lowQuality))
         }
         return result
     }

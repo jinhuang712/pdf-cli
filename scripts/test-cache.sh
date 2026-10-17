@@ -7,6 +7,8 @@ set -u
 cd "$(dirname "$0")/.."
 swift build >/dev/null || exit 1
 pdf=.build/debug/pdf
+# This checkout's workers and runners, by their path: another session's are none of these checks' business.
+own="$(pwd)/.build/.*pdf __"
 paper=testdata/smoke/arxiv-2607.16859.pdf
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
@@ -34,7 +36,7 @@ slow() { run env PDF_CLI_PAGE_TIME_LIMIT=10 "$@"; }
 # slow the checks that count time.
 settle() {
     for _ in $(seq 120); do
-        pgrep -f 'pdf __' >/dev/null || return
+        pgrep -f "$own" >/dev/null || return
         sleep 1
     done
 }
@@ -173,8 +175,8 @@ done
 most=0
 # Watch until every command, runner and worker of the three files has exited. Runners and
 # workers name the file on their command line; no other check reads these three files.
-while kill -0 "${commands[@]}" 2>/dev/null || pgrep -f "pdf __.*($files)" >/dev/null; do
-    count=$(pgrep -f "pdf __worker .*($files)" | wc -l | tr -d ' ')
+while kill -0 "${commands[@]}" 2>/dev/null || pgrep -f "$own.*($files)" >/dev/null; do
+    count=$(pgrep -f "${own}worker .*($files)" | wc -l | tr -d ' ')
     [ "$count" -gt "$most" ] && most=$count
     sleep 0.02
 done
@@ -201,7 +203,7 @@ home=$work/background-hang
 PDF_CLI_HOME=$home PDF_CLI_PAGE_TIME_LIMIT=2 PDF_CLI_TEST_FAULT=background-hang:5 \
     $pdf debug-pages $paper --page 1 >/dev/null 2>&1
 for _ in $(seq 30); do
-    pgrep -f "pdf __runner .*$(basename $paper)" >/dev/null || break
+    pgrep -f "${own}runner .*$(basename $paper)" >/dev/null || break
     sleep 1
 done
 check "a page that ran out of time in the background reads at full speed" "p.6 ok" \
@@ -376,12 +378,21 @@ check "an install says when no pdf is on the PATH" "^⚠ no pdf on the PATH" "$(
 check "and says nothing when this pdf is" "^0$" \
     "$(env -u CLAUDE_CONFIG_DIR HOME=$work/guide PATH="$work/bin:/usr/bin:/bin" $pdf agent-guide --install claude-code 2>&1 | grep -c '⚠')"
 
+# The safety set (M1.12): goal G16 on every planted hidden text, broken files and the files
+# that carry comments, form fields, links, attachments and scripts.
+safety=$(sh scripts/safety-check.sh "$pdf" 2>&1)
+check "the safety set passes" "^all safety checks passed$" "$safety"
+check "goal G16 holds on the safety set" "^G16: \([0-9]*\) of \1 planted hidden texts flagged and kept out of normal output; 0 crashes or hangs$" "$safety"
+check "a damaged content stream is flagged" "^ok    broken-stream: exit 3, p.1 · flagged: p.1 (low-quality)$" "$safety"
+# The smoke set (M1.12): every file reads whole.
+check "the smoke set reads whole" "^all smoke checks passed$" "$(sh scripts/smoke-check.sh "$pdf" 2>&1)"
+
 # Pages nobody waits for parse slowly, at background priority, so runners get a minute to finish.
 for _ in $(seq 60); do
-    pgrep -f 'pdf __' >/dev/null || break
+    pgrep -f "$own" >/dev/null || break
     sleep 1
 done
-check "no worker or runner is left running" "^none$" "$(pgrep -f 'pdf __' || echo none)"
+check "no worker or runner is left running" "^none$" "$(pgrep -f "$own" || echo none)"
 
 if [ $failures -gt 0 ]; then
     echo "$failures checks failed"

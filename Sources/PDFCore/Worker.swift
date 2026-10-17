@@ -214,6 +214,7 @@ public enum Worker {
                 }
             }
             if let label = page.label, !label.isEmpty, label != String(index + 1) { layer.label = label }
+            if check.damaged { layer.damaged = true }
             // Words still run together, which OCR could not break either, get a second reading
             // split into common words, or a span that tells the agent to look at the image.
             if layer.runTogether > 0 {

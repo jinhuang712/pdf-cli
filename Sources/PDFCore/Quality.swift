@@ -39,6 +39,10 @@ public struct PageQuality: Equatable, Sendable {
 /// Judges each page from the measures its parse stored. The judgment runs at read time, so a
 /// threshold tuned later applies to every cached page without parsing it again.
 public enum Quality {
+    static let unreadReason = "the page draws text here that PDFKit left out of its text"
+    static let damagedReason = "part of the page's drawing commands is damaged and could not be read, "
+        + "so what it draws is missing here and from the page's image"
+
     public static func judge(_ result: PageResult) -> PageQuality {
         guard result.status == .ok else {
             return PageQuality(status: .failed, doubts: [Doubt(kind: .failed, reason: result.reason, blocks: nil)], unsure: [])
@@ -77,7 +81,12 @@ public enum Quality {
         // Text the page draws that PDFKit left out: no block holds it, so the doubt names none,
         // and the output gives each place its own failure block.
         if let unread = layer.unread, unread > 0 {
-            doubts.append(Doubt(kind: .lowQuality, reason: "the page draws text here that PDFKit left out of its text", blocks: []))
+            doubts.append(Doubt(kind: .lowQuality, reason: unreadReason, blocks: []))
+        }
+        // A damaged content stream draws nothing, in the text or the image: the output says so in
+        // a block of its own, after the page's blocks.
+        if layer.damaged == true {
+            doubts.append(Doubt(kind: .lowQuality, reason: damagedReason, blocks: []))
         }
         let unsure = layer.unsure ?? []
         let status: PageQuality.Status = !doubts.isEmpty ? .lowQuality : unsure.isEmpty ? .ok : .unsure
@@ -98,6 +107,8 @@ public struct PageMeasures: Codable, Equatable, Sendable {
     public var unsure: [Unsure]?
     /// How many places the page draws text that PDFKit left out.
     public var unread: Int?
+    /// One of the page's content streams could not be decoded.
+    public var damaged: Bool?
 
     public init() {}
 
@@ -110,6 +121,7 @@ public struct PageMeasures: Codable, Equatable, Sendable {
         blockAgreements = blocks.contains { $0 != nil } ? blocks : nil
         unsure = layer.unsure?.isEmpty == false ? layer.unsure : nil
         unread = layer.unread.map(\.count)
+        damaged = layer.damaged
     }
 
     /// The measures as the cache stores them.

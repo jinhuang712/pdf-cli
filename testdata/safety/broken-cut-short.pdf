@@ -1,0 +1,79 @@
+%PDF-1.7
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R  >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [26 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+4 0 obj
+<< /Type /XObject /Subtype /Form /BBox [0 0 228 20] /Resources << /Font << /F1 3 0 R /Helv 3 0 R >> >> /Length 52 >>
+stream
+BT /F1 10 Tf 2 6 Td (Typed note on the page.) Tj ET
+
+endstream
+endobj
+5 0 obj
+<< /Type /Annot /Subtype /Popup /Rect [520 600 700 660] /Open false >>
+endobj
+6 0 obj
+<< /Type /Annot /Subtype /Text /Rect [500 640 520 660] /Contents (Please cite the 2019 baseline.) /T (Reviewer 2) /Name /Comment /F 4 /Popup 5 0 R >>
+endobj
+7 0 obj
+<< /Type /Annot /Subtype /Highlight /Rect [72 646 380 662] /QuadPoints [72 662 380 662 72 646 380 646] /C [1 1 0] /Contents (Check this number.) /T (Reviewer 1) /F 4 >>
+endobj
+8 0 obj
+<< /Type /Annot /Subtype /FreeText /Rect [72 560 300 580] /Contents (Typed note on the page.) /DA (/Helv 10 Tf 0 g) /F 4 /AP << /N 4 0 R >> >>
+endobj
+9 0 obj
+<< /Type /XObject /Subtype /Form /BBox [0 0 14 20] /Resources << /Font << /F1 3 0 R /Helv 3 0 R >> >> /Length 30 >>
+stream
+BT /F1 11 Tf 2 5 Td (X) Tj ET
+
+endstream
+endobj
+10 0 obj
+<< /Type /XObject /Subtype /Form /BBox [0 0 14 20] /Resources << /Font << /F1 3 0 R /Helv 3 0 R >> >> /Length 0 >>
+stream
+
+endstream
+endobj
+11 0 obj
+<< /Type /XObject /Subtype /Form /BBox [0 0 250 20] /Resources << /Font << /F1 3 0 R /Helv 3 0 R >> >> /Length 37 >>
+stream
+BT /F1 11 Tf 2 5 Td (Jane Doe) Tj ET
+
+endstream
+endobj
+12 0 obj
+<< /Type /Annot /Subtype /Widget /FT /Tx /T (Name) /V (Jane Doe) /Rect [150 680 400 700] /F 4 /DA (/Helv 11 Tf 0 g) /AP << /N 11 0 R >> >>
+endobj
+13 0 obj
+<< /Type /Annot /Subtype /Widget /FT /Btn /T (Agree) /V /Yes /AS /Yes /Rect [150 640 164 654] /F 4 /AP << /N << /Yes 9 0 R /Off 10 0 R >> >> >>
+endobj
+14 0 obj
+<< /Type /XObject /Subtype /Form /BBox [0 0 250 20] /Resources << /Font << /F1 3 0 R /Helv 3 0 R >> >> /Length 35 >>
+stream
+BT /F1 11 Tf 2 5 Td (France) Tj ET
+
+endstream
+endobj
+15 0 obj
+<< /Type /Annot /Subtype /Widget /FT /Ch /T (Country) /V (France) /Opt [(France) (Japan)] /Rect [150 600 400 620] /F 4 /DA (/Helv 11 Tf 0 g) /AP << /N 14 0 R >> >>
+endobj
+16 0 obj
+<< /Type /XObject /Subtype /Form /BBox [0 0 250 20] /Resources << /Font << /F1 3 0 R /Helv 3 0 R >> >> /Length 0 >>
+stream
+
+endstream
+endobj
+17 0 obj
+<< /Type /Annot /Subtype /Widget /FT /Tx /T (Notes) /Rect [150 560 400 580] /F 4 /DA (/Helv 11 Tf 0 g) /AP << /N 16 0 R >> >>
+endobj
+18 0 obj
+<< /Type /Annot /Subtype /Link /Rect [72 646 200 662] /Border [0 0 0] /A << /S /URI /URI (https://example.org/paper) >> >>
+endobj
+19 0 obj
+<< /Type /EmbeddedFile /Params << /Size 

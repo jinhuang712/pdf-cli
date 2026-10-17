@@ -172,6 +172,18 @@ import Testing
         return FontCheck.atRisk(gaps: gaps, risky: risky)
     }
 
+    /// A content stream whose data its filter cannot decode draws nothing, and CGPDF says nothing:
+    /// the check finds it, and finds none on the smoke set's pages.
+    @Test func aContentStreamThatDecodesToNothingIsDamaged() throws {
+        let broken = try #require(CGPDFDocument(repoRoot.appendingPathComponent("testdata/safety/broken-stream.pdf") as CFURL))
+        #expect(FontCheck(page: try #require(broken.page(at: 1))).damaged)
+        let folder = repoRoot.appendingPathComponent("testdata/smoke")
+        for name in try FileManager.default.contentsOfDirectory(atPath: folder.path) where name.hasSuffix(".pdf") {
+            let document = try #require(CGPDFDocument(folder.appendingPathComponent(name) as CFURL))
+            #expect((1...document.numberOfPages).allSatisfy { !FontCheck(page: document.page(at: $0)!).damaged }, "\(name)")
+        }
+    }
+
     @Test func thePaperThatLosesSpacesIsAtRisk() throws {
         #expect(try atRisk("arxiv-2609.23257.pdf"))
     }

@@ -18,6 +18,10 @@ public struct FontCheck: Sendable, Equatable {
     public var risky = 0
     /// Images the page draws, inline or as objects. A page with an image and no text is a scan.
     public var images = 0
+    /// One of the page's content streams declares data and decodes to none, as one whose filter
+    /// its data does not match. CGPDF draws nothing of it and says nothing, so what it draws is
+    /// missing from the page's text and its image. Only `init(page:)` checks.
+    public var damaged = false
 
     /// A file is at risk when at least 5% of its body-font gaps, and at least 20 of them, are
     /// risky. Then every page gets the space repair.
@@ -196,6 +200,24 @@ public struct FontCheck: Sendable, Equatable {
         defer { CGPDFContentStreamRelease(stream) }
         FontCheck.run(stream, scan)
         self.init(scan)
+        damaged = FontCheck.damaged(stream)
+    }
+
+    /// Whether one of the streams declares 64 bytes or more and decodes to none. An empty stream,
+    /// compressed, takes a few bytes, ASCII85 and Flate together about 20, so a stream that long
+    /// held something that its filter could not give back.
+    static func damaged(_ content: CGPDFContentStreamRef) -> Bool {
+        guard let streams = CGPDFContentStreamGetStreams(content) else { return false }
+        for index in 0..<CFArrayGetCount(streams) {
+            guard let pointer = CFArrayGetValueAtIndex(streams, index) else { continue }
+            let stream = CGPDFStreamRef(OpaquePointer(pointer))
+            var declared: CGPDFInteger = 0
+            guard let dictionary = CGPDFStreamGetDictionary(stream), CGPDFDictionaryGetInteger(dictionary, "Length", &declared),
+                  declared >= 64 else { continue }
+            var format = CGPDFDataFormat.raw
+            if CGPDFStreamCopyData(stream, &format).map(CFDataGetLength) ?? 0 == 0 { return true }
+        }
+        return false
     }
 
     /// Measures the page whose dictionary is `dictionary`, as `init(page:)` does, reading its

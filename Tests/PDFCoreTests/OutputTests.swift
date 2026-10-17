@@ -136,6 +136,26 @@ import Testing
         #expect(!report.text.contains("pdf pick"))
     }
 
+    /// A page with a damaged content stream keeps the text it has, and a block after it says that
+    /// what the damaged part draws is missing. It names no command: the page's image lacks it too.
+    @Test func aPageWithADamagedStreamSaysWhatIsMissing() throws {
+        var read = layer(["What the readable stream draws."])
+        read.damaged = true
+        let quality = Quality.judge(try page(0, read).result)
+        #expect(quality.status == .lowQuality)
+        #expect(!quality.wholePage)
+        let report = Output.render(file: "paper.pdf", pageCount: 1, pages: [try page(0, read)])
+        #expect(report.text.contains("¶1 What the readable stream draws."))
+        #expect(report.text.contains("⚠ p.1 ¶2 low-quality: part of the page's drawing commands is damaged and could not be read"))
+        #expect(!report.text.contains("pdf crop"))
+        #expect(report.text.hasPrefix("paper.pdf · 1 page · read p.1 · flagged: p.1 (low-quality)"))
+        // With text PDFKit left out as well, each place keeps its own block, and the damage comes last.
+        read.unread = [Unread(box: box, text: "ABC")]
+        let both = Output.render(file: "paper.pdf", pageCount: 1, pages: [try page(0, read)])
+        #expect(both.text.contains("⚠ p.1 ¶2 low-quality: the page draws text here that PDFKit left out of its text"))
+        #expect(both.text.contains("⚠ p.1 ¶3 low-quality: part of the page's drawing commands is damaged"))
+    }
+
     func paragraphs(_ count: Int, words: Int) -> PageText {
         layer((1...count).map { number in Array(repeating: "word\(number)", count: words).joined(separator: " ") })
     }

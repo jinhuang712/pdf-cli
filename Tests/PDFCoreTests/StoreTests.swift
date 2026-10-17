@@ -172,8 +172,10 @@ import Testing
         unsure.unsure = [Unsure(block: 0, offset: 0, readings: ["Plaintext", "Plain text"], box: box)]
         var unread = plain
         unread.unread = [Unread(box: box)]
+        var damaged = plain
+        damaged.damaged = true
         plain.label = "iv"
-        let layers = [plain, garbled, spaces, unchecked, disagreeing, oneBlock, unsure, unread]
+        let layers = [plain, garbled, spaces, unchecked, disagreeing, oneBlock, unsure, unread, damaged]
         let store = try makeStore()
         var keys: [String] = []
         var expected: [String: PageQuality] = [:]

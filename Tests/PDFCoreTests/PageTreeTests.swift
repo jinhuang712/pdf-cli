@@ -91,7 +91,9 @@ import Testing
         let files = try #require(FileManager.default.enumerator(at: repoRoot.appendingPathComponent("testdata"),
                                                                 includingPropertiesForKeys: nil))
             .compactMap { $0 as? URL }.filter { $0.pathExtension == "pdf" && !$0.path.contains("/locked/") }
-        #expect(files.count >= 16)
+            // The safety set's files that are broken as a whole, which CGPDF does not open either.
+            .filter { !["broken-not-a-pdf.pdf", "broken-empty.pdf", "broken-cut-short.pdf", "broken-xref.pdf"].contains($0.lastPathComponent) }
+        #expect(files.count >= 32)
         for url in files {
             #expect(try compare(url) == 0, "\(url.lastPathComponent)")
         }
