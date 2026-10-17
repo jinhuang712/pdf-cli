@@ -336,7 +336,7 @@ import Testing
         #expect(comments[1].words == "The 2017 baseline reaches 71 percent on the held-out set")
         #expect(comments[1].text == "Check this number." && comments[1].author == "Reviewer 1")
         let fields = try read("carries-form-fields")
-        #expect(fields.map { "\($0.name ?? "")=\($0.value ?? "")" } == ["Name=Jane Doe", "Agree=Yes", "Country=France"])
+        #expect(fields.map { "\($0.name ?? "")=\($0.value ?? "")" } == ["Name=Jane Doe", "Agree=checked", "Country=France"])
         let links = try read("carries-links")
         #expect(links.map(\.target) == ["https://example.org/paper"])
         #expect(links.first?.words == "See the project page for")

@@ -77,3 +77,19 @@ Checked after the fixes, release build, against `6e0b3f7`: 143 PDFs, macOS's lic
 - `lshortru.pdf` p.34: the false mark "лой." is back, as before `6e0b3f7`. PDFKit's boxes for that word lie a line off the string that draws it and nearly on one spot, so no string counts as the word's own, and the boxes read as stacked letters. The strings 120 pt tall of `6e0b3f7` reached it by chance. Kept: loosening the test for stacked letters would let hidden words through.
 
 The reviewer's 10 cases, rerun: no planted word in any output, `--raw` included; sottigra p.9 read by OCR with its prose; both amounts and the font with an empty box flagged; the maths pages unflagged; the 40,000 spans read in under a second, against 30 s.
+
+## Third review
+
+A third reviewer checked the second review's fixes, `46b6f15`, with M1.12's review fixes, `a2f3111`, against `6e0b3f7`, with a build that turns each change off. It found 8 problems. Fixed on 2026-10-17 in `8f2685d`, on M1.13's branch:
+
+| # | Finding | Verdict | Resolution |
+|---|---|---|---|
+| 1 | Hidden text spaced out letter by letter, `2.5 Tc` or TJ gaps, read as text in every hiding way: PDFKit splits it into words of one letter, and a hidden run counted only with 3 letters in a row. Since M1.10. | Confirmed, high | Fixed: a run of 5 letters or more in all counts too. `hidden.pdf` p.70. |
+| 2 | Letters squeezed by the text matrix at sizes that alternate read as text after `a2f3111`'s split of a word by size: each letter became a part of its own, too short for the squeeze test. | Confirmed, high, regression | Fixed: the whole word is judged first, and stays hidden if it is. p.71. |
+| 3 | An invisible "x" with -400 Tw stretched its string 400 pt over a layer switched off, whose words then read: `a2f3111`'s reach past the pen applied word spacing with no space. A trailing space with +500 Tw did the same, since M1.10. | Confirmed, high, regression | Fixed: word spacing reaches back only for a string with a space, no farther than its glyphs' widths, and spaces at a string's end end its reach. p.72, p.73. |
+| 4 | The Type 3 height of `46b6f15`, the smaller of the box and an em by the widths, marked visible words hidden in French, Bengali and Arabic TeX files. | Confirmed, medium, regression | Fixed: the box stands unless it is over 3 ems, as MusiXTeX's placeholder is, or empty. A font that lies in its widths can still lose its place; kept. |
+| 5 | A stream of only a comment, spaces or operands was "damaged". | Confirmed, medium-low, regression | Fixed: a stream with no operator is damaged only if it decodes to nothing, copied out up to 64 KB. |
+| 6 | The safety check passed made-up output that held every planted word: indented lines, glued words, hyphens and curly quotes went unread. | Confirmed, medium | Fixed: it reads those lines, parts words at hyphens and quotes, finds longer words glued or spaced out. On `46b6f15`'s build it finds the leaks of p.51–53, 62, 70 and 73. |
+| 7 | A page cached by `aa14dac`'s build kept its parser version. | Likely, low | Parser version 12. |
+| 8 | A string stacked by -7 Tc followed by visible words in the same text object reads as text. Since M1.10. | Confirmed, low | Kept, in FEATURES.md → F9. |
+

@@ -150,7 +150,7 @@ expect_read carries-comments "[comment · Reviewer 2] Please cite the 2019 basel
 expect_read carries-comments "[highlight · Reviewer 1] The 2017 baseline reaches 71 percent on the held-out set · comment: Check this number."
 expect_read carries-comments "[note] Typed note on the page."
 expect_read carries-form-fields "[field: Name = Jane Doe]"
-expect_read carries-form-fields "[field: Agree = Yes]"
+expect_read carries-form-fields "[field: Agree = checked]"
 expect_read carries-form-fields "[field: Country = France]"
 expect_read carries-links "¶2 [See the project page for](https://example.org/paper) the code."
 expect_read carries-scripts "¶2 Open the calculator."

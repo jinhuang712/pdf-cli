@@ -681,8 +681,24 @@ let overWhite = carried.add("<< /Type /Annot /Subtype /Highlight /Rect [72 676 3
 let hidingAnnotations = Page(name: "a comment the file hides, and a highlight over white words",
                              content: visible + "1 g\n" + line(whiteLine, y: 680) + "0 g\n" + body,
                              extra: "/Annots [\(flagged) 0 R \(overWhite) 0 R]", hides: [hiddenComment, whiteLine])
-try carried.write([hidingAnnotations], resources: carriedResources, to: "hidden-annotations.pdf", folder: "testdata/safety")
-plantedRows += manifest([hidingAnnotations], file: "safety/hidden-annotations.pdf")
+// The M1.13 review's ways: a password field, a comment in a layer switched off, a note drawn
+// fully transparent.
+let secret = "PLANTED secret value nobody reads."
+let layeredText = "PLANTED a comment in a layer switched off."
+let clearText = "PLANTED a note drawn fully transparent."
+let annotationLayer = carried.add("<< /Type /OCG /Name (Comments) >>")
+let password = carried.add("<< /Type /Annot /Subtype /Widget /FT /Tx /Ff 8192 /T (Secret) /V (\(secret)) /Rect [150 680 400 700] /F 4 "
+                           + "/DA (/Helv 11 Tf 0 g) /AP << /N \(look("********")) 0 R >> >>")
+let layered = carried.add("<< /Type /Annot /Subtype /Text /Rect [500 640 520 660] /Contents (\(layeredText)) /OC \(annotationLayer) 0 R /F 4 >>")
+let transparentNote = carried.add("<< /Type /Annot /Subtype /FreeText /Rect [72 560 300 580] /Contents (\(clearText)) /CA 0 "
+                        + "/DA (/Helv 10 Tf 0 g) /F 4 >>")
+let otherWays = Page(name: "a password field, a comment in a layer switched off, a note fully transparent", content: visible + body,
+                     extra: "/Annots [\(password) 0 R \(layered) 0 R \(transparentNote) 0 R]", hides: [secret, layeredText, clearText])
+try carried.write([hidingAnnotations, otherWays], resources: carriedResources,
+                  catalog: "/AcroForm << /Fields [\(password) 0 R] /DA (/Helv 0 Tf 0 g) /DR << /Font << /Helv \(carriedFont) 0 R >> >> >> "
+                      + "/OCProperties << /OCGs [\(annotationLayer) 0 R] /D << /OFF [\(annotationLayer) 0 R] >> >>",
+                  to: "hidden-annotations.pdf", folder: "testdata/safety")
+plantedRows += manifest([hidingAnnotations, otherWays], file: "safety/hidden-annotations.pdf")
 try Data((plantedRows.joined(separator: "\n") + "\n").utf8).write(to: URL(fileURLWithPath: "testdata/safety/planted.tsv"))
 print("wrote testdata/safety/hidden-annotations.pdf and testdata/safety/planted.tsv")
 

@@ -248,3 +248,9 @@ safety/hidden-annotations.pdf	1	hides	PLANTED white words under a highlight.
 safety/hidden-annotations.pdf	1	shows	Visible words before the trick on this page.
 safety/hidden-annotations.pdf	1	shows	Visible words after the trick on this page.
 safety/hidden-annotations.pdf	1	shows	The 2017 baseline reaches 71 percent on the held-out set.
+safety/hidden-annotations.pdf	2	hides	PLANTED secret value nobody reads.
+safety/hidden-annotations.pdf	2	hides	PLANTED a comment in a layer switched off.
+safety/hidden-annotations.pdf	2	hides	PLANTED a note drawn fully transparent.
+safety/hidden-annotations.pdf	2	shows	Visible words before the trick on this page.
+safety/hidden-annotations.pdf	2	shows	Visible words after the trick on this page.
+safety/hidden-annotations.pdf	2	shows	The 2017 baseline reaches 71 percent on the held-out set.

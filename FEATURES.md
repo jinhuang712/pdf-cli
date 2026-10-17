@@ -98,7 +98,9 @@ Gap:
 - `--section` takes one section per read so far. `--styles` and `--format html` come later.
 - Tables, figures and equations read as plain text until M2.6, and images and drawings get no marker until M1.14.
 - An annotation goes after the block its center lies in, or the nearest block on its line, or the last block above it: a comment on a word in a paragraph comes after the whole paragraph.
-- The words under a mark or a link are PDFKit's selection there, kept only where the blocks under it show them; a mark over text a reader cannot see shows no words. A link goes inline where its block's text holds its words as one run; else it stands after the block.
+- The words under a mark or a link are the longest run of PDFKit's selection there that the blocks under it show in the same order: a mark over text a reader cannot see shows no words, and a link over it is hidden. A link goes inline where its block's text holds its words as one run; else it stands after the block.
+- A password field shows "a password, not shown", a choice the text its list shows, and a checked box "checked". An annotation the file hides by its flags, by a layer switched off, by no opacity, by no size, by lying mostly off the page, or as a reply to a hidden comment, is a hidden-text marker.
+- A paragraph's annotations take about 1,000 tokens at most; a line counts the rest. An author's name or a comment may hold text shaped like the tool's own markers, on the comment's own line.
 - At most 1,000 links a file are read, and 1,000 other annotations, the words under them for at most 3 s; `pdf info` counts the rest. TeX Live's PGF manual holds 44,700 links. Stamps, ink, shapes and other annotations come with M1.14's drawings; a link that starts a program is a script, which `pdf info` lists.
 
 Apple OCR reads a scanned page, a page whose text layer is stray marks or broken characters, and every page of a file whose text layer disagrees with its own image. Its blocks carry addresses like any other, and the text layer it replaced shows with `--raw`, labelled `[old OCR]`.

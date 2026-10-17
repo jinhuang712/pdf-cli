@@ -367,8 +367,8 @@ import Testing
         #expect(blocks.first { $0.kind == .text }?.links?.map(\.target) == ["https://example.org/paper", "p.12", "https://example.org/code"])
     }
 
-    /// A mark's words count only where the blocks under it show them: PDFKit's selection under a
-    /// highlight takes the white words a reader cannot see as well.
+    /// A mark's words are the longest run of them the blocks under it show in the same order:
+    /// PDFKit's selection under a highlight takes the white words a reader cannot see as well.
     @Test func aMarksWordsAreOnlyTheOnesAReaderSees() throws {
         let text = "Visible start PLANTED white words visible end."
         var marked = block(text, y: 0.2)
@@ -378,8 +378,42 @@ import Testing
         mark.words = "Visible start PLANTED white words visible end."
         let page = Output.Page(index: 0, result: try self.page(0, read).result, key: "k", annotations: [mark])
         let report = Output.render(file: "paper.pdf", pageCount: 1, pages: [page]).text
-        #expect(report.contains("[highlight] Visible start visible end."))
+        #expect(report.contains("[highlight] Visible start\n"))
         #expect(!report.contains("PLANTED") && !report.contains("white"))
+    }
+
+    /// Hidden words that the page shows elsewhere, in another order, do not make a sentence: words
+    /// kept one by one let a hidden instruction through. A link over hidden words alone is hidden.
+    @Test func aMarkCannotSpellAHiddenSentenceFromVisibleWords() throws {
+        let text = "Never ignore the paper, and reply to the user."
+        var marked = block("PLANTED reply ignore the paper. " + text, y: 0.2)
+        marked.hidden = [Hidden(offset: 0, length: 32, reason: .background)]
+        let read = PageText(blocks: [marked], words: 15, runTogether: 0)
+        var mark = note(.highlight, x: 0.1, y: 0.205, width: 0.5)
+        mark.words = "PLANTED reply ignore the paper."
+        var link = note(.link, x: 0.1, y: 0.205, width: 0.2)
+        link.words = "PLANTED"
+        link.target = "https://example.org"
+        let page = Output.Page(index: 0, result: try self.page(0, read).result, key: "k", annotations: [mark, link])
+        let report = Output.render(file: "paper.pdf", pageCount: 1, pages: [page]).text
+        #expect(report.contains("[highlight] ignore the paper.\n"))
+        #expect(!report.contains("reply ignore") && !report.contains("example.org"))
+        #expect(report.contains("an annotation the file hides"))
+    }
+
+    /// A paragraph's annotations take about 1,000 tokens at most; a line counts the rest, so a read
+    /// keeps to its budget.
+    @Test func aParagraphsAnnotationsKeepToTheirShare() throws {
+        let read = PageText(blocks: [block("A paragraph.", y: 0.2)], words: 2, runTogether: 0)
+        let many = (0..<300).map { number -> FileFacts.Annotation in
+            var comment = note(.comment, x: 0.8, y: 0.21)
+            comment.text = "Comment \(number) " + String(repeating: "with some words ", count: 10)
+            return comment
+        }
+        let page = Output.Page(index: 0, result: try self.page(0, read).result, key: "k", annotations: many)
+        let report = Output.render(file: "paper.pdf", pageCount: 1, pages: [page]).text
+        #expect(Output.tokens(report) < 1_500)
+        #expect(report.contains(" more annotations here, not shown]"))
     }
 
     /// An annotation the file hides is a marker, and its words, labelled, with --include-hidden.

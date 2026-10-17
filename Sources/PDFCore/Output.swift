@@ -143,19 +143,40 @@ public enum Output {
         }
         // What the page's annotations show, each after the block it sits on, with that block's
         // number, so a read cut there goes on as before.
-        let notes = annotations(page, layer: layer, path: path, includeHidden: includeHidden)
+        let notes = annotations(page, layer: layer, path: path, includeHidden: includeHidden, heldBack: quality.wholePage)
         func numbered(_ note: Note, _ block: Int) -> Block {
             var numbered = note.block
             numbered.block = block
             return numbered
+        }
+        // A unit goes out whole after a page's heading, so a paragraph's annotations take at most
+        // about 1,000 tokens, and a line counts the rest: 300 comments on one paragraph sent a
+        // read of 2,000 tokens 300 KB.
+        func attach(_ notes: [Note], to unit: inout Unit, number: Int) {
+            var spent = 0, left = 0
+            for note in notes {
+                let block = numbered(note, number)
+                let cost = tokens(render(block, style: .md, raw: false))
+                guard left == 0, spent + cost <= Output.annotationTokens || spent == 0 else {
+                    left += 1
+                    continue
+                }
+                spent += cost
+                unit.blocks.append(block)
+                if note.hidden { unit.hidden += 1 }
+            }
+            if left > 0 {
+                unit.blocks.append(Block(kind: .annotation, page: page.index + 1, block: number,
+                                         text: "\(left) more annotation\(left == 1 ? "" : "s") here, not shown", status: "more"))
+            }
         }
         // The annotations with no block to go with, on a page with no text or one in doubt as a
         // whole: a unit of their own, after the page's blocks.
         func rest(_ notes: [Note]) {
             guard !notes.isEmpty else { return }
             after += 1
-            var unit = Unit(blocks: notes.map { numbered($0, after) })
-            unit.hidden = notes.filter(\.hidden).count
+            var unit = Unit(blocks: [])
+            attach(notes, to: &unit, number: after)
             result.units.append(unit)
         }
 
@@ -194,10 +215,7 @@ public enum Output {
                     } else {
                         unit.doubtful = 1
                     }
-                    for note in notes where note.anchor == index {
-                        unit.blocks.append(numbered(note, index + 1))
-                        if note.hidden { unit.hidden += 1 }
-                    }
+                    attach(notes.filter { $0.anchor == index }, to: &unit, number: index + 1)
                     result.units.append(unit)
                     continue
                 }
@@ -213,16 +231,12 @@ public enum Output {
                                 holdsText: !block.visibleText.isEmpty)
                 unit.hidden = runs.count
                 // A link whose words the block shows goes inline; any other annotation follows it.
-                var links: [Block.Link] = []
+                var links: [Block.Link] = [], others: [Note] = []
                 for note in notes where note.anchor == index {
-                    if let link = note.link, Self.shows(text, link.text) {
-                        links.append(link)
-                    } else {
-                        unit.blocks.append(numbered(note, index + 1))
-                        if note.hidden { unit.hidden += 1 }
-                    }
+                    if let link = note.link, Self.shows(text, link.text) { links.append(link) } else { others.append(note) }
                 }
                 if !links.isEmpty { unit.blocks[0].links = links }
+                attach(others, to: &unit, number: index + 1)
                 if !choices.isEmpty && picked[index] == nil {
                     unit.blocks.append(unsureBlock(choices, block: block, page: number, index: index, path: path))
                     unit.flag = .unsure
@@ -300,22 +314,37 @@ public enum Output {
     /// where the blocks under it show them: PDFKit's selection under it takes text a reader cannot
     /// see too, as a white line under a highlight. An annotation the file hides is a marker, or
     /// its block's words with `includeHidden`.
-    static func annotations(_ page: Page, layer: PageText?, path: String, includeHidden: Bool) -> [Note] {
+    /// - Parameter heldBack: the page's text is set aside as a whole, so no mark shows its words.
+    static func annotations(_ page: Page, layer: PageText?, path: String, includeHidden: Bool, heldBack: Bool = false) -> [Note] {
         let number = page.index + 1
         let blocks = layer?.blocks ?? []
+        // The words under a mark that a reader sees there: the longest run of them that the
+        // blocks under it show in the same order, one after another. Words kept one by one let
+        // a hidden sentence through, made of words the page shows elsewhere.
         func seen(_ words: String?, under box: Box, anchor: Int?) -> String? {
+            guard !heldBack, let words else { return nil }
             let under = blocks.indices.filter { index in
                 let other = blocks[index].box
                 return other.x < box.x + box.width && box.x < other.x + other.width && other.y < box.y + box.height && box.y < other.y + other.height
             }
-            let visible = Set((under.isEmpty ? [anchor].compactMap { $0 } : under).flatMap { index in
+            let picked = words.split(whereSeparator: \.isWhitespace).map(String.init)
+                .filter { !Visibility.normalized($0).isEmpty }.prefix(200)
+            let keys = picked.map { Visibility.normalized($0) }
+            let visible = Array((under.isEmpty ? [anchor].compactMap { $0 } : under).flatMap { index in
                 blocks[index].visibleText.split(whereSeparator: \.isWhitespace).map { Visibility.normalized(String($0)) }
-            })
-            let kept = (words ?? "").split(whereSeparator: \.isWhitespace).filter { word in
-                let letters = Visibility.normalized(String(word))
-                return !letters.isEmpty && visible.contains(letters)
+            }.filter { !$0.isEmpty }.prefix(5_000))
+            guard !keys.isEmpty, !visible.isEmpty else { return nil }
+            var best = (start: 0, length: 0)
+            var previous = [Int](repeating: 0, count: visible.count + 1)
+            for i in 1...keys.count {
+                var current = [Int](repeating: 0, count: visible.count + 1)
+                for j in 1...visible.count where keys[i - 1] == visible[j - 1] {
+                    current[j] = previous[j - 1] + 1
+                    if current[j] > best.length { best = (i - current[j], current[j]) }
+                }
+                previous = current
             }
-            return kept.isEmpty ? nil : kept.joined(separator: " ")
+            return best.length == 0 ? nil : picked[best.start..<best.start + best.length].joined(separator: " ")
         }
         let ordered = page.annotations.filter { $0.page == page.index }.sorted { ($0.box.y, $0.box.x) < ($1.box.y, $1.box.x) }
         return ordered.map { annotation in
@@ -337,9 +366,11 @@ public enum Output {
                 block.target = annotation.target
             }
             var note = Note(block: block, anchor: anchor)
-            if annotation.hidden == true {
+            // A link whose words a reader cannot see is no link a reader sees.
+            let unseenLink = annotation.kind == .link && annotation.words != nil && block.text == nil && !heldBack
+            if annotation.hidden == true || unseenLink {
                 // The marker counts the annotation's own words; shown, they come with its label.
-                let words = includeHidden ? render(block, style: .text, raw: false) : block.text ?? block.target ?? ""
+                let words = includeHidden ? render(block, style: .text, raw: false) : block.text ?? annotation.words ?? block.target ?? ""
                 note.block = Block(kind: .hidden, page: number, box: annotation.box,
                                    text: marker(words, reason: .annotation, includeHidden: includeHidden, path: path, page: number))
                 note.hidden = true
@@ -701,6 +732,8 @@ public enum Output {
                 return "[link] " + linked(block.text ?? block.target ?? "", to: block.target ?? "", style: style)
             case "comment", "reply", "note":
                 return "[\(kind)\(by)] \(block.text ?? "")"
+            case "more":
+                return "[\(block.text ?? "")]"
             default:
                 return "[\(kind)\(by)]" + (block.text.map { " \($0)" } ?? "") + (block.note.map { " · comment: \($0)" } ?? "")
             }
@@ -736,10 +769,13 @@ public enum Output {
         }
     }
 
+    /// About how many tokens one paragraph's annotations may take.
+    static let annotationTokens = 1_000
+
     /// Words that lead somewhere: `[words](https://…)` in Markdown, `words <https://…>` in plain
     /// text. A page of the file is "p.12", as `--from` writes it.
     static func linked(_ words: String, to target: String, style: Style) -> String {
-        guard style == .md else { return "\(words) <\(target)>" }
+        guard style == .md else { return "\(words) <\(target.replacingOccurrences(of: ">", with: "%3E"))>" }
         let label = words.replacingOccurrences(of: "[", with: "\\[").replacingOccurrences(of: "]", with: "\\]")
         let address = target.hasPrefix("p.") ? "#" + target
             : target.replacingOccurrences(of: "(", with: "%28").replacingOccurrences(of: ")", with: "%29").replacingOccurrences(of: " ", with: "%20")

@@ -138,6 +138,8 @@ final class FactReader {
     private var pageLinks: [(annotation: Int, page: OpaquePointer?, name: String?)] = []
     /// The links and the other annotations listed so far, each up to `maxAnnotations`.
     private var linksListed = 0, othersListed = 0
+    /// The layers the file switches off, by their dictionaries: an annotation in one is hidden.
+    private var layersOff = Set<OpaquePointer>()
 
     /// Reads every fact of `document`. The outline comes from PDFKit, which opens the file again.
     static func read(_ document: CGPDFDocument, url: URL) -> FileFacts {
@@ -200,6 +202,24 @@ final class FactReader {
         }
         guard let catalog = document.catalog else { return }
         facts.labels = labels(catalog, pageCount: document.numberOfPages)
+        // The layers off by default, as the hidden-text check reads them: those listed off, and
+        // with a base state of off, every layer not listed on.
+        var properties: CGPDFDictionaryRef?, defaults: CGPDFDictionaryRef?
+        if CGPDFDictionaryGetDictionary(catalog, "OCProperties", &properties), let properties,
+           CGPDFDictionaryGetDictionary(properties, "D", &defaults), let defaults {
+            func layers(_ dictionary: CGPDFDictionaryRef, _ key: String) -> [OpaquePointer] {
+                var array: CGPDFArrayRef?
+                guard CGPDFDictionaryGetArray(dictionary, key, &array), let array else { return [] }
+                return (0..<min(CGPDFArrayGetCount(array), 1_000)).compactMap { index in
+                    var layer: CGPDFDictionaryRef?
+                    return CGPDFArrayGetDictionary(array, index, &layer) ? layer.map(Self.identity) : nil
+                }
+            }
+            if Self.name(defaults, "BaseState") == "OFF" {
+                layersOff = Set(layers(properties, "OCGs")).subtracting(layers(defaults, "ON"))
+            }
+            layersOff.formUnion(layers(defaults, "OFF"))
+        }
         var names: CGPDFDictionaryRef?
         if CGPDFDictionaryGetDictionary(catalog, "Names", &names), let names {
             var tree: CGPDFDictionaryRef?
@@ -303,28 +323,62 @@ final class FactReader {
     /// Text as the file holds it, on one line, cut to `maxAnnotationText` characters.
     static func clean(_ text: String?) -> String? {
         guard let text else { return nil }
-        let line = TextCleanup.line(text.replacingOccurrences(of: "\r", with: " ").replacingOccurrences(of: "\n", with: " "))
+        let breaks: Set<Character> = ["\r", "\n", "\r\n", "\u{2028}", "\u{2029}", "\u{85}", "\u{0B}", "\u{0C}"]
+        let line = TextCleanup.line(String(text.map { breaks.contains($0) ? " " : $0 }))
         return line.isEmpty ? nil : String(line.prefix(maxAnnotationText))
     }
 
     /// Starts an annotation's entry: its kind, page, place, author, and whether the file hides it.
     func start(_ annotation: CGPDFDictionaryRef, kind: FileFacts.Annotation.Kind, page: Int, crop: CGRect) -> FileFacts.Annotation? {
         guard let rect = Self.rect(annotation) else { return nil }
-        guard (kind == .link ? linksListed : othersListed) < Self.maxAnnotations else {
-            facts.moreAnnotations += 1
-            return nil
-        }
-        if kind == .link { linksListed += 1 } else { othersListed += 1 }
         let width = max(crop.width, 1), height = max(crop.height, 1)
         let box = Box(x: Double((rect.minX - crop.minX) / width), y: Double((crop.maxY - rect.maxY) / height),
                       width: Double(rect.width / width), height: Double(rect.height / height))
         var found = FileFacts.Annotation(kind: kind, page: page, box: box)
         found.author = Self.clean(Self.string(annotation, "T"))
-        // Hidden, bit 2, or not to be shown on screen, bit 6; or set off the page.
+        // Set off the page, mostly: a note 1 pt over the edge shows a reader nothing to read.
+        let onPage = rect.intersection(crop)
+        let shown = onPage.isNull ? 0 : onPage.width * onPage.height
+        if hidden(annotation) || rect.width * rect.height < 1 || shown < 0.5 * rect.width * rect.height { found.hidden = true }
+        // A reply to a hidden comment is hidden with it.
+        var parent: CGPDFDictionaryRef?
+        if CGPDFDictionaryGetDictionary(annotation, "IRT", &parent), let parent, hidden(parent) { found.hidden = true }
+        return found
+    }
+
+    /// Whether the file hides an annotation: by its flags, hidden, bit 2, or not to be shown on
+    /// screen, bit 6; in a layer switched off, or a membership over one; or fully transparent.
+    func hidden(_ annotation: CGPDFDictionaryRef) -> Bool {
         var flags: CGPDFInteger = 0
         _ = CGPDFDictionaryGetInteger(annotation, "F", &flags)
-        if flags & (2 | 32) != 0 || !rect.intersects(crop) { found.hidden = true }
-        return found
+        if flags & (2 | 32) != 0 { return true }
+        var opacity: CGPDFReal = 1
+        if CGPDFDictionaryGetNumber(annotation, "CA", &opacity), opacity < 0.05 { return true }
+        var layer: CGPDFDictionaryRef?
+        guard CGPDFDictionaryGetDictionary(annotation, "OC", &layer), let layer else { return false }
+        if layersOff.contains(Self.identity(layer)) { return true }
+        var one: CGPDFDictionaryRef?, many: CGPDFArrayRef?
+        if CGPDFDictionaryGetDictionary(layer, "OCGs", &one), let one { return layersOff.contains(Self.identity(one)) }
+        if CGPDFDictionaryGetArray(layer, "OCGs", &many), let many {
+            return (0..<min(CGPDFArrayGetCount(many), 1_000)).contains { index in
+                var member: CGPDFDictionaryRef?
+                return CGPDFArrayGetDictionary(many, index, &member) && member.map { layersOff.contains(Self.identity($0)) } == true
+            }
+        }
+        return false
+    }
+
+    /// Lists an annotation, up to `maxAnnotations` links and as many others; past them,
+    /// `moreAnnotations` counts it. Only what would show counts.
+    func list(_ found: FileFacts.Annotation) -> Bool {
+        let link = found.kind == .link
+        guard (link ? linksListed : othersListed) < Self.maxAnnotations else {
+            facts.moreAnnotations += 1
+            return false
+        }
+        if link { linksListed += 1 } else { othersListed += 1 }
+        facts.annotations.append(found)
+        return true
     }
 
     /// Reads a comment, a note, a mark on words or a link from the annotation's dictionary, as
@@ -341,10 +395,10 @@ final class FactReader {
             guard let text else { return }
             found.text = text
             if Self.has(annotation, "IRT") { found.reply = true }
-            facts.annotations.append(found)
+            _ = list(found)
         case .highlight, .underline, .squiggly, .strikeout:
             found.text = text
-            facts.annotations.append(found)
+            guard list(found) else { return }
             underWords.append((facts.annotations.count - 1, page, Self.quads(annotation) ?? [Self.rect(annotation)].compactMap { $0 }))
         case .link:
             var action: CGPDFDictionaryRef?
@@ -354,22 +408,29 @@ final class FactReader {
                 case "URI":
                     // A web or mail address. A link that starts a program or opens a file is a
                     // script, which `pdf info` names and nothing runs.
-                    guard let uri = Self.string(action, "URI").map({ $0.trimmingCharacters(in: .whitespaces) }),
+                    // On one line, with no space, as a reader's browser takes it: a new line in
+                    // an address wrote lines of its own into the output.
+                    guard let uri = Self.clean(Self.string(action, "URI"))?.replacingOccurrences(of: " ", with: "%20"),
                           let scheme = uri.split(separator: ":").first?.lowercased(),
                           ["http", "https", "mailto", "ftp"].contains(scheme) else { return }
-                    found.target = String(uri.prefix(Self.maxAnnotationText))
+                    found.target = uri
                 case "GoTo":
                     guard let destination = Self.destination(action, "D") else { return }
+                    found.target = "p.?"
                     pageLinks.append((facts.annotations.count, destination.page, destination.name))
                 default:
                     return
                 }
             } else if !acts, let destination = Self.destination(annotation, "Dest") {
+                found.target = "p.?"
                 pageLinks.append((facts.annotations.count, destination.page, destination.name))
             } else {
                 return
             }
-            facts.annotations.append(found)
+            guard list(found) else {
+                if found.target == "p.?" { pageLinks.removeLast() }
+                return
+            }
             underWords.append((facts.annotations.count - 1, page, [Self.rect(annotation)].compactMap { $0 }))
         case .field:
             return
@@ -486,12 +547,18 @@ final class FactReader {
         facts.formFields += 1
         guard filled(field) else { return }
         facts.filledFields += 1
-        // The filled field, where its widget shows it, with its full name and its value.
+        // The filled field, where its widget shows it, with its full name and the value a reader
+        // sees: never a password, which a viewer shows as dots.
         guard var found = start(widget, kind: .field, page: page, crop: crop) else { return }
+        if field != widget, hidden(field) { found.hidden = true }
         found.name = Self.clean(fullName(field))
-        found.value = Self.clean(value(field))
+        if type == "Tx", flags & (1 << 13) != 0 {
+            found.value = "a password, not shown"
+        } else {
+            found.value = Self.clean(value(field, type: type))
+        }
         guard found.name != nil, found.value != nil else { return }
-        facts.annotations.append(found)
+        _ = list(found)
     }
 
     /// A field's name: its own and its parents', joined by dots.
@@ -507,18 +574,35 @@ final class FactReader {
         return parts.isEmpty ? nil : parts.joined(separator: ".")
     }
 
-    /// What a field holds: its text, the choice or choices made, or the state of a box that is
-    /// checked; "signed" for a signature.
-    func value(_ field: CGPDFDictionaryRef) -> String? {
-        if inherited(field, { Self.name($0, "FT") }) == "Sig" { return "signed" }
+    /// What a field shows a reader: its text, the choice or choices made, by the text its list
+    /// shows for them, "checked" for a box that is, and "signed" for a signature. A box's state
+    /// is a name a reader never sees, as a choice's export value is.
+    func value(_ field: CGPDFDictionaryRef, type: String?) -> String? {
+        if type == "Sig" { return "signed" }
+        // A choice's list of [export, shown] pairs, or of the shown texts alone.
+        var shown: [String: String] = [:]
+        _ = inherited(field) { dictionary -> Bool? in
+            var options: CGPDFArrayRef?
+            guard CGPDFDictionaryGetArray(dictionary, "Opt", &options), let options else { return nil }
+            for index in 0..<min(CGPDFArrayGetCount(options), 1_000) {
+                var pair: CGPDFArrayRef?, export: CGPDFStringRef?, display: CGPDFStringRef?
+                if CGPDFArrayGetArray(options, index, &pair), let pair, CGPDFArrayGetString(pair, 0, &export), let export,
+                   CGPDFArrayGetString(pair, 1, &display), let display,
+                   let key = CGPDFStringCopyTextString(export) as String?, let text = CGPDFStringCopyTextString(display) as String? {
+                    shown[key] = text
+                }
+            }
+            return true
+        }
+        func display(_ value: String) -> String { shown[value] ?? value }
         return inherited(field) { dictionary -> String? in
-            if let text = Self.string(dictionary, "V") { return text }
-            if let name = Self.name(dictionary, "V") { return name == "Off" ? nil : name }
+            if let text = Self.string(dictionary, "V") { return type == "Ch" ? display(text) : text }
+            if let name = Self.name(dictionary, "V") { return name == "Off" ? nil : "checked" }
             var choices: CGPDFArrayRef?
             guard CGPDFDictionaryGetArray(dictionary, "V", &choices), let choices else { return nil }
             let picked = (0..<min(CGPDFArrayGetCount(choices), 100)).compactMap { index -> String? in
                 var item: CGPDFStringRef?
-                return CGPDFArrayGetString(choices, index, &item) ? item.flatMap { CGPDFStringCopyTextString($0) as String? } : nil
+                return CGPDFArrayGetString(choices, index, &item) ? item.flatMap { CGPDFStringCopyTextString($0) as String? }.map(display) : nil
             }
             return picked.isEmpty ? nil : picked.joined(separator: ", ")
         }

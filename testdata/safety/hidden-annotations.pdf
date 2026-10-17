@@ -1,9 +1,9 @@
 %PDF-1.7
 1 0 obj
-<< /Type /Catalog /Pages 2 0 R  >>
+<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [30 0 R] /DA (/Helv 0 Tf 0 g) /DR << /Font << /Helv 3 0 R >> >> >> /OCProperties << /OCGs [28 0 R] /D << /OFF [28 0 R] >> >> >>
 endobj
 2 0 obj
-<< /Type /Pages /Kids [28 0 R] /Count 1 >>
+<< /Type /Pages /Kids [33 0 R 35 0 R] /Count 2 >>
 endobj
 3 0 obj
 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
@@ -112,9 +112,28 @@ endobj
 << /Type /Annot /Subtype /Highlight /Rect [72 676 330 692] /QuadPoints [72 692 330 692 72 676 330 676] /C [1 1 0] /F 4 >>
 endobj
 28 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 29 0 R /Resources << /Font << /F1 3 0 R /Helv 3 0 R >> >> /Annots [26 0 R 27 0 R] >>
+<< /Type /OCG /Name (Comments) >>
 endobj
 29 0 obj
+<< /Type /XObject /Subtype /Form /BBox [0 0 250 20] /Resources << /Font << /F1 3 0 R /Helv 3 0 R >> >> /Length 37 >>
+stream
+BT /F1 11 Tf 2 5 Td (********) Tj ET
+
+endstream
+endobj
+30 0 obj
+<< /Type /Annot /Subtype /Widget /FT /Tx /Ff 8192 /T (Secret) /V (PLANTED secret value nobody reads.) /Rect [150 680 400 700] /F 4 /DA (/Helv 11 Tf 0 g) /AP << /N 29 0 R >> >>
+endobj
+31 0 obj
+<< /Type /Annot /Subtype /Text /Rect [500 640 520 660] /Contents (PLANTED a comment in a layer switched off.) /OC 28 0 R /F 4 >>
+endobj
+32 0 obj
+<< /Type /Annot /Subtype /FreeText /Rect [72 560 300 580] /Contents (PLANTED a note drawn fully transparent.) /CA 0 /DA (/Helv 10 Tf 0 g) /F 4 >>
+endobj
+33 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 34 0 R /Resources << /Font << /F1 3 0 R /Helv 3 0 R >> >> /Annots [26 0 R 27 0 R] >>
+endobj
+34 0 obj
 <<  /Length 326 >>
 stream
 BT /F1 12.0 Tf 72 720 Td (Visible words before the trick on this page.) Tj ET
@@ -126,40 +145,59 @@ BT /F1 12.0 Tf 72 650 Td (The 2017 baseline reaches 71 percent on the held-out s
 
 endstream
 endobj
+35 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 36 0 R /Resources << /Font << /F1 3 0 R /Helv 3 0 R >> >> /Annots [30 0 R 31 0 R 32 0 R] >>
+endobj
+36 0 obj
+<<  /Length 246 >>
+stream
+BT /F1 12.0 Tf 72 720 Td (Visible words before the trick on this page.) Tj ET
+BT /F1 12.0 Tf 72 600 Td (Visible words after the trick on this page.) Tj ET
+BT /F1 12.0 Tf 72 650 Td (The 2017 baseline reaches 71 percent on the held-out set.) Tj ET
+
+endstream
+endobj
 xref
-0 30
+0 37
 0000000000 65535 f 
 0000000009 00000 n 
-0000000059 00000 n 
-0000000117 00000 n 
-0000000214 00000 n 
-0000000416 00000 n 
-0000000502 00000 n 
-0000000667 00000 n 
-0000000851 00000 n 
-0000001009 00000 n 
-0000001188 00000 n 
-0000001337 00000 n 
-0000001525 00000 n 
-0000001680 00000 n 
-0000001840 00000 n 
-0000002026 00000 n 
-0000002206 00000 n 
-0000002356 00000 n 
-0000002498 00000 n 
-0000002637 00000 n 
-0000002754 00000 n 
-0000002841 00000 n 
-0000002961 00000 n 
-0000003050 00000 n 
-0000003189 00000 n 
-0000003255 00000 n 
-0000003378 00000 n 
-0000003565 00000 n 
-0000003703 00000 n 
-0000003867 00000 n 
+0000000204 00000 n 
+0000000269 00000 n 
+0000000366 00000 n 
+0000000568 00000 n 
+0000000654 00000 n 
+0000000819 00000 n 
+0000001003 00000 n 
+0000001161 00000 n 
+0000001340 00000 n 
+0000001489 00000 n 
+0000001677 00000 n 
+0000001832 00000 n 
+0000001992 00000 n 
+0000002178 00000 n 
+0000002358 00000 n 
+0000002508 00000 n 
+0000002650 00000 n 
+0000002789 00000 n 
+0000002906 00000 n 
+0000002993 00000 n 
+0000003113 00000 n 
+0000003202 00000 n 
+0000003341 00000 n 
+0000003407 00000 n 
+0000003530 00000 n 
+0000003717 00000 n 
+0000003855 00000 n 
+0000003905 00000 n 
+0000004093 00000 n 
+0000004285 00000 n 
+0000004430 00000 n 
+0000004592 00000 n 
+0000004756 00000 n 
+0000005135 00000 n 
+0000005306 00000 n 
 trailer
-<< /Size 30 /Root 1 0 R >>
+<< /Size 37 /Root 1 0 R >>
 startxref
-4246
+5605
 %%EOF

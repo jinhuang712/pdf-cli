@@ -24,6 +24,6 @@ The spike's reports (M0) are in [spike/](../spike/README.md).
 | TODO fixes: an unchecked OCR page, a slow open | 2026-10-16 | 2 high, 2 medium, 3 smaller; 6 fixed, 1 in part | [TODO fixes](TODO-ocr-check-and-slow-open.md) |
 | M1.11 `pdf agent-guide` and its skill | 2026-10-16 | 1 high, 3 medium, 8 smaller; 10 fixed, 2 in part | [M1.11](M1.11-agent-guide.md) |
 | TODO fixes: one walk of the page tree, cheap listings, the password prompt | 2026-10-16 | 1 high, 1 medium, 8 smaller; 8 fixed, 2 kept | [TODO fixes](TODO-page-tree-listing-password.md) |
-| TODO fix: text PDFKit leaves out flags the page | 2026-10-16 | 1 high, 3 medium, 6 smaller; all fixed. Second review, 2026-10-17: 10, 9 fixed, 1 kept | [TODO fix](TODO-text-pdfkit-leaves-out.md) |
+| TODO fix: text PDFKit leaves out flags the page | 2026-10-16 | 1 high, 3 medium, 6 smaller; all fixed. Second review, 2026-10-17: 10, 9 fixed, 1 kept. Third: 8, 6 fixed, 2 kept | [TODO fix](TODO-text-pdfkit-leaves-out.md) |
 | M1.12 Smoke set and safety set | 2026-10-17 | 2 high, 1 medium, 5 smaller; 7 fixed, 1 in part | [M1.12](M1.12-test-sets.md) |
-| M1.13 Comments, highlights, form fields and links | 2026-10-17 | not yet reviewed | [M1.13](M1.13-annotations.md) |
+| M1.13 Comments, highlights, form fields and links | 2026-10-17 | 3 high, 2 medium-high, 2 smaller; 6 fixed, 1 kept | [M1.13](M1.13-annotations.md) |
