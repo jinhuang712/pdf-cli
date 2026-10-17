@@ -346,4 +346,20 @@ import Testing
         // PDFKit selects the white words under the highlight; the output keeps only words a reader sees.
         #expect(hiding.first { $0.kind == .highlight }?.words?.contains("PLANTED") == true)
     }
+
+    /// An image and a chart drawn as shapes are pictures of the page; a table drawn with rules
+    /// around its words is none; a stamp is an annotation with its name (M1.14).
+    @Test func imagesDrawingsAndStampsAreFound() throws {
+        let url = repoRoot.appendingPathComponent("testdata/safety/carries-pictures.pdf")
+        let document = try #require(PDFDocument(url: url))
+        let page = try #require(document.page(at: 0))
+        let layer = withExtendedLifetime(document) { TextLayer.read(page, visibility: Visibility(page: page)) }
+        #expect(Set(layer.pictures?.map(\.kind) ?? []) == ["image", "drawing"])
+        #expect(layer.pictures?.count == 2)
+        let image = try #require(layer.pictures?.first { $0.kind == "image" })
+        #expect(abs(image.box.x - 0.118) < 0.01 && abs(image.box.y - 0.305) < 0.01)
+        let facts = FactReader.read(try #require(CGPDFDocument(url as CFURL)), url: url)
+        #expect(facts.annotations.map(\.kind) == [.stamp])
+        #expect(facts.annotations.first?.text == "Approved")
+    }
 }

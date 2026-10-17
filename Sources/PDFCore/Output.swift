@@ -346,8 +346,15 @@ public enum Output {
             }
             return best.length == 0 ? nil : picked[best.start..<best.start + best.length].joined(separator: " ")
         }
+        // Each image and drawing the page shows, with the command that crops it.
+        let pictures = (layer?.pictures ?? []).map { picture -> Note in
+            let box = Box(x: max(0, picture.box.x), y: max(0, picture.box.y), width: min(1, picture.box.width), height: min(1, picture.box.height))
+            var block = Block(kind: .annotation, page: number, box: box, status: picture.kind)
+            block.commands = ["crop": "pdf crop \(path) --page \(number) --bbox \(format(box))"]
+            return Note(block: block, anchor: anchor(box, in: blocks))
+        }
         let ordered = page.annotations.filter { $0.page == page.index }.sorted { ($0.box.y, $0.box.x) < ($1.box.y, $1.box.x) }
-        return ordered.map { annotation in
+        return (pictures + ordered.map { annotation in
             let anchor = anchor(annotation.box, in: blocks)
             var block = Block(kind: .annotation, page: number, box: annotation.box,
                               status: annotation.reply == true ? "reply" : annotation.kind.rawValue)
@@ -361,6 +368,8 @@ public enum Output {
             case .field:
                 block.name = annotation.name
                 block.text = annotation.value
+            case .stamp, .ink, .shape:
+                block.text = annotation.text
             case .link:
                 block.text = seen(annotation.words, under: annotation.box, anchor: anchor)
                 block.target = annotation.target
@@ -376,9 +385,11 @@ public enum Output {
                 note.hidden = true
             } else if annotation.kind == .link, let words = block.text, let target = block.target {
                 note.link = Block.Link(text: words, target: target)
+            } else if [.stamp, .ink, .shape].contains(annotation.kind) {
+                note.block.commands = ["crop": "pdf crop \(path) --page \(number) --bbox \(format(annotation.box))"]
             }
             return note
-        }
+        }).sorted { ($0.block.box.y, $0.block.box.x) < ($1.block.box.y, $1.block.box.x) }
     }
 
     /// The block an annotation goes with: the one its center lies in; or else the nearest across
@@ -734,6 +745,10 @@ public enum Output {
                 return "[\(kind)\(by)] \(block.text ?? "")"
             case "more":
                 return "[\(block.text ?? "")]"
+            case "image", "drawing":
+                return "[\(kind)] crop: \(block.commands?["crop"] ?? "")"
+            case "stamp", "ink", "shape":
+                return "[\(kind)\(by)]" + (block.text.map { " \($0)" } ?? "") + (block.commands?["crop"].map { " · crop: \($0)" } ?? "")
             default:
                 return "[\(kind)\(by)]" + (block.text.map { " \($0)" } ?? "") + (block.note.map { " · comment: \($0)" } ?? "")
             }

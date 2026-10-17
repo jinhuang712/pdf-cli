@@ -82,6 +82,14 @@ public struct Unread: Codable, Equatable, Sendable {
     public var box: Box
 }
 
+/// An image or a drawing a page shows, where it is, in fractions of the page from its top left
+/// (FEATURES.md → F3).
+public struct Picture: Codable, Equatable, Sendable {
+    /// "image", or "drawing" for shapes the page draws, as a chart's.
+    public var kind: String
+    public var box: Box
+}
+
 /// A page's text layer, as the parse stores it.
 public struct PageText: Codable, Equatable, Sendable {
     public var blocks: [TextBlock]
@@ -127,6 +135,8 @@ public struct PageText: Codable, Equatable, Sendable {
     /// One of the page's content streams could not be decoded, so what it draws is missing from
     /// the page's text and its image (`FontCheck.damaged`).
     public var damaged: Bool? = nil
+    /// The images and drawings the page shows, largest first.
+    public var pictures: [Picture]? = nil
 
     public var text: String { blocks.map(\.text).joined(separator: "\n\n") }
 }
@@ -311,6 +321,14 @@ enum TextLayer {
                              runTogether: TextCleanup.runTogetherWords(joined))
         if let offPage = visibility?.drawing.offPage.filter({ !$0.isEmpty }), !offPage.isEmpty { layer.offPage = offPage }
         if visibility?.drawing.incomplete == true { layer.hiddenCheckIncomplete = true }
+        if let drawing = visibility?.drawing {
+            let width = max(crop.width, 1), height = max(crop.height, 1)
+            let pictures = drawing.pictures().map { found in
+                Picture(kind: found.kind, box: Box(x: Double((found.rect.minX - crop.minX) / width), y: Double((crop.maxY - found.rect.maxY) / height),
+                                                   width: Double(found.rect.width / width), height: Double(found.rect.height / height)))
+            }
+            if !pictures.isEmpty { layer.pictures = pictures }
+        }
         if let visibility {
             let width = max(crop.width, 1), height = max(crop.height, 1)
             // A box the size of a glyph, no taller than 3.5 times its character's font size and no

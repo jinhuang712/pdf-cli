@@ -48,6 +48,8 @@ public struct FileFacts: Codable, Equatable, Sendable {
     public struct Annotation: Codable, Equatable, Sendable {
         public enum Kind: String, Codable, Sendable {
             case comment, note, highlight, underline, strikeout, squiggly, field, link
+            /// A stamp, a drawing by hand, or a shape a reader drew on the page.
+            case stamp, ink, shape
         }
 
         public var kind: Kind
@@ -306,7 +308,8 @@ final class FactReader {
     }
 
     /// The annotations whose words, values or targets reach the output beside the page's text.
-    static let shown: Set<String> = ["Text", "FreeText", "Highlight", "Underline", "Squiggly", "StrikeOut", "Widget", "Link"]
+    static let shown: Set<String> = ["Text", "FreeText", "Highlight", "Underline", "Squiggly", "StrikeOut", "Widget", "Link",
+                                     "Stamp", "Ink", "Square", "Circle", "Line", "Polygon", "PolyLine", "Caret"]
 
     // MARK: Annotations
 
@@ -387,7 +390,9 @@ final class FactReader {
     func collect(_ annotation: CGPDFDictionaryRef, subtype: String, page: Int, crop: CGRect) {
         let kinds: [String: FileFacts.Annotation.Kind] = ["Text": .comment, "FreeText": .note, "Highlight": .highlight,
                                                           "Underline": .underline, "Squiggly": .squiggly, "StrikeOut": .strikeout,
-                                                          "Link": .link]
+                                                          "Link": .link, "Stamp": .stamp, "Ink": .ink, "Square": .shape,
+                                                          "Circle": .shape, "Line": .shape, "Polygon": .shape, "PolyLine": .shape,
+                                                          "Caret": .shape]
         guard let kind = kinds[subtype], var found = start(annotation, kind: kind, page: page, crop: crop) else { return }
         let text = Self.clean(Self.string(annotation, "Contents"))
         switch kind {
@@ -432,6 +437,10 @@ final class FactReader {
                 return
             }
             underWords.append((facts.annotations.count - 1, page, [Self.rect(annotation)].compactMap { $0 }))
+        case .stamp, .ink, .shape:
+            // What it says, or a stamp's name, as "Approved".
+            found.text = text ?? (kind == .stamp ? Self.name(annotation, "Name") : nil)
+            _ = list(found)
         case .field:
             return
         }

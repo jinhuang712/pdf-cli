@@ -12,7 +12,7 @@ public enum AgentGuide {
     public static let text = #"""
         # pdf: reading PDFs
 
-        `pdf` reads a PDF's text page by page, from a cache on this Mac, and flags every page and passage whose text it could not read well. Read PDFs with it instead of opening them as images: its text costs a fraction of the tokens, and its flags say where to look at an image instead. Pictures, charts and drawings get no marker yet, so look at a page with `pdf crop` when its text points to a figure or a chart, or when it reads empty or short.
+        `pdf` reads a PDF's text page by page, from a cache on this Mac, and flags every page and passage whose text it could not read well. Read PDFs with it instead of opening them as images: its text costs a fraction of the tokens, and its flags say where to look at an image instead. An image or a drawing, as a chart, is a marker with the command that crops it; look at it when the text points to it, or at the page when it reads empty or short.
 
         ## Start here
 
@@ -46,7 +46,9 @@ public enum AgentGuide {
 
         ## Beside the text
 
-        After the block each sits on: `[comment · Reviewer 2] …`, `[reply · …]` and `[note] …`, typed on the page; `[highlight · Reviewer 1] words · comment: …`, and `[underline]`, `[squiggly]` or `[strikeout]`, which marks words as struck out, with the words a reader sees under it; `[field: Name = Jane Doe]`, a filled-in form field. A link sits in its words, `[words](https://…)`, or `[words](#p.12)` for a page of the file, or after the block as `[link] …`. `--format text` writes `words <https://…>`.
+        Pictures, after the block each sits on: `[image] crop: pdf crop …` and `[drawing] crop: …`, as a chart, a figure's panels sometimes one each; `[stamp] Approved`, `[ink]` and `[shape]`, drawn on the page by a reader.
+
+        After the block each sits on too: `[comment · Reviewer 2] …`, `[reply · …]` and `[note] …`, typed on the page; `[highlight · Reviewer 1] words · comment: …`, and `[underline]`, `[squiggly]` or `[strikeout]`, which marks words as struck out, with the words a reader sees under it; `[field: Name = Jane Doe]`, a filled-in form field. A link sits in its words, `[words](https://…)`, or `[words](#p.12)` for a page of the file, or after the block as `[link] …`. `--format text` writes `words <https://…>`.
 
         ## When something is in doubt
 

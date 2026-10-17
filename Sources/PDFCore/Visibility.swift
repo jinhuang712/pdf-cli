@@ -1035,6 +1035,12 @@ final class Drawing {
     var incomplete = false
     /// Every image the page draws, in page space.
     var images: [CGRect] = []
+    /// Every shape painted to show, in page space, within its clip, and what it is: a path with a
+    /// curve or a slanted line, a filled rectangle wider and taller than a rule, or a rule, a line
+    /// or a thin rectangle along the page's axes. At most `shapeLimit`.
+    var shapes: [(rect: CGRect, kind: Shape)] = []
+    enum Shape { case curve, bar, rule }
+    static let shapeLimit = 20_000
 
     let crop: CGRect
     var states = [State()]
@@ -1506,9 +1512,10 @@ final class Drawing {
 
     /// The path ends: it clips if `W` asked, and a fill may cover text. Nil when the path is not
     /// one rectangle along the page's axes.
-    func endPath(fills: Bool) {
+    func endPath(fills: Bool, paints: Bool = true) {
         let rectangle = !curved && ((rectangles == 1 && corners.isEmpty) || (rectangles == 0 && linesMakeRectangle)) ? path : nil
         if fills { fill(rectangle) }
+        if paints { paint(rectangle: rectangle, filled: fills) }
         if clipNext {
             state.clip = state.clip.intersection(path)
             state.clipExact = state.clipExact && rectangle != nil
@@ -1519,6 +1526,86 @@ final class Drawing {
         corners = []
         starts = 0
         clipNext = false
+    }
+
+    /// Records a shape painted to show: in no layer switched off, not clear, and on the page.
+    func paint(rectangle: CGRect?, filled: Bool) {
+        let current = state
+        guard offDepth == 0, shapes.count < Drawing.shapeLimit, current.opacity > 0.05, !path.isNull else { return }
+        let area = path.insetBy(dx: -0.5, dy: -0.5).intersection(current.clip).intersection(crop)
+        guard !area.isNull, area.width > 0 || area.height > 0 else { return }
+        var slanted = curved
+        for (from, to) in zip(corners, corners.dropFirst()) where abs(from.x - to.x) > 0.5 && abs(from.y - to.y) > 0.5 { slanted = true }
+        let kind: Shape = slanted ? .curve : filled && rectangle != nil && min(area.width, area.height) > 3 ? .bar : .rule
+        shapes.append((area, kind))
+    }
+
+    /// The images and drawings a page shows a reader, each as a region in page space, largest
+    /// first, at most 30 (FEATURES.md → F3). An image counts at 0.5% of the page or more, but not
+    /// on a scan's page, whose image is the page. A drawing is a group of shapes within 6 pt of
+    /// one another, 1% of the page or more, that holds a curve or a slanted line, or two bars:
+    /// rules alone, as a table's borders or an underline, are no drawing, nor a bar with text on
+    /// it, as a table's shaded cells, nor a shape that fills most of the page, as a background.
+    func pictures() -> [(kind: String, rect: CGRect)] {
+        let page = crop.width * crop.height
+        guard page > 0 else { return [] }
+        let centers = runs.lazy.filter { $0.kind == .shown }.map { CGPoint(x: $0.bounds.midX, y: $0.bounds.midY) }.prefix(5_000)
+        var found: [(kind: String, rect: CGRect, curves: Int, bars: Int)] = []
+        if !underlay {
+            for rect in images.lazy.map({ $0.intersection(self.crop) }) where !rect.isNull && rect.width * rect.height >= 0.005 * page {
+                found.append(("image", rect, 0, 0))
+            }
+        }
+        let largest = shapes.sorted { $0.rect.width * $0.rect.height > $1.rect.width * $1.rect.height }.prefix(2_000)
+        for shape in largest where shape.rect.width * shape.rect.height < 0.8 * page {
+            if shape.kind == .bar, centers.contains(where: { shape.rect.contains($0) }) { continue }
+            found.append(("drawing", shape.rect, shape.kind == .curve ? 1 : 0, shape.kind == .bar ? 1 : 0))
+        }
+        // Regions within 6 pt of one another join, an image with the drawing over it.
+        var merged = true
+        while merged {
+            merged = false
+            var next: [(kind: String, rect: CGRect, curves: Int, bars: Int)] = []
+            for item in found {
+                if let at = next.firstIndex(where: { $0.rect.insetBy(dx: -6, dy: -6).intersects(item.rect) }) {
+                    let other = next[at]
+                    next[at] = (other.kind == "image" || item.kind == "image" ? "image" : "drawing", other.rect.union(item.rect),
+                                other.curves + item.curves, other.bars + item.bars)
+                    merged = true
+                } else {
+                    next.append(item)
+                }
+            }
+            found = next
+        }
+        let kept = found.filter { item in
+            item.rect.width >= 20 && item.rect.height >= 20 && item.rect.width * item.rect.height < 0.95 * page
+                && (item.kind == "image" || (item.rect.width * item.rect.height >= 0.01 * page && (item.curves > 0 || item.bars >= 2)))
+        }
+        // Panels of one figure side by side, on one band of the page, 30 pt apart at most, join:
+        // Figure 1 of a paper on dataset distillation came out as five drawings.
+        var joined = kept
+        var joining = true
+        while joining {
+            joining = false
+            var next: [(kind: String, rect: CGRect, curves: Int, bars: Int)] = []
+            for item in joined {
+                if let at = next.firstIndex(where: { other in
+                    let shared = min(other.rect.maxY, item.rect.maxY) - max(other.rect.minY, item.rect.minY)
+                    let gap = max(other.rect.minX - item.rect.maxX, item.rect.minX - other.rect.maxX)
+                    return shared >= 0.5 * min(other.rect.height, item.rect.height) && gap <= 30
+                }) {
+                    let other = next[at]
+                    next[at] = (other.kind == "image" || item.kind == "image" ? "image" : "drawing", other.rect.union(item.rect),
+                                other.curves + item.curves, other.bars + item.bars)
+                    joining = true
+                } else {
+                    next.append(item)
+                }
+            }
+            joined = next
+        }
+        return joined.sorted { $0.rect.width * $0.rect.height > $1.rect.width * $1.rect.height }.prefix(30).map { ($0.kind, $0.rect) }
     }
 
     /// How much of an image lets through over a box, from least to most: its opacity times its
@@ -1706,7 +1793,8 @@ final class Drawing {
         }
         on("W") { _, drawing in drawing.clipNext = true }
         on("W*") { _, drawing in drawing.clipNext = true }
-        for name in ["n", "S", "s"] { on(name) { _, drawing in drawing.endPath(fills: false) } }
+        on("n") { _, drawing in drawing.endPath(fills: false, paints: false) }
+        for name in ["S", "s"] { on(name) { _, drawing in drawing.endPath(fills: false) } }
         for name in ["f", "F", "f*", "B", "B*", "b", "b*"] { on(name) { _, drawing in drawing.endPath(fills: true) } }
         // An axial shading extended both ways, with no box of its own, fills the clip; others,
         // as a radial one, paint only part of it.

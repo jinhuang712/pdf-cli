@@ -4,7 +4,7 @@ Where pdf-cli stands, what is in flight, and how the work has been done, for who
 
 ## Where things stand
 
-**On `main`** (pushed): milestone M0 and tasks M1.1–M1.13 and M1.15 of milestone M1.
+**On `main`** (pushed): milestone M0 and every task of milestone M1, M1.1–M1.15.
 
 | Command | Task | What it does |
 |---|---|---|
@@ -23,7 +23,7 @@ Under them: worker processes with time and memory limits and a shared pool of sl
 
 **The TODO list is done** (2026-10-16, its last review fixed on 2026-10-17): the index walks the page tree once, `pdf ls` judges pages from a stored verdict column, a page's layer is decoded once per command, a locked file points to `--password-stdin`, which asks on a terminal, `pdf info`'s section table is capped, and a page whose drawn text PDFKit leaves out is flagged, or read by OCR when it lost 30% or more. The licence notices of `pdf setup`'s models moved to M2.11. Reports: `reports/TODO-page-tree-listing-password.md` and `reports/TODO-text-pdfkit-leaves-out.md`. The second review of the last fixes found 10 problems; 9 are fixed, and the chords a music font stacks stay a limit. Since then a place PDFKit left text out of shows only as its crop: what its strings spell goes out nowhere, `--raw` included, as each review found a new hidden string that `--raw` spelled.
 
-**M1.12, the test sets,** landed on 2026-10-17: `reports/M1.12-test-sets.md`. `scripts/smoke-check.sh` reads the 11 files of `testdata/smoke` whole and holds their flags to `testdata/smoke/expected-flags.tsv`; `scripts/safety-check.sh` runs the 20 files of `testdata/safety` and `hidden.pdf`, holds every planted string the generator lists in `testdata/safety/planted.tsv` to the normal output, and prints goal G16's line: 70 of 70 kept out, no crash or hang, after M1.13 and the third review of the hidden-text fixes. Its review found that 4 of `hidden.pdf`'s pages let the last word of their planted line read, since M1.10; fixed. Both run inside `scripts/test-cache.sh`. The set found that a page whose content stream does not decode read as a fine empty page; it is now flagged low-quality, with a block that says part of the page is missing. Parser version 12, cache schema 8.
+**M1.12, the test sets,** landed on 2026-10-17: `reports/M1.12-test-sets.md`. `scripts/smoke-check.sh` reads the 11 files of `testdata/smoke` whole and holds their flags to `testdata/smoke/expected-flags.tsv`; `scripts/safety-check.sh` runs the 20 files of `testdata/safety` and `hidden.pdf`, holds every planted string the generator lists in `testdata/safety/planted.tsv` to the normal output, and prints goal G16's line: 70 of 70 kept out, no crash or hang, after M1.13 and the third review of the hidden-text fixes. Its review found that 4 of `hidden.pdf`'s pages let the last word of their planted line read, since M1.10; fixed. Both run inside `scripts/test-cache.sh`. The set found that a page whose content stream does not decode read as a fine empty page; it is now flagged low-quality, with a block that says part of the page is missing. Parser version 13, cache schema 8.
 
 **M1.13, annotations,** landed on 2026-10-17: `reports/M1.13-annotations.md`. `pdf read` shows comments, notes, marks on words with the words a reader sees under them, filled-in fields and links, after the block each sits on, links inline in Markdown. They come from the file's facts, `Store.indexChecks` 8, so a file that gains highlights shows them with no page parsed again. Read them with CGPDF, never with PDFKit's annotation objects: PDFKit followed a link action chained to itself until it crashed.
 
@@ -36,7 +36,7 @@ Under them: worker processes with time and memory limits and a shared pool of sl
 1. The user approves DESIGNS and FEATURES, or asks for changes.
 2. **M1.11** landed on 2026-10-16: `reports/M1.11-agent-guide.md`. The guide lives in `Sources/PDFCore/AgentGuide.swift`; a new command or flag needs a line there, or a place on the test's short list of flags left out, or `Tests/pdfTests/AgentGuideTests.swift` fails.
 3. **M1.12** landed on 2026-10-17; its `carries-*.pdf` are M1.13's fixtures.
-4. **M1.13** landed on 2026-10-17: `reports/M1.13-annotations.md`. **M1.14** next: a marker with a crop command for every image and drawing, stamps, ink and shapes among them.
+4. **M1.13** and **M1.14** landed on 2026-10-17: `reports/M1.13-annotations.md`, `reports/M1.14-pictures.md`. Images and drawings are markers with their crop commands.
 5. M1's exit criteria: GOALS.md G2, G4, G9, G12, G13, G16 and G17, plus a week of the author's own daily use. Every goal is still unmeasured.
 
 `TODO.md` holds the follow-ups without a milestone: two, a content stream that inflates to 600 MB, which times its page out, and links past the first 1,000 of a file.

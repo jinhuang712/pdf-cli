@@ -96,7 +96,7 @@ Without a page or section flag, `pdf read` starts at the first page and stops at
 
 Gap:
 - `--section` takes one section per read so far. `--styles` and `--format html` come later.
-- Tables, figures and equations read as plain text until M2.6, and images and drawings get no marker until M1.14.
+- Tables, figures and equations read as plain text until M2.6. Until then an image or a drawing is a marker of its own, after the block it sits on: `[image] crop: pdf crop paper.pdf --page 3 --bbox …`, or `[drawing]` for shapes the page draws, as a chart. A drawing is a group of shapes that holds a curve or a slanted line, or two bars, 1% of the page or more; rules alone, as a table's borders, are none. A figure's panels side by side join; panels stacked, or far apart, are a marker each. A scan's page has no image marker: its image is the page. Stamps, ink and shapes a reader drew are `[stamp]`, `[ink]` and `[shape]`, with their crop.
 - An annotation goes after the block its center lies in, or the nearest block on its line, or the last block above it: a comment on a word in a paragraph comes after the whole paragraph.
 - The words under a mark or a link are the longest run of PDFKit's selection there that the blocks under it show in the same order: a mark over text a reader cannot see shows no words, and a link over it is hidden. A link goes inline where its block's text holds its words as one run; else it stands after the block.
 - A password field shows "a password, not shown", a choice the text its list shows, and a checked box "checked". An annotation the file hides by its flags, by a layer switched off, by no opacity, by no size, by lying mostly off the page, or as a reply to a hidden comment, is a hidden-text marker.
@@ -115,7 +115,7 @@ A table appears as a table block in place of its cells: its number, its caption,
 A figure appears the same way, as a figure block with its caption, its alt text when the file has one, and the command that crops it. An image or a drawing outside every figure, such as a logo, a signature or a chart without a caption, gets a marker in place:
 
 ```text
-[image] p.3 · 0.62,0.08,0.30,0.12 · crop: pdf crop paper.pdf --page 3 --bbox 0.62,0.08,0.30,0.12
+[image] crop: pdf crop paper.pdf --page 3 --bbox 0.62,0.08,0.30,0.12
 ```
 
 The rest of the page reaches the text too, at its position:
@@ -378,7 +378,7 @@ Teaches an agent the tool in one read.
 The guide is about 1,700 tokens. It names only commands and flags that are built. A test checks, against the CLI itself, that every command and flag the guide names exists, with the command named before it on its line; that every command it writes out parses, its values included; and that it names every command `pdf --help` lists and every flag of each, but for two it leaves out on purpose, `read --full` and `add --password`. The skill's description leads with when to use the tool, as Claude Code's skill listing shows it before the skill loads.
 
 Gap:
-- Images, charts and drawings get no marker until M1.14, so the guide tells the agent to crop a page whose text points to a figure, or that reads empty or short. Table blocks join the guide with M2.6.
+- Table blocks join the guide with M2.6.
 
 Settings: none.
 

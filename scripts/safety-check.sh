@@ -79,6 +79,8 @@ check_planted() {
             sub(/^\[[a-z]+( · [^]]*)?\]/, " ", line)
             gsub(/\[(a|b|unsure|picked [0-9-]+)\]/, " ", line)
             gsub(/ · comment: /, " ", line)
+            # So is a crop command, whose path holds the file'"'"'s name.
+            sub(/(· )?crop: pdf crop .*$/, " ", line)
             body[page] = body[page] norm(line)
             next
         }
@@ -154,6 +156,9 @@ expect_read carries-form-fields "[field: Agree = checked]"
 expect_read carries-form-fields "[field: Country = France]"
 expect_read carries-links "¶2 [See the project page for](https://example.org/paper) the code."
 expect_read carries-scripts "¶2 Open the calculator."
+expect_read carries-pictures "[stamp] Approved · crop: pdf crop testdata/safety/carries-pictures.pdf --page 1 --bbox 0.73,0.09,0.19,0.06"
+expect_read carries-pictures "[drawing] crop: pdf crop testdata/safety/carries-pictures.pdf --page 1 --bbox 0.52,0.30,0.37,0.14"
+expect_read carries-pictures "[image] crop: pdf crop testdata/safety/carries-pictures.pdf --page 1 --bbox 0.11,0.30,0.34,0.14"
 
 for file in testdata/safety/broken-*.pdf testdata/hidden/broken.pdf; do
     name=$(basename "$file" .pdf)
