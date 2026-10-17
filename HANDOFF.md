@@ -4,7 +4,7 @@ Where pdf-cli stands, what is in flight, and how the work has been done, for who
 
 ## Where things stand
 
-**On `main`** (pushed): milestone M0 and every task of milestone M1, M1.1–M1.15.
+**On `main`** (pushed): milestone M0, every task of milestone M1, M1.1–M1.15, and M2.5 of M2.
 
 | Command | Task | What it does |
 |---|---|---|
@@ -27,6 +27,8 @@ Under them: worker processes with time and memory limits and a shared pool of sl
 
 **M1.13, annotations,** landed on 2026-10-17: `reports/M1.13-annotations.md`. `pdf read` shows comments, notes, marks on words with the words a reader sees under them, filled-in fields and links, after the block each sits on, links inline in Markdown. They come from the file's facts, `Store.indexChecks` 8, so a file that gains highlights shows them with no page parsed again. Read them with CGPDF, never with PDFKit's annotation objects: PDFKit followed a link action chained to itself until it crashed.
 
+**M2.5, columns and running headers,** landed on 2026-10-17: `reports/M2.5-columns-headers.md`. The parse keeps PDFKit's order of a page's lines and moves only a band of two columns of running text, left column first (`ReadingOrder`); parser version 14. Running headers, footers, page numbers and publisher stamps are judged at read time against the pages within 4 parsed so far (`Furniture`): `pdf read` sets them aside with a count, `--headers` shows them, `pdf info` lists them, and headings leave them out. The check for an uncertain reading order moved to the final wrap-up, with M2.12.
+
 **Sample PDFs stay local** (the user, 2026-10-16): PDFs downloaded to measure M1's goals, as many as can be gathered, are never committed. 132 of them, 669 MB, live in the main checkout's `private/testset/`, which `.gitignore` keeps out: journal papers from PMC's open-access bucket and arXiv, "Attention Is All You Need" among them, which the user asked for, open textbooks, reports, essays, scans with and without a text layer, and Chinese, Japanese, Arabic, Hebrew and Russian files. `manifest.tsv` there gives each one's source, licence and SHA-256; `fetch_testset.py` downloads them again. 7 of the 139 listed failed: GAO refused, and NASA's and the CIA's links gave web pages. Further downloads wait for the user's OK on the sources.
 
 **Docs:** GOALS, PHILOSOPHY and PROPOSAL are approved. ROADMAP and README were approved on 2026-10-15. DESIGNS and FEATURES say drafted: the review fixes changed them after that approval, and only the user approves.
@@ -37,9 +39,10 @@ Under them: worker processes with time and memory limits and a shared pool of sl
 2. **M1.11** landed on 2026-10-16: `reports/M1.11-agent-guide.md`. The guide lives in `Sources/PDFCore/AgentGuide.swift`; a new command or flag needs a line there, or a place on the test's short list of flags left out, or `Tests/pdfTests/AgentGuideTests.swift` fails.
 3. **M1.12** landed on 2026-10-17; its `carries-*.pdf` are M1.13's fixtures.
 4. **M1.13** and **M1.14** landed on 2026-10-17: `reports/M1.13-annotations.md`, `reports/M1.14-pictures.md`. Images and drawings are markers with their crop commands; M1.14's review found a stamp's name could carry a planted line into the output, now fixed, and boxes, bands and shaded cells read as drawings, now none.
-5. M1's exit criteria: GOALS.md G2, G4, G9, G12, G13, G16 and G17, plus a week of the author's own daily use. Every goal is still unmeasured.
+5. **M2.5** landed on 2026-10-17. **M2.6** next: figures, tables and equations detected, listed by `pdf info` and cropped with `pdf crop`. M2.1–M2.3 and M2.12 wait for the final wrap-up, and M2.4 only comes if a goal fails with rules alone.
+6. M1's exit criteria: GOALS.md G2, G4, G9, G12, G13, G16 and G17, plus a week of the author's own daily use. Every goal is still unmeasured.
 
-`TODO.md` holds the follow-ups without a milestone: three, a content stream that inflates to 600 MB, which times its page out, links past the first 1,000 of a file, and the cost of joining a page's shapes into drawings.
+`TODO.md` holds the follow-ups without a milestone: four, a content stream that inflates to 600 MB, which times its page out, links past the first 1,000 of a file, the cost of joining a page's shapes into drawings, and running headers that `pdf search` still finds.
 
 ## How the work has been done
 

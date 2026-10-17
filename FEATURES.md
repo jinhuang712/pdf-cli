@@ -58,15 +58,14 @@ The outline comes from the file's bookmarks, or, in a file with none, from the h
 When a file's comments, form fields, attachments and scripts cannot be read, as when a hostile file makes the reading run out of time, `pdf info` says they are unknown and why, and the pages read all the same.
 
 Gap:
-- The figures and tables come with M2.6, and the running headers, footers and publisher stamps with M2.5.
+- The figures and tables come with M2.6.
 - The counts of headnotes, footnotes and references, and two-page spreads, come later.
-- In a file without bookmarks, a heading set in the top 7.5% of its page, as on a page with a small margin, is taken for a running header and left out of the sections, until running headers are set aside in M2.5.
 
 Settings: none.
 
 ## F3 — Read 🚧
 
-Prints text in reading order. Every block shows its page and its number on the page, and `--json` gives its position too.
+Prints text in reading order. Every block shows its page and its number on the page, and `--json` gives its position too. On a page of columns each column reads whole, the left one first, or the right one in Hebrew and Arabic. Running headers, footers, page numbers and publisher stamps are left out and counted in the summary line (F14).
 
 ```text
 paper.pdf · 11 pages · read p.1–4 · flagged: none
@@ -90,6 +89,7 @@ next: pdf read paper.pdf --from p4.27
 | `--from p4.27` | Goes on from where a read stopped, as its `next:` line says: a page, a block in it, and a character in the block after a colon, as in `p4.27:200` |
 | `--format md\|text\|html` | The output format. The default is `md`. |
 | `--styles` | Marks bold, italic and heading levels in the text |
+| `--headers` | Shows the running headers, footers, page numbers and publisher stamps in place, labelled `[header]`, `[footer]` or `[publisher stamp]` |
 | `--raw` | Shows the text that normal output set aside as doubtful, in place, each part labelled with its reason: `[low-quality]`, `[unsure]`, `[table text: rows and columns lost]`, `[figure text]` or `[old OCR]` |
 
 Without a page or section flag, `pdf read` starts at the first page and stops at the default budget (see F7). A page asked for is parsed first, and a read that the budget stops early waits only for the pages it shows.
@@ -101,6 +101,8 @@ Gap:
 - The words under a mark or a link are the longest run of PDFKit's selection there that the blocks under it show in the same order: a mark over text a reader cannot see shows no words, and a link over it is hidden. A link goes inline where its block's text holds its words as one run; else it stands after the block.
 - A password field shows "a password, not shown", a choice the text its list shows, and a checked box "checked". An annotation the file hides by its flags, by a layer switched off, by no opacity, by no size, by lying mostly off the page, or as a reply to a hidden comment, is a hidden-text marker.
 - A paragraph's annotations take about 1,000 tokens at most; a line counts the rest. An author's name or a comment may hold text shaped like the tool's own markers, on the comment's own line.
+- Columns are found on pages read from their text layer: the gap that the fewest lines cross in the middle half of the text, and lines across both columns, as a title or a caption, part the page into bands. Only a band whose two sides each hold two lines or more that fill their column moves; each column keeps PDFKit's order, and lines that are no running text, as a table's cells, a grid of authors or a figure's labels, keep their place. A caption across the page keeps PDFKit's place too, which on one smoke page is after the columns below it. A page read by OCR keeps the recognizer's order.
+- A running header, footer or stamp sits in the page's top or bottom 12% or its outer 10% at a side, holds three lines at most, and repeats at the same edge of a page within 4, its letters the same or, for OCR's misreadings, nine in ten alike; and at the top or the bottom it is the page's outermost text. A page number alone, as "12" or "Page 3 of 30", needs no repeat, and arXiv's stamp neither. Only pages parsed so far count, so while a file parses a header can show until its neighbours are parsed; the summary line says the read is provisional. A table's header row repeated at the top of each page of a long table counts as a running header.
 - At most 1,000 links a file are read, and 1,000 other annotations, the words under them for at most 3 s; `pdf info` counts the rest. TeX Live's PGF manual holds 44,700 links. Other annotations, as a sound or a file's icon, show nothing; a link that starts a program is a script, which `pdf info` lists.
 
 Apple OCR reads a scanned page, a page whose text layer is stray marks or broken characters, and every page of a file whose text layer disagrees with its own image. Its blocks carry addresses like any other, and the text layer it replaced shows with `--raw`, labelled `[old OCR]`.
@@ -166,6 +168,7 @@ Gap:
 - Search by meaning, and so queries in another language, come with M3.1.
 - `--in` comes with notes and references in M2.7 and M2.8, and memos when `pdf memo` is built, later; search covers all the text until then.
 - Hits name tables with M2.6 and hidden text with M1.10.
+- Running headers, footers and page numbers stay in the index, so a word of one is a hit on each of its pages (TODO.md).
 
 Settings: none.
 
@@ -234,7 +237,7 @@ Every command follows the same rules, so an agent learns them once.
 - `--budget N` stops the output at about N tokens, between blocks, and ends it with a line that continues the read, such as `next: pdf read paper.pdf --from p4.27`. A text block larger than the whole budget is cut inside, and the next read goes on from the cut. A failure block, or text shown with `--raw`, larger than the budget goes out whole, so every read moves on. `read` and `search` stop at 5,000 tokens by default, about 5 pages of a paper, and `--budget all` turns the limit off.
 - While a document is still parsing, the summary line says `provisional`, with how many pages are parsed so far, because headings and note numbers can change once the whole document is known.
 
-Gap: only `pdf read`, `pdf info`, `pdf search` and `pdf crop` accept `--json` so far, and `--headers` comes with M2.5.
+Gap: only `pdf read`, `pdf info`, `pdf search` and `pdf crop` accept `--json` so far.
 
 Settings: none.
 
@@ -292,7 +295,7 @@ Reading [a] is the text layer's. Reading [b] breaks the words where Apple OCR do
 
 Gap:
 - The blocks reach the agent once `pdf read` is built (M1.7). Until then, the hidden `pdf debug-read` shows them. Their crop commands work once `pdf crop` is built (M1.9), and `pdf reparse` comes later (F10).
-- An uncertain reading order is not checked yet (M2.5).
+- An uncertain reading order is not checked yet: the check and its threshold wait for the final wrap-up, with M2.12's tuning.
 - The word lists that back second readings are English, so words in other languages get none.
 
 Settings: none.

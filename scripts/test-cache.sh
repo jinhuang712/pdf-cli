@@ -388,6 +388,15 @@ check "a damaged content stream is flagged" "^ok    broken-stream: exit 3, p.1 �
 # The smoke set (M1.12): every file reads whole.
 check "the smoke set reads whole" "^all smoke checks passed$" "$(sh scripts/smoke-check.sh "$pdf" 2>&1)"
 
+# Columns and running headers (M2.5). Below the figure on this page, PDFKit gives the lines of
+# both columns in turn; the left column's paragraph reads whole.
+columns=$(run $pdf read testdata/smoke/arxiv-2608.24191.pdf --page 5 --budget all)
+check "two columns read one after the other" "^¶6 proportion of instances that receive a different classification under C1 versus C2. Missed-in-Urdu" "$columns"
+headers=$(run $pdf read testdata/smoke/arxiv-2608.16011.pdf --page 2-5 --budget all)
+check "page numbers are set aside and counted" "running headers and footers: 4 set aside (show: --headers)" "$headers"
+check "and leave no block of their own" "^0$" "$(grep -c '^¶[0-9]* [2-5]$' <<<"$headers")"
+check "--headers shows them in place" "^¶9 \[footer\] 2$" "$(run $pdf read testdata/smoke/arxiv-2608.16011.pdf --page 2 --headers --budget all)"
+
 # Pages nobody waits for parse slowly, at background priority, so runners get a minute to finish.
 for _ in $(seq 60); do
     pgrep -f "$own" >/dev/null || break

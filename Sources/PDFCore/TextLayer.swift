@@ -314,8 +314,12 @@ enum TextLayer {
             }
             start = end + 1
         }
+        // The lines of a column go together, on a page of columns (`ReadingOrder`).
+        let (order, breaks) = ReadingOrder.order(lines.map(\.rect), texts: lines.map(\.text))
+        let starts = order.map { breaks.contains($0) }
+        lines = order.map { lines[$0] }
 
-        let blocks = group(lines, crop: crop, dehyphenator: Dehyphenator(pageText: raw))
+        let blocks = group(lines, starts: starts, crop: crop, dehyphenator: Dehyphenator(pageText: raw))
         let joined = blocks.map(\.text).joined(separator: "\n")
         var layer = PageText(blocks: blocks, words: TextCleanup.wordCount(joined),
                              runTogether: TextCleanup.runTogetherWords(joined))
@@ -667,8 +671,9 @@ enum TextLayer {
 
     /// Groups lines into blocks. A new block starts where the next line moves up or sideways
     /// into another column, leaves a gap wider than about two thirds of a line, changes size
-    /// by more than 30%, or starts an indented paragraph after a short line.
-    static func group(_ lines: [RawLine], crop: CGRect, dehyphenator: Dehyphenator) -> [TextBlock] {
+    /// by more than 30%, starts an indented paragraph after a short line, or is one of `starts`,
+    /// where the reading order starts a column.
+    static func group(_ lines: [RawLine], starts: [Bool] = [], crop: CGRect, dehyphenator: Dehyphenator) -> [TextBlock] {
         var blocks: [TextBlock] = []
         var current: [RawLine] = []
         var area = CGRect.null
@@ -691,7 +696,7 @@ enum TextLayer {
             area = .null
         }
 
-        for line in lines {
+        for (position, line) in lines.enumerated() {
             if let last = current.last {
                 let height = median(current.map(\.rect.height))
                 let next = line.rect, previous = last.rect
@@ -700,7 +705,8 @@ enum TextLayer {
                 let sideBySide = next.minX >= previous.maxX || next.maxX <= previous.minX
                 let resized = abs(next.height - height) > 0.3 * height
                 let indented = next.minX - area.minX > 0.8 * height && previous.maxX < area.maxX - 2 * height
-                if movedUp || sideBySide || gap > 0.7 * height || resized || indented { flush() }
+                let starting = starts.indices.contains(position) && starts[position]
+                if movedUp || sideBySide || gap > 0.7 * height || resized || indented || starting { flush() }
             }
             current.append(line)
             area = area.union(line.rect)

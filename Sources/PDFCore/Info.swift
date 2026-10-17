@@ -53,6 +53,18 @@ public struct Info: Encodable, Sendable {
     public var factsPartial: Bool
     public var flagged: [String]
     public var savedByPDFKit: Bool
+    /// The running headers, footers, page numbers and publisher stamps that `pdf read` sets
+    /// aside, each once, with the pages it stands on, in the pages parsed so far.
+    public var runningHeaders: [RunningHeader]
+
+    public struct RunningHeader: Encodable, Equatable, Sendable {
+        /// "header", "footer" or "publisher-stamp".
+        public var kind: String
+        /// Its text on the first page it stands on, without a page number at either end; empty
+        /// for page numbers alone.
+        public var text: String
+        public var pages: Int
+    }
 
     /// - Parameters:
     ///   - pages: the pages parsed so far, in order.
@@ -83,11 +95,15 @@ public struct Info: Encodable, Sendable {
         self.pagesFromTextLayer = pages.filter { $0.result.status == .ok && $0.result.method != "ocr" }.count
         self.tokens = pages.reduce(0) { $0 + Output.tokens($1.result.text) }
         let complete = pages.count == pageCount
+        let furniture = Furniture.find(
+            pages: pages.map(\.index),
+            in: Dictionary(layers.compactMap { index, layer in layer.map { (index, $0) } }) { first, _ in first })
+        self.runningHeaders = Info.runningHeaders(pages, furniture: furniture)
         if !facts.outline.isEmpty {
             sectionsFrom = "bookmarks"
             sections = Info.sections(outline: facts.outline, pages: pages, pageCount: pageCount, complete: complete)
         } else {
-            let found = Info.headings(pages)
+            let found = Info.headings(pages, furniture: furniture)
             sectionsFrom = found.isEmpty ? nil : "headings"
             sections = Info.measure(found, pages: pages, pageCount: pageCount, complete: complete)
         }
@@ -152,6 +168,34 @@ public struct Info: Encodable, Sendable {
         return split.count * 2 >= sample.count ? 2 : 1
     }
 
+    /// Each running header, footer and publisher stamp once, by its letters, or nearly the same
+    /// letters as OCR misreads them, in the order they first stand; page numbers alone as one
+    /// entry of each kind.
+    static func runningHeaders(_ pages: [Output.Page], furniture: [Int: [Int: Furniture.Kind]]) -> [RunningHeader] {
+        var found: [(header: RunningHeader, key: String)] = []
+        for page in pages {
+            guard let blocks = page.result.pageText?.blocks, let kinds = furniture[page.index] else { continue }
+            for (index, kind) in kinds.sorted(by: { $0.key < $1.key }) where blocks.indices.contains(index) {
+                let key = Furniture.letters(blocks[index].visibleText)
+                let alone = key.count < 3
+                if let at = found.firstIndex(where: {
+                    $0.header.kind == kind.rawValue
+                        && (alone ? $0.key.count < 3 : Furniture.alike($0.key, key))
+                }) {
+                    found[at].header.pages += 1
+                } else {
+                    let text =
+                        alone
+                        ? ""
+                        : blocks[index].visibleText
+                            .replacingOccurrences(of: #"^\s*\d+\s+|\s+\d+\s*$"#, with: "", options: .regularExpression)
+                    found.append((RunningHeader(kind: kind.rawValue, text: text, pages: 1), key))
+                }
+            }
+        }
+        return found.map(\.header)
+    }
+
     // MARK: Sections
 
     /// The sections that headings in the text mark, with their sizes, for a file with no
@@ -160,11 +204,18 @@ public struct Info: Encodable, Sendable {
         measure(headings(pages), pages: pages, pageCount: pageCount, complete: pages.count == pageCount)
     }
 
-    /// Headings in the text: one-line blocks such as "2.1 Method" or "References". A line that
-    /// repeats on three pages or more is a running header, a title of mostly digits or symbols
-    /// is a chart's or a table's, and numbered headings must rise, so a table row such as
-    /// "5 Italian 4–5" after "3.5" stays out.
-    static func headings(_ pages: [Output.Page]) -> [Section] {
+    /// Headings in the text: one-line blocks such as "2.1 Method" or "References". A running
+    /// header, footer or publisher stamp (`Furniture`) is none, nor a line that repeats on three
+    /// pages or more; a title of mostly digits or symbols is a chart's or a table's, and numbered
+    /// headings must rise, so a table row such as "5 Italian 4–5" after "3.5" stays out.
+    static func headings(_ pages: [Output.Page], furniture: [Int: [Int: Furniture.Kind]]? = nil) -> [Section] {
+        let furniture =
+            furniture
+            ?? Furniture.find(
+                pages: pages.map(\.index),
+                in: Dictionary(
+                    pages.compactMap { page in page.result.pageText.map { (page.index, $0) } }
+                ) { first, _ in first })
         let numbered = #"^(\d{1,2}(\.\d{1,2}){0,3})\.?\s+\p{Lu}"#
         let named = #"(?i)^(abstract|introduction|related work|background|methods?|methodology|experiments?|results|discussion|conclusions?|limitations|acknowledge?ments?|references|bibliography|appendix(\s+[A-Z])?)$"#
         func plain(_ text: String) -> String { text.lowercased().filter(\.isLetter) }
@@ -183,12 +234,14 @@ public struct Info: Encodable, Sendable {
         }
         var found: [(section: Section, number: Int?)] = []
         for page in pages {
-            // Running headers and footers sit in the page's top 7.5% and bottom 5%: on the NACA
-            // scan a header starts 6.5% down, and OCR misreads it a new way on each page, so its
-            // repeats go unseen. The highest heading on the arXiv samples starts 9.4% down.
+            // Until M2.5 a band at the page's top 7.5% and bottom 5% stood in for running headers,
+            // as OCR misreads the NACA scan's a new way on each page, and it left out a real
+            // heading set higher on a page with a small margin. `Furniture` matches misread
+            // headers nearly letter for letter.
             for (index, block) in (page.result.pageText?.blocks ?? []).enumerated()
             where block.lines.count == 1 && block.visibleText.split(separator: " ").count <= 12
-                && block.box.y >= 0.075 && block.box.y + block.box.height <= 0.95 {
+                && furniture[page.index]?[index] == nil
+            {
                 let text = block.visibleText.trimmingCharacters(in: .whitespaces)
                 guard (seen[exact(text)]?.count ?? 0) < 3,
                       !nearEdge(block) || (seenNearEdge[plain(text)]?.count ?? 0) < 3 else { continue }
@@ -382,6 +435,19 @@ public struct Info: Encodable, Sendable {
         layout.append("~\(Info.thousands(tokens)) tokens" + (pagesParsed < pageCount ? " in the pages parsed so far" : ""))
         lines.append(layout.joined(separator: " · "))
         if !notes.isEmpty { lines.append("notes: " + notes.joined(separator: " · ")) }
+        if !runningHeaders.isEmpty {
+            let shown = runningHeaders.prefix(6).map { header -> String in
+                let kind = header.kind == Furniture.Kind.stamp.rawValue ? "publisher stamp" : header.kind
+                let text =
+                    header.text.isEmpty
+                    ? "page numbers"
+                    : "\"" + (header.text.count > 60 ? String(header.text.prefix(59)) + "…" : header.text) + "\""
+                return "\(text) (\(kind), \(header.pages) page\(header.pages == 1 ? "" : "s"))"
+            }
+            lines.append(
+                "running headers and footers, set aside by pdf read: " + shown.joined(separator: ", ")
+                    + (runningHeaders.count > 6 ? ", and \(runningHeaders.count - 6) more" : ""))
+        }
 
         var counts: [String] = []
         if let comments, let highlights, let formFields, let filledFields {

@@ -35,6 +35,7 @@ struct ReadCommand: ParsableCommand {
     @Option(help: "The output format: md or text.") var format: Format = .md
     @Flag(help: "Show the text set aside as doubtful, labelled with its reason.") var raw = false
     @Flag(help: "Show the words of text a reader cannot see, labelled, in place of their markers.") var includeHidden = false
+    @Flag(help: "Show the running headers, footers, page numbers and publisher stamps in place, labelled.") var headers = false
     @Flag(help: "Print JSON.") var json = false
 
     func validate() throws {
@@ -102,14 +103,16 @@ struct ReadCommand: ParsableCommand {
         let annotations = Dictionary(grouping: facts?.annotations ?? [], by: \.page)
         let limit = Self.tokens(budget)!
         let picks = try Picks().picks(keys: keys)
-        let flags = (raw ? " --raw" : "") + (includeHidden ? " --include-hidden" : "") + (format == .text ? " --format text" : "")
+        let flags =
+            (raw ? " --raw" : "") + (includeHidden ? " --include-hidden" : "") + (headers ? " --headers" : "")
+            + (format == .text ? " --format text" : "")
             + (budget == "5000" ? "" : " --budget \(budget)")
         let quotedPath = Output.quoted(path)
         let order = numbers
         let named = scope
         var document = Output.Document(
             file: path, pageCount: pageCount, style: format == .md ? .md : .text, raw: raw, includeHidden: includeHidden,
-            picks: picks, budget: limit,
+            headers: headers, picks: picks, budget: limit,
             continuation: { page, block, offset in
                 let rest = named == "pages" ? " --page " + Self.spec(Array(order.drop { $0 != page })) : named
                 return "pdf read \(quotedPath)\(rest) --from \(Output.address(page: page, block: block, offset: offset))\(flags)"
@@ -129,10 +132,15 @@ struct ReadCommand: ParsableCommand {
                 document.stop(at: chunk[0], because: "the file changed or could not be read; the command below reads on from here")
                 break
             }
+            // Running headers and footers, judged against the pages around these that are parsed.
+            let furniture = (try? Furniture.find(pages: results.map(\.page), keys: keys, store: store)) ?? [:]
             for (page, result) in results {
                 let resume = index == 0 && page + 1 == start?.page
-                let added = document.add(Output.Page(index: page, result: result, key: keys[page], annotations: annotations[page] ?? []),
-                                         from: resume ? start?.block : nil, offset: resume ? start?.offset : nil)
+                let added = document.add(
+                    Output.Page(
+                        index: page, result: result, key: keys[page], annotations: annotations[page] ?? [],
+                        furniture: furniture[page] ?? [:]),
+                    from: resume ? start?.block : nil, offset: resume ? start?.offset : nil)
                 if !added { break reading }
                 index += 1
                 if let until, page + 1 >= until.page { break reading }

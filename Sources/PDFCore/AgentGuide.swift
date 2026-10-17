@@ -26,7 +26,7 @@ public enum AgentGuide {
         | Command | What it does |
         |---|---|
         | `pdf info <pdf>` | A first look. `--json` lists every section, at every level. |
-        | `pdf read <pdf>` | Text from page 1, or from `--page 3`, `--page 3-5,8`, `--section 2.1`, `--section Method`, `--printed-page iv` or `--from p4.7`. Also `--budget N` or `--budget all`, `--raw`, `--include-hidden`, `--json`, and `--format text` for plain text with `=== p.4 ===` page headings. |
+        | `pdf read <pdf>` | Text from page 1, or from `--page 3`, `--page 3-5,8`, `--section 2.1`, `--section Method`, `--printed-page iv` or `--from p4.7`. Also `--budget N` or `--budget all`, `--raw`, `--include-hidden`, `--headers`, `--json`, and `--format text` for plain text with `=== p.4 ===` page headings. |
         | `pdf search [<pdf>] <words>` | The paragraphs that hold every word, best first; when none holds them all, those that hold some, and it says so. `--regex <pattern>` matches across lines, columns and pages. `--top N`, `--from N`, `--budget N`, `--json`. |
         | `pdf crop <pdf> --page N` | A PNG of the page, or of a region with `--bbox x,y,width,height` in fractions of the page from its top left. `--grid` draws lines labelled with those fractions. It prints the image's path and its cost, about 1,600 image tokens at most. `--json`. |
         | `pdf pick <pdf> p2.5 a` | Keeps reading `a` or `b` of an unsure block's words. |
@@ -40,6 +40,7 @@ public enum AgentGuide {
 
         - `## p.4` starts a page and `¶7` its seventh block, most often a paragraph. Cite "p.4 ¶7"; `pdf read paper.pdf --from p4.7` reads on from there. Pages count from the file's first page, and a heading such as `## p.12 (printed 237)` gives the number printed on the page. `--json` gives each block's position on its page, in the fractions that `pdf crop` takes with `--bbox`.
         - The first line sums up the read: the pages read, the pages flagged with their status, what was set aside or hidden with the flag that shows it, and `provisional` while the file is still parsing, since sizes, flags and headings can still change.
+        - Columns read one after the other. Running headers, footers, page numbers and publisher stamps are left out and counted in the first line; `--headers` shows them in place, as `¶1 [header] …`.
         - Output stops at about 5,000 tokens and ends with a `next:` line, the exact command that goes on. Run it as given.
         - `^{...}` and `_{...}` mark raised and lowered characters, as in `10^{-5}` and `x_{2}`.
         - `pdf read` exits 0 when every page asked for read well, a page of pictures alone included, which reads empty. 2: some pages are flagged, and the rest of the output is valid. 3: no page asked for holds text, each one failed or in doubt as a whole, or the file itself failed. 1: the command could not run. 64: it was used wrongly. `pdf info` and `pdf search` exit 0 on a flagged file and say so in their output, and 3 when the file itself fails; `pdf add` exits 2 when a page is flagged.

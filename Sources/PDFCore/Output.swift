@@ -12,12 +12,19 @@ public enum Output {
         /// to this version of the file, not to the page's parse, so highlights added to a file
         /// show without its pages read again.
         public var annotations: [FileFacts.Annotation]
+        /// The page's running headers, footers and publisher stamps, by block, judged against
+        /// the pages around it (`Furniture`).
+        public var furniture: [Int: Furniture.Kind]
 
-        public init(index: Int, result: PageResult, key: String, annotations: [FileFacts.Annotation] = []) {
+        public init(
+            index: Int, result: PageResult, key: String, annotations: [FileFacts.Annotation] = [],
+            furniture: [Int: Furniture.Kind] = [:]
+        ) {
             self.index = index
             self.result = result
             self.key = key
             self.annotations = annotations
+            self.furniture = furniture
         }
     }
 
@@ -111,6 +118,9 @@ public enum Output {
         var holdsText = false
         /// How many runs of text a reader cannot see the unit marks.
         var hidden = 0
+        /// How many running headers, footers and publisher stamps the page sets aside, or shows
+        /// with `--headers`, before this unit, or after it when it is the page's last.
+        var furniture = 0
     }
 
     /// What one page contributes to the output.
@@ -125,8 +135,11 @@ public enum Output {
     /// - Parameters:
     ///   - path: the path as a shell word, for the commands the blocks suggest.
     ///   - raw: show the text that normal output sets aside as doubtful, labelled with its reason.
-    static func pageBlocks(_ page: Page, picks: [String: [Pick]], path: String, raw: Bool,
-                           includeHidden: Bool = false) -> PageBlocks {
+    ///   - headers: show the running headers, footers and publisher stamps in place, labelled.
+    static func pageBlocks(
+        _ page: Page, picks: [String: [Pick]], path: String, raw: Bool,
+        includeHidden: Bool = false, headers: Bool = false
+    ) -> PageBlocks {
         let (quality, picked) = judge(page, picks: picks)
         let layer = page.result.pageText
         let number = page.index + 1
@@ -180,6 +193,8 @@ public enum Output {
             result.units.append(unit)
         }
 
+        // Running headers and footers set aside, or shown, by the unit they go with.
+        var aside: [Int: Int] = [:]
         if let whole = quality.doubts.first(where: { $0.blocks == nil }) {
             var unit = Unit(blocks: [failureBlock(whole, page: number, block: nil, region: nil, path: path, raw: raw)],
                             flag: status(whole))
@@ -219,16 +234,37 @@ public enum Output {
                     result.units.append(unit)
                     continue
                 }
+                // A running header, footer or publisher stamp: set aside and counted, with the
+                // unit after it, unless `headers` shows it. What sits on it, as a link, still goes
+                // out, numbered as it.
+                let furniture = page.furniture[index]
+                if furniture != nil { aside[result.units.count, default: 0] += 1 }
+                if furniture != nil && !headers {
+                    let anchored = notes.filter { $0.anchor == index }
+                    if !anchored.isEmpty {
+                        var unit = Unit(blocks: [])
+                        attach(anchored, to: &unit, number: index + 1)
+                        result.units.append(unit)
+                    }
+                    continue
+                }
                 // Unsure words inside text a reader cannot see stay hidden with it.
                 let runs = block.hidden ?? []
                 let spans = (unsureByBlock[index] ?? []).filter { span in
                     !runs.contains { $0.offset < span.offset + span.readings[0].utf16.count && span.offset < $0.offset + $0.length }
                 }
-                let choices = spans.filter(\.pickable), looks = spans.filter { !$0.pickable }
-                let text = shown(block.text, pick: picked[index], choices: choices, hidden: runs, includeHidden: includeHidden,
-                                 path: path, page: number)
-                var unit = Unit(blocks: [Block(kind: .text, page: number, block: index + 1, box: block.box, text: text)],
-                                holdsText: !block.visibleText.isEmpty)
+                let choices = spans.filter(\.pickable)
+                let looks = spans.filter { !$0.pickable }
+                let text = shown(
+                    block.text, pick: picked[index], choices: choices, hidden: runs, includeHidden: includeHidden,
+                    path: path, page: number)
+                var unit = Unit(
+                    blocks: [
+                        Block(
+                            kind: .text, page: number, block: index + 1, box: block.box, text: text,
+                            status: furniture?.rawValue)
+                    ],
+                    holdsText: !block.visibleText.isEmpty)
                 unit.hidden = runs.count
                 // A link whose words the block shows goes inline; any other annotation follows it.
                 var links: [Block.Link] = [], others: [Note] = []
@@ -290,6 +326,7 @@ public enum Output {
         } else {
             rest(notes)
         }
+        for (position, count) in aside { result.units[min(position, result.units.count - 1)].furniture += count }
         if let old = layer?.replacedText {
             if raw {
                 // Numbered after the page's last block, so a read that goes on from it skips them.
@@ -439,6 +476,8 @@ public enum Output {
         let raw: Bool
         /// Show the words of text a reader cannot see, labelled, in place of their markers.
         let includeHidden: Bool
+        /// Show the running headers, footers and publisher stamps in place, labelled.
+        let headers: Bool
         let picks: [String: [Pick]]
         /// About how many tokens the output may take. Nil means no limit.
         let budget: Int?
@@ -451,6 +490,8 @@ public enum Output {
         var pagesRead: [Int] = []
         var flagged: [(page: Int, status: PageQuality.Status)] = []
         var doubtful = 0, oldLayers = 0
+        /// Running headers, footers and publisher stamps set aside, or shown with `headers`.
+        var furniture = 0
         var holdsText = false
         /// Runs of text a reader cannot see, by page, among the units that went out.
         var hidden: [(page: Int, count: Int)] = []
@@ -464,9 +505,11 @@ public enum Output {
 
         /// - Parameter continuation: the full command that goes on from a page, a block and a
         ///   character in the block's text, such as `pdf read paper.pdf --page 4-9 --from p4.7`.
-        public init(file: String, pageCount: Int, style: Style = .md, raw: Bool = false, includeHidden: Bool = false,
-                    picks: [String: [Pick]] = [:], budget: Int? = nil,
-                    continuation: (@Sendable (Int, Int?, Int?) -> String)? = nil) {
+        public init(
+            file: String, pageCount: Int, style: Style = .md, raw: Bool = false, includeHidden: Bool = false,
+            headers: Bool = false, picks: [String: [Pick]] = [:], budget: Int? = nil,
+            continuation: (@Sendable (Int, Int?, Int?) -> String)? = nil
+        ) {
             let path = quoted(file)
             self.file = file
             self.path = path
@@ -474,6 +517,7 @@ public enum Output {
             self.style = style
             self.raw = raw
             self.includeHidden = includeHidden
+            self.headers = headers
             self.picks = picks
             self.budget = budget
             self.continuation = continuation ?? { page, block, offset in
@@ -488,7 +532,7 @@ public enum Output {
         /// alone is larger than the budget, cut inside after a word when it starts with text.
         /// Counts and flags come only from the units that go out.
         public mutating func add(_ page: Page, from block: Int? = nil, offset: Int? = nil) -> Bool {
-            let content = pageBlocks(page, picks: picks, path: path, raw: raw, includeHidden: includeHidden)
+            let content = pageBlocks(page, picks: picks, path: path, raw: raw, includeHidden: includeHidden, headers: headers)
             let number = page.index + 1
             for (position, var unit) in content.units.enumerated() {
                 let first = unit.blocks[0]
@@ -544,6 +588,7 @@ public enum Output {
                 }
             }
             doubtful += unit.doubtful
+            furniture += unit.furniture
             holdsText = holdsText || unit.holdsText
             if unit.hidden > 0 {
                 if let last = hidden.last, last.page == page {
@@ -575,6 +620,12 @@ public enum Output {
             } else if !aside.isEmpty {
                 summary.append("set aside: " + aside.joined(separator: ", ") + " (show: --raw)")
             }
+            if furniture > 0 {
+                summary.append(
+                    headers
+                        ? "showing running headers and footers: \(furniture)"
+                        : "running headers and footers: \(furniture) set aside (show: --headers)")
+            }
             if !hidden.isEmpty {
                 let total = hidden.reduce(0) { $0 + $1.count }
                 summary.append((includeHidden ? "showing hidden text: " : "hidden text: ") + "\(total) place\(total == 1 ? "" : "s") on "
@@ -596,9 +647,19 @@ public enum Output {
 
         /// The read as JSON: the summary's facts, every block, and the command that continues.
         public func json(savedByPDFKit: Bool = false, parsed: Int? = nil) throws -> Data {
-            struct Flag: Encodable { var page: Int; var status: String }
-            struct Aside: Encodable { var doubtfulBlocks: Int; var oldOCRLayers: Int }
-            struct HiddenText: Encodable { var page: Int; var places: Int }
+            struct Flag: Encodable {
+                var page: Int
+                var status: String
+            }
+            struct Aside: Encodable {
+                var doubtfulBlocks: Int
+                var oldOCRLayers: Int
+                var runningHeaders: Int
+            }
+            struct HiddenText: Encodable {
+                var page: Int
+                var places: Int
+            }
             struct Body: Encodable {
                 var file: String
                 var pageCount: Int
@@ -614,21 +675,26 @@ public enum Output {
             }
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.withoutEscapingSlashes, .sortedKeys]
-            return try encoder.encode(Body(
-                file: file, pageCount: pageCount, pagesRead: pagesRead,
-                flagged: flagged.map { Flag(page: $0.page, status: $0.status.rawValue) },
-                setAside: Aside(doubtfulBlocks: doubtful, oldOCRLayers: oldLayers),
-                hidden: hidden.map { HiddenText(page: $0.page, places: $0.count) },
-                provisional: parsed.map { $0 < pageCount } ?? false, savedByPDFKit: savedByPDFKit, blocks: blocks,
-                stopped: stopped, next: next.map { $0 + " --json" }))
+            return try encoder.encode(
+                Body(
+                    file: file, pageCount: pageCount, pagesRead: pagesRead,
+                    flagged: flagged.map { Flag(page: $0.page, status: $0.status.rawValue) },
+                    setAside: Aside(doubtfulBlocks: doubtful, oldOCRLayers: oldLayers, runningHeaders: headers ? 0 : furniture),
+                    hidden: hidden.map { HiddenText(page: $0.page, places: $0.count) },
+                    provisional: parsed.map { $0 < pageCount } ?? false, savedByPDFKit: savedByPDFKit, blocks: blocks,
+                    stopped: stopped, next: next.map { $0 + " --json" }))
         }
     }
 
     /// Every page in full, with no budget: the hidden `pdf debug-read` and the tests use it.
-    public static func render(file: String, pageCount: Int, pages: [Page], picks: [String: [Pick]] = [:],
-                              savedByPDFKit: Bool = false, raw: Bool = false, style: Style = .md,
-                              includeHidden: Bool = false) -> Report {
-        var document = Document(file: file, pageCount: pageCount, style: style, raw: raw, includeHidden: includeHidden, picks: picks)
+    public static func render(
+        file: String, pageCount: Int, pages: [Page], picks: [String: [Pick]] = [:],
+        savedByPDFKit: Bool = false, raw: Bool = false, style: Style = .md,
+        includeHidden: Bool = false, headers: Bool = false
+    ) -> Report {
+        var document = Document(
+            file: file, pageCount: pageCount, style: style, raw: raw, includeHidden: includeHidden,
+            headers: headers, picks: picks)
         for page in pages { _ = document.add(page) }
         return document.report(savedByPDFKit: savedByPDFKit)
     }
@@ -744,7 +810,9 @@ public enum Output {
             for link in block.links ?? [] {
                 if let range = text.range(of: link.text) { text.replaceSubrange(range, with: linked(link.text, to: link.target, style: style)) }
             }
-            return "\(address(block)) \(text)"
+            // A running header, footer or publisher stamp, shown with `--headers`.
+            let label = block.status.flatMap(Furniture.Kind.init(rawValue:)).map { "[\($0.label)] " } ?? ""
+            return "\(address(block)) \(label)\(text)"
         case .annotation:
             let kind = block.status ?? "comment"
             let by = block.author.map { " · \($0)" } ?? ""

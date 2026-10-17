@@ -47,12 +47,11 @@ The spike shipped no features. It answered the riskiest questions.
   - [x] M1.5 `pdf add`, `pdf ls`, `pdf rm` and `pdf gc`
 - **Info** (F2): the outline, page labels and section sizes
   - [x] M1.6 `pdf info` from bookmarks, page labels and the text layer, with the counts of comments, highlights and form fields, and the list of attachments and scripts
-  - Later: the figure list, with figure detection (M2.6), and the running headers, footers and publisher stamps (M2.5)
+  - Later: the figure list, with figure detection (M2.6)
 - **Read** (F3) and **Output basics** (F7): by page, printed page and section, with nothing dropped without a trace
   - [x] M1.7 `pdf read`, with addresses, `--json`, the budget, the provisional mark, and the marks for superscripts and subscripts
   - [x] M1.13 Comments, sticky notes, highlights, filled-in form fields and link targets, each at its position
   - [x] M1.14 Every image and drawing marked in place, with its crop command
-  - Later: cleaner column order, with running headers and footers set aside (M2.5)
 - **Search** (F4): by keyword and by pattern
   - [x] M1.8 `pdf search` by keyword and with `--regex`
   - Later: search by meaning (M3.1)
@@ -73,7 +72,7 @@ The spike shipped no features. It answered the riskiest questions.
 - **Tests:** M2.1–M2.3, the sets the accuracy goals are measured on, wait for the final wrap-up, below.
 - **Under the hood**
   - [ ] M2.4 The layout model running on Core ML, only if a goal fails with rules alone. See DESIGNS.md → the decision on rules over a default layout model.
-  - [ ] M2.5 Reading order across columns, with running headers, footers and publisher stamps set aside, counted in the summary line and shown with `--headers`
+  - [x] M2.5 Reading order across columns, with running headers, footers and publisher stamps set aside, counted in the summary line and shown with `--headers`
 - **Crop** (F5) and **Info** (F2): figures, tables and equations
   - [ ] M2.6 Figures, tables and equations detected, listed by `pdf info` and cropped with `pdf crop`. Each table's and figure's text gives way to its block and stays behind `--raw`, and alt text shows with its figure.
   - Later: tables that continue across pages (M3.2)
@@ -111,7 +110,7 @@ Until every milestone is built, each task gets its unit and end-to-end tests and
   - [ ] M2.1 The open test set: 60 open-access PDFs, labelled, from the local set in `private/testset/`, which stays out of git
   - [ ] M2.2 The question set: 200 questions, each with its answer and page
   - [ ] M2.3 A scorer that weighs a wrong block 3× a missing one, and a Docling baseline run on the same Mac
-  - [ ] M2.12 The quality thresholds, tuned until G11 passes
+  - [ ] M2.12 The quality thresholds, tuned until G11 passes, and the check for an uncertain reading order, which waits for that tuning (moved from M2.5, 2026-10-17)
   - [ ] M3.6 The question set run in Claude Code with pdf-cli and with the built-in Read tool, which measures G1 and G15
   - [ ] Each worker's memory, on text pages and on OCR pages, which sets the budgets `pdf setup` offers; and how fast OCR runs one, two or three at a time
   - [ ] Every goal measured, M1's again in full
