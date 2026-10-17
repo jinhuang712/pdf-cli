@@ -354,7 +354,7 @@ public enum Output {
             return Note(block: block, anchor: anchor(box, in: blocks))
         }
         let ordered = page.annotations.filter { $0.page == page.index }.sorted { ($0.box.y, $0.box.x) < ($1.box.y, $1.box.x) }
-        return (pictures + ordered.map { annotation in
+        let notes = (pictures + ordered.map { annotation in
             let anchor = anchor(annotation.box, in: blocks)
             var block = Block(kind: .annotation, page: number, box: annotation.box,
                               status: annotation.reply == true ? "reply" : annotation.kind.rawValue)
@@ -390,6 +390,18 @@ public enum Output {
             }
             return note
         }).sorted { ($0.block.box.y, $0.block.box.x) < ($1.block.box.y, $1.block.box.x) }
+        // Top to bottom, and left to right along a row: those whose tops lie within a hundredth of
+        // the page of the row's first. A drawing's box is half a point taller than its shapes, so
+        // a chart beside an image came first.
+        var rows: [[Note]] = []
+        for note in notes {
+            if let first = rows.last?.first, note.block.box.y - first.block.box.y <= 0.01 {
+                rows[rows.count - 1].append(note)
+            } else {
+                rows.append([note])
+            }
+        }
+        return rows.flatMap { $0.sorted { $0.block.box.x < $1.block.box.x } }
     }
 
     /// The block an annotation goes with: the one its center lies in; or else the nearest across

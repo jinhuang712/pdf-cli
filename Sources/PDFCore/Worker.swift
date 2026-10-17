@@ -184,6 +184,8 @@ public enum Worker {
                     // hides stays out.
                     let replaced = textLayer.blocks.map(\.visibleText).filter { !$0.isEmpty }.joined(separator: "\n")
                     if !replaced.isEmpty { read.replacedText = replaced }
+                    // Its images and drawings stay: a scan's own image is none of them.
+                    read.pictures = textLayer.pictures
                     layer = read
                     method = "ocr"
                 } else if textLayer.words > 0 {
@@ -209,6 +211,7 @@ public enum Worker {
                    OCR.readsMore(ocr: read, layer: layer) {
                     let replaced = layer.blocks.map(\.visibleText).filter { !$0.isEmpty }.joined(separator: "\n")
                     if !replaced.isEmpty { read.replacedText = replaced }
+                    read.pictures = layer.pictures
                     layer = read
                     method = "ocr"
                 }

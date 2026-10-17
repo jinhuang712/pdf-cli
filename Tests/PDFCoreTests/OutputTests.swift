@@ -363,8 +363,9 @@ import Testing
         away.target = "https://example.org/away"
         let other = Output.Page(index: 0, result: try self.page(0, read).result, key: "k", annotations: [away])
         #expect(Output.render(file: "paper.pdf", pageCount: 1, pages: [other]).text.contains("[link] [code](https://example.org/away)") == false)
+        // Along a line from left to right: the three start less than half a line apart.
         let blocks = Output.pageBlocks(page, picks: [:], path: "paper.pdf", raw: false).units.flatMap(\.blocks)
-        #expect(blocks.first { $0.kind == .text }?.links?.map(\.target) == ["https://example.org/paper", "p.12", "https://example.org/code"])
+        #expect(blocks.first { $0.kind == .text }?.links?.map(\.target) == ["https://example.org/paper", "https://example.org/code", "p.12"])
     }
 
     /// A mark's words are the longest run of them the blocks under it show in the same order:

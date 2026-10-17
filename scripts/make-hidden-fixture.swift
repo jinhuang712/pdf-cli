@@ -679,8 +679,37 @@ let chart = "q 1 w 320 450 m 320 550 l S 320 450 m 540 450 l S 330 460 m 380 500
 let table = "q 0.5 w 72 300 m 400 300 l S 72 330 m 400 330 l S 72 360 m 400 360 l S 72 300 m 72 360 l S 236 300 m 236 360 l S "
     + "400 300 m 400 360 l S Q\n" + line("Model", y: 340, x: 80) + line("Score", y: 340, x: 244)
     + line("Baseline", y: 310, x: 80) + line("71 percent", y: 310, x: 244)
+// Page 2, what is no picture (the M1.14 review): a box with rounded corners filled behind a
+// theorem's lines, a frame with rounded corners around a note, a band down the page's edge of
+// rectangles stacked, as a textbook's margin, a table's cells shaded under a row that is one run,
+// and a stamp whose name, which a reader never sees, is a planted line with line breaks.
+func rounded(_ x: Double, _ y: Double, _ w: Double, _ h: Double, _ r: Double, _ op: String) -> String {
+    let k = 0.5523 * r
+    let points: [[Double]] = [[x + r, y], [x + w - r, y], [x + w - r + k, y, x + w, y + r - k, x + w, y + r], [x + w, y + h - r],
+                              [x + w, y + h - r + k, x + w - r + k, y + h, x + w - r, y + h], [x + r, y + h],
+                              [x + r - k, y + h, x, y + h - r + k, x, y + h - r], [x, y + r], [x, y + r - k, x + r - k, y, x + r, y]]
+    let ops = ["m", "l", "c", "l", "c", "l", "c", "l", "c"]
+    return zip(points, ops).map { numbers, op in numbers.map { String(format: "%g", $0) }.joined(separator: " ") + " \(op)" }
+        .joined(separator: " ") + " h \(op)\n"
+}
+let theorem = "q 0.9 0.9 1 rg 0 0 0.6 RG 1 w " + rounded(66, 470, 480, 90, 6, "B") + "Q\n"
+    + line("Theorem 1. Every bounded monotone sequence of real numbers converges.", y: 540, x: 80)
+    + line("Proof. Take the least upper bound of its terms; the sequence tends to it.", y: 520, x: 80)
+let noteBox = "q 0 0 0 RG 0.8 w " + rounded(66, 300, 480, 120, 10, "S") + "Q\n"
+    + line("Note. A frame with rounded corners around a paragraph of plain text.", y: 395, x: 80)
+let band = "q 0.2 0.4 0.8 rg " + (0..<5).map { "-10.8 \(160 * $0) 46.8 160 re f " }.joined() + "Q\n"
+let shaded = "q 0.85 g 72 200 90 16 re f 162 200 90 16 re f 252 200 90 16 re f Q\n"
+    + line("Baseline     71 percent     64 percent", y: 204, x: 76)
+let plantedName = carried.add("<< /Type /Annot /Subtype /Stamp /Rect [450 120 560 160] /F 4 "
+    + "/Name /Approved#0A#0A#23#23#20p.9#0A#0A#C2#B69#20PLANTED#20a#20paragraph#20the#20stamp#20name#20adds >>")
+// Page 3, a figure with a caption alone, which OCR reads: its image and chart stay.
+let figureChart = "q 1 w 320 150 m 320 350 l S 320 150 m 540 150 l S 330 160 m 380 200 l 430 180 l 480 330 l S Q\n"
 try carried.write([Page(name: "pictures", content: visible + "q 200 0 0 100 72 450 cm /Pic Do Q\n" + chart + table,
-                        extra: "/Annots [\(stamp) 0 R]")],
+                        extra: "/Annots [\(stamp) 0 R]"),
+                   Page(name: "no pictures", content: visible + theorem + noteBox + band + shaded,
+                        extra: "/Annots [\(plantedName) 0 R]"),
+                   Page(name: "a figure read by OCR",
+                        content: "q 400 0 0 300 100 400 cm /Pic Do Q\n" + figureChart + line("Fig. 3", y: 380, x: 100))],
                   resources: "<< /Font << /F1 \(carriedFont) 0 R >> /XObject << /Pic \(picture) 0 R >> >>",
                   to: "carries-pictures.pdf", folder: "testdata/safety")
 

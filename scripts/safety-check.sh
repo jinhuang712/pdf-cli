@@ -73,14 +73,16 @@ check_planted() {
             # words; the readings of an unsure block are the page'"'"'s.
             if ($0 ~ /^⚠/ || $0 ~ /^next:/ || $0 ~ /^  (read it as an image|raw|pick|look):/) next
             line = $0
+            # So is the crop command that ends a picture'"'"'s line, whose path holds the file'"'"'s
+            # name: that command alone, so words a picture'"'"'s line carries before it still count.
+            if (line ~ /^\[(image|drawing|stamp|ink|shape)( · [^]]*)?\]/)
+                sub(/( ·)? crop: pdf crop [^ ]+ --page [0-9]+ --bbox [0-9.]+,[0-9.]+,[0-9.]+,[0-9.]+$/, " ", line)
             gsub(/\[hidden[^]]*\]/, " ", line)
             # An annotation'"'"'s label, a reading'"'"'s label and the word before a mark'"'"'s comment are
             # the tool'"'"'s too.
             sub(/^\[[a-z]+( · [^]]*)?\]/, " ", line)
             gsub(/\[(a|b|unsure|picked [0-9-]+)\]/, " ", line)
             gsub(/ · comment: /, " ", line)
-            # So is a crop command, whose path holds the file'"'"'s name.
-            sub(/(· )?crop: pdf crop .*$/, " ", line)
             body[page] = body[page] norm(line)
             next
         }
@@ -148,6 +150,11 @@ expect_read() {
     if [ $status -ne 0 ]; then fail "$1: exit $status"; return; fi
     if printf '%s\n' "$output" | grep -q -F -x -- "$2"; then ok "$1: pdf read shows $2"; else fail "$1: pdf read lacks \"$2\""; fi
 }
+# A line, or part of one, that pdf read must not show.
+expect_no_read() {
+    output=$(run read "testdata/safety/$1.pdf" --budget all)
+    if printf '%s\n' "$output" | grep -q -F -- "$2"; then fail "$1: pdf read shows \"$2\""; else ok "$1: pdf read leaves out $2"; fi
+}
 expect_read carries-comments "[comment · Reviewer 2] Please cite the 2019 baseline."
 expect_read carries-comments "[highlight · Reviewer 1] The 2017 baseline reaches 71 percent on the held-out set · comment: Check this number."
 expect_read carries-comments "[note] Typed note on the page."
@@ -159,6 +166,13 @@ expect_read carries-scripts "¶2 Open the calculator."
 expect_read carries-pictures "[stamp] Approved · crop: pdf crop testdata/safety/carries-pictures.pdf --page 1 --bbox 0.73,0.09,0.19,0.06"
 expect_read carries-pictures "[drawing] crop: pdf crop testdata/safety/carries-pictures.pdf --page 1 --bbox 0.52,0.30,0.37,0.14"
 expect_read carries-pictures "[image] crop: pdf crop testdata/safety/carries-pictures.pdf --page 1 --bbox 0.11,0.30,0.34,0.14"
+expect_read carries-pictures "[stamp] · crop: pdf crop testdata/safety/carries-pictures.pdf --page 2 --bbox 0.73,0.79,0.19,0.06"
+expect_read carries-pictures "[image] crop: pdf crop testdata/safety/carries-pictures.pdf --page 3 --bbox 0.16,0.11,0.66,0.39"
+expect_read carries-pictures "[drawing] crop: pdf crop testdata/safety/carries-pictures.pdf --page 3 --bbox 0.52,0.55,0.37,0.27"
+# Page 2 holds no picture, and its stamp's name, a planted line, stays out.
+expect_no_read carries-pictures "[image] crop: pdf crop testdata/safety/carries-pictures.pdf --page 2"
+expect_no_read carries-pictures "[drawing] crop: pdf crop testdata/safety/carries-pictures.pdf --page 2"
+expect_no_read carries-pictures "PLANTED"
 
 for file in testdata/safety/broken-*.pdf testdata/hidden/broken.pdf; do
     name=$(basename "$file" .pdf)

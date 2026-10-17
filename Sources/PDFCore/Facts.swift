@@ -311,6 +311,14 @@ final class FactReader {
     static let shown: Set<String> = ["Text", "FreeText", "Highlight", "Underline", "Squiggly", "StrikeOut", "Widget", "Link",
                                      "Stamp", "Ink", "Square", "Circle", "Line", "Polygon", "PolyLine", "Caret"]
 
+    /// The 14 stamp names the PDF standard defines, as the words their stamps show.
+    static let stampNames: [String: String] = [
+        "Approved": "Approved", "Experimental": "Experimental", "NotApproved": "Not Approved", "AsIs": "As Is",
+        "Expired": "Expired", "NotForPublicRelease": "Not For Public Release", "Confidential": "Confidential",
+        "Final": "Final", "Sold": "Sold", "Departmental": "Departmental", "ForComment": "For Comment",
+        "TopSecret": "Top Secret", "Draft": "Draft", "ForPublicRelease": "For Public Release",
+    ]
+
     // MARK: Annotations
 
     /// An annotation's rectangle in page space, with its corners in either order.
@@ -438,8 +446,10 @@ final class FactReader {
             }
             underWords.append((facts.annotations.count - 1, page, [Self.rect(annotation)].compactMap { $0 }))
         case .stamp, .ink, .shape:
-            // What it says, or a stamp's name, as "Approved".
-            found.text = text ?? (kind == .stamp ? Self.name(annotation, "Name") : nil)
+            // What it says, or a stamp's standard name, as "Approved". Any other name is a key a
+            // reader never sees: an Acrobat stamp's is a random ID, and a file can name one with a
+            // planted line.
+            found.text = text ?? (kind == .stamp ? Self.name(annotation, "Name").flatMap { Self.stampNames[$0] } : nil)
             _ = list(found)
         case .field:
             return

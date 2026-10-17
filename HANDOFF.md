@@ -36,10 +36,10 @@ Under them: worker processes with time and memory limits and a shared pool of sl
 1. The user approves DESIGNS and FEATURES, or asks for changes.
 2. **M1.11** landed on 2026-10-16: `reports/M1.11-agent-guide.md`. The guide lives in `Sources/PDFCore/AgentGuide.swift`; a new command or flag needs a line there, or a place on the test's short list of flags left out, or `Tests/pdfTests/AgentGuideTests.swift` fails.
 3. **M1.12** landed on 2026-10-17; its `carries-*.pdf` are M1.13's fixtures.
-4. **M1.13** and **M1.14** landed on 2026-10-17: `reports/M1.13-annotations.md`, `reports/M1.14-pictures.md`. Images and drawings are markers with their crop commands.
+4. **M1.13** and **M1.14** landed on 2026-10-17: `reports/M1.13-annotations.md`, `reports/M1.14-pictures.md`. Images and drawings are markers with their crop commands; M1.14's review found a stamp's name could carry a planted line into the output, now fixed, and boxes, bands and shaded cells read as drawings, now none.
 5. M1's exit criteria: GOALS.md G2, G4, G9, G12, G13, G16 and G17, plus a week of the author's own daily use. Every goal is still unmeasured.
 
-`TODO.md` holds the follow-ups without a milestone: two, a content stream that inflates to 600 MB, which times its page out, and links past the first 1,000 of a file.
+`TODO.md` holds the follow-ups without a milestone: three, a content stream that inflates to 600 MB, which times its page out, links past the first 1,000 of a file, and the cost of joining a page's shapes into drawings.
 
 ## How the work has been done
 

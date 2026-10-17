@@ -1068,6 +1068,13 @@ final class Drawing {
     /// new start: four corners along the page's axes, from one start, are a rectangle too.
     var corners: [CGPoint] = []
     var starts = 0
+    /// The path's last point, in page space; whether a straight line of it is slanted; and its
+    /// curves, how many, and the most one spans across or up. Few small curves between straight
+    /// sides along the page's axes round a rectangle's corners, as a box around a theorem's text.
+    var current: CGPoint?
+    var slantedLine = false
+    var curves = 0
+    var curveSpan: CGFloat = 0
     var clipNext = false
     var textSeen = false
     /// Marked content open on the page, each level switched off or not, and how many are off.
@@ -1479,13 +1486,22 @@ final class Drawing {
     /// Points of the path being built, in page space.
     func extend(_ numbers: [CGFloat]) {
         curved = true
+        curves += 1
+        if numbers.count >= 2 {
+            let end = CGPoint(x: numbers[numbers.count - 2], y: numbers[numbers.count - 1]).applying(state.transform)
+            if let current { curveSpan = max(curveSpan, abs(end.x - current.x), abs(end.y - current.y)) }
+            current = end
+        }
         add(numbers)
     }
 
     /// A straight line to a point, or a move to a new start.
     func line(_ numbers: [CGFloat], start: Bool) {
         if start { starts += 1 }
-        corners.append(CGPoint(x: numbers[0], y: numbers[1]).applying(state.transform))
+        let point = CGPoint(x: numbers[0], y: numbers[1]).applying(state.transform)
+        if !start, let current, abs(current.x - point.x) > 0.5, abs(current.y - point.y) > 0.5 { slantedLine = true }
+        current = point
+        corners.append(point)
         add(numbers)
     }
 
@@ -1515,7 +1531,11 @@ final class Drawing {
     func endPath(fills: Bool, paints: Bool = true) {
         let rectangle = !curved && ((rectangles == 1 && corners.isEmpty) || (rectangles == 0 && linesMakeRectangle)) ? path : nil
         if fills { fill(rectangle) }
-        if paints { paint(rectangle: rectangle, filled: fills) }
+        if paints {
+            let rounded = curved && rectangles == 0 && starts == 1 && !slantedLine && curves <= 8 && !path.isNull
+                && curveSpan <= 0.3 * min(path.width, path.height)
+            paint(shape: rectangle != nil || rounded ? path : nil, filled: fills)
+        }
         if clipNext {
             state.clip = state.clip.intersection(path)
             state.clipExact = state.clipExact && rectangle != nil
@@ -1525,18 +1545,25 @@ final class Drawing {
         curved = false
         corners = []
         starts = 0
+        current = nil
+        slantedLine = false
+        curves = 0
+        curveSpan = 0
         clipNext = false
     }
 
     /// Records a shape painted to show: in no layer switched off, not clear, and on the page.
-    func paint(rectangle: CGRect?, filled: Bool) {
+    /// `rectangle` is the path when it is a rectangle along the page's axes, its corners rounded
+    /// or not.
+    func paint(shape rectangle: CGRect?, filled: Bool) {
         let current = state
         guard offDepth == 0, shapes.count < Drawing.shapeLimit, current.opacity > 0.05, !path.isNull else { return }
         let area = path.insetBy(dx: -0.5, dy: -0.5).intersection(current.clip).intersection(crop)
         guard !area.isNull, area.width > 0 || area.height > 0 else { return }
-        var slanted = curved
-        for (from, to) in zip(corners, corners.dropFirst()) where abs(from.x - to.x) > 0.5 && abs(from.y - to.y) > 0.5 { slanted = true }
-        let kind: Shape = slanted ? .curve : filled && rectangle != nil && min(area.width, area.height) > 3 ? .bar : .rule
+        // Straight lines along the page's axes, as a table's rules or bars drawn in one path, are
+        // no curve, nor is a move to a new start a slanted line.
+        let slanted = rectangle == nil && (curved || slantedLine)
+        let kind: Shape = slanted ? .curve : filled && min(area.width, area.height) > 3 ? .bar : .rule
         shapes.append((area, kind))
     }
 
@@ -1544,12 +1571,34 @@ final class Drawing {
     /// first, at most 30 (FEATURES.md → F3). An image counts at 0.5% of the page or more, but not
     /// on a scan's page, whose image is the page. A drawing is a group of shapes within 6 pt of
     /// one another, 1% of the page or more, that holds a curve or a slanted line, or two bars:
-    /// rules alone, as a table's borders or an underline, are no drawing, nor a bar with text on
-    /// it, as a table's shaded cells, nor a shape that fills most of the page, as a background.
+    /// rules alone, as a table's borders or an underline, are no drawing, nor a box with rounded
+    /// corners, nor a bar with text on it, as a table's shaded cells, nor a bar at the page's
+    /// edge, as a band down its margin, nor a shape that fills most of the page, as a background.
+    /// A drawing takes in the text within 12 pt of it, as a chart's labels and title. Found once.
     func pictures() -> [(kind: String, rect: CGRect)] {
+        if let picturesFound { return picturesFound }
+        let found = findPictures()
+        picturesFound = found
+        return found
+    }
+
+    var picturesFound: [(kind: String, rect: CGRect)]?
+
+    func findPictures() -> [(kind: String, rect: CGRect)] {
         let page = crop.width * crop.height
         guard page > 0 else { return [] }
-        let centers = runs.lazy.filter { $0.kind == .shown }.map { CGPoint(x: $0.bounds.midX, y: $0.bounds.midY) }.prefix(5_000)
+        let texts = Array(runs.lazy.filter { $0.kind == .shown && !$0.bounds.isNull }.map(\.bounds).prefix(5_000))
+        // Text on a bar: a run whose letters stand on it, half their height or more. A run's
+        // center would miss a table's shaded cells, as one run spans a row of them.
+        func textOn(_ rect: CGRect) -> Bool {
+            texts.contains { text in
+                let shared = text.intersection(rect)
+                return !shared.isNull && shared.width > 0 && shared.height >= 0.5 * text.height
+            }
+        }
+        func atEdge(_ rect: CGRect) -> Bool {
+            rect.minX <= crop.minX + 1 || rect.maxX >= crop.maxX - 1 || rect.minY <= crop.minY + 1 || rect.maxY >= crop.maxY - 1
+        }
         var found: [(kind: String, rect: CGRect, curves: Int, bars: Int)] = []
         if !underlay {
             for rect in images.lazy.map({ $0.intersection(self.crop) }) where !rect.isNull && rect.width * rect.height >= 0.005 * page {
@@ -1558,7 +1607,7 @@ final class Drawing {
         }
         let largest = shapes.sorted { $0.rect.width * $0.rect.height > $1.rect.width * $1.rect.height }.prefix(2_000)
         for shape in largest where shape.rect.width * shape.rect.height < 0.8 * page {
-            if shape.kind == .bar, centers.contains(where: { shape.rect.contains($0) }) { continue }
+            if shape.kind == .bar, atEdge(shape.rect) || textOn(shape.rect) { continue }
             found.append(("drawing", shape.rect, shape.kind == .curve ? 1 : 0, shape.kind == .bar ? 1 : 0))
         }
         // Regions within 6 pt of one another join, an image with the drawing over it.
@@ -1605,7 +1654,16 @@ final class Drawing {
             }
             joined = next
         }
-        return joined.sorted { $0.rect.width * $0.rect.height > $1.rect.width * $1.rect.height }.prefix(30).map { ($0.kind, $0.rect) }
+        // A chart's labels, title and legend are often text outside its shapes: its crop takes in
+        // the text within 12 pt, once, so that a paragraph next to it does not pull in the next.
+        let top = joined.sorted { $0.rect.width * $0.rect.height > $1.rect.width * $1.rect.height }.prefix(30)
+        return top.map { item in
+            guard item.kind == "drawing" else { return (item.kind, item.rect) }
+            let near = item.rect.insetBy(dx: -12, dy: -12)
+            var rect = item.rect
+            for text in texts where text.width * text.height < 0.05 * page && text.intersects(near) { rect = rect.union(text) }
+            return (item.kind, rect.intersection(crop))
+        }
     }
 
     /// How much of an image lets through over a box, from least to most: its opacity times its

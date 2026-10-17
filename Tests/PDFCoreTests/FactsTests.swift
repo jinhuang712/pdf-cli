@@ -348,18 +348,24 @@ import Testing
     }
 
     /// An image and a chart drawn as shapes are pictures of the page; a table drawn with rules
-    /// around its words is none; a stamp is an annotation with its name (M1.14).
+    /// around its words is none; a stamp is an annotation with its name (M1.14). Page 2 holds what
+    /// is no picture: boxes with rounded corners around text, a band down the page's edge, a
+    /// table's cells shaded under one run, and a stamp whose name is no standard one, which shows
+    /// no words (the M1.14 review).
     @Test func imagesDrawingsAndStampsAreFound() throws {
         let url = repoRoot.appendingPathComponent("testdata/safety/carries-pictures.pdf")
         let document = try #require(PDFDocument(url: url))
-        let page = try #require(document.page(at: 0))
-        let layer = withExtendedLifetime(document) { TextLayer.read(page, visibility: Visibility(page: page)) }
-        #expect(Set(layer.pictures?.map(\.kind) ?? []) == ["image", "drawing"])
-        #expect(layer.pictures?.count == 2)
-        let image = try #require(layer.pictures?.first { $0.kind == "image" })
+        let layers = try (0..<2).map { index in
+            let page = try #require(document.page(at: index))
+            return withExtendedLifetime(document) { TextLayer.read(page, visibility: Visibility(page: page)) }
+        }
+        #expect(Set(layers[0].pictures?.map(\.kind) ?? []) == ["image", "drawing"])
+        #expect(layers[0].pictures?.count == 2)
+        let image = try #require(layers[0].pictures?.first { $0.kind == "image" })
         #expect(abs(image.box.x - 0.118) < 0.01 && abs(image.box.y - 0.305) < 0.01)
+        #expect(layers[1].pictures == nil)
         let facts = FactReader.read(try #require(CGPDFDocument(url as CFURL)), url: url)
-        #expect(facts.annotations.map(\.kind) == [.stamp])
-        #expect(facts.annotations.first?.text == "Approved")
+        #expect(facts.annotations.map(\.kind) == [.stamp, .stamp])
+        #expect(facts.annotations.map(\.text) == ["Approved", nil])
     }
 }
