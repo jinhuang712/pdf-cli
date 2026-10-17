@@ -23,7 +23,7 @@ Under them: worker processes with time and memory limits and a shared pool of sl
 
 **The TODO list is done** (2026-10-16, its last review fixed on 2026-10-17): the index walks the page tree once, `pdf ls` judges pages from a stored verdict column, a page's layer is decoded once per command, a locked file points to `--password-stdin`, which asks on a terminal, `pdf info`'s section table is capped, and a page whose drawn text PDFKit leaves out is flagged, or read by OCR when it lost 30% or more. The licence notices of `pdf setup`'s models moved to M2.11. Reports: `reports/TODO-page-tree-listing-password.md` and `reports/TODO-text-pdfkit-leaves-out.md`. The second review of the last fixes found 10 problems; 9 are fixed, and the chords a music font stacks stay a limit. Since then a place PDFKit left text out of shows only as its crop: what its strings spell goes out nowhere, `--raw` included, as each review found a new hidden string that `--raw` spelled.
 
-**M1.12, the test sets,** landed on 2026-10-17: `reports/M1.12-test-sets.md`. `scripts/smoke-check.sh` reads the 11 files of `testdata/smoke` whole; `scripts/safety-check.sh` runs the 20 files of `testdata/safety` and prints goal G16's line, 52 of 52 planted hidden texts kept out and no crash or hang. Both run inside `scripts/test-cache.sh`. The set found that a page whose content stream does not decode read as a fine empty page; it is now flagged low-quality, with a block that says part of the page is missing. Parser version 11, cache schema 8.
+**M1.12, the test sets,** landed on 2026-10-17: `reports/M1.12-test-sets.md`. `scripts/smoke-check.sh` reads the 11 files of `testdata/smoke` whole and holds their flags to `testdata/smoke/expected-flags.tsv`; `scripts/safety-check.sh` runs the 20 files of `testdata/safety` and `hidden.pdf`, holds every planted string the generator lists in `testdata/safety/planted.tsv` to the normal output, and prints goal G16's line: 61 of 61 kept out, no crash or hang. Its review found that 4 of `hidden.pdf`'s pages let the last word of their planted line read, since M1.10; fixed. Both run inside `scripts/test-cache.sh`. The set found that a page whose content stream does not decode read as a fine empty page; it is now flagged low-quality, with a block that says part of the page is missing. Parser version 11, cache schema 8.
 
 **Sample PDFs stay local** (the user, 2026-10-16): PDFs downloaded to measure M1's goals, as many as can be gathered, are never committed. They live in the main checkout's `private/`, which `.gitignore` keeps out, and downloads wait for the user's OK on the sources.
 
@@ -37,7 +37,7 @@ Under them: worker processes with time and memory limits and a shared pool of sl
 4. **M1.13** comments, highlights, form fields and link targets at their positions; **M1.14** a marker with a crop command for every image and drawing.
 5. M1's exit criteria: GOALS.md G2, G4, G9, G12, G13, G16 and G17, plus a week of the author's own daily use. Every goal is still unmeasured.
 
-`TODO.md` holds the follow-ups without a milestone: none open.
+`TODO.md` holds the follow-ups without a milestone: one, a content stream that inflates to 600 MB, which times its page out.
 
 ## How the work has been done
 

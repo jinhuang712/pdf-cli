@@ -158,6 +158,17 @@ import Testing
         #expect(layer.blocks.map(\.visibleText).joined(separator: " ").contains("Visible words after the trick on this page."))
     }
 
+    /// The last word of a hidden line stays hidden: one PDFKit joins to a huge invisible period
+    /// after it, at half a point, clipped or white, and the last word of letters stacked word by
+    /// word, which negative spacing set past the string's end. M1.12's review found them read.
+    @Test(arguments: [(50, "all"), (51, "clip"), (52, "paper"), (61, "OK")])
+    func theLastWordOfAHiddenLineStaysHidden(page index: Int, word: String) throws {
+        let layer = try layer(index)
+        let words = layer.blocks.map(\.visibleText).joined(separator: " ").split { !$0.isLetter }.map(String.init)
+        #expect(!words.contains(word))
+        #expect(hidden(layer).contains { $0.contains(word) })
+    }
+
     /// Text a page draws that PDFKit leaves out, a Type 3 font's line with no text map, is found
     /// where it is drawn, and flags the page; the same font with a text map reads as text.
     @Test func textPDFKitLeavesOutFlagsThePage() throws {

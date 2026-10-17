@@ -357,7 +357,7 @@ struct Visibility {
             let x0 = index(run.bounds.minX - crop.minX), x1 = index(run.bounds.maxX - crop.minX)
             let y0 = index(run.bounds.minY - crop.minY), y1 = index(run.bounds.maxY - crop.minY)
             guard x1 - x0 < 400, y1 - y0 < 400 else { return true }
-            let low = min(0, run.reach) - 0.2 * run.size, high = max(0, run.reach) + 0.2 * run.size
+            let low = min(0, run.reach) - 0.2 * run.size, high = max(0, run.reach) + run.back + 0.2 * run.size
             for x in x0...x1 {
                 for y in y0...y1 {
                     for center in centers[key(x, y)] ?? [] {
@@ -773,6 +773,8 @@ final class Drawing {
         var shown: String = ""
         /// The clip leaves under half of its bounds.
         var clipped = false
+        /// How far its glyphs' ink reaches past where the pen ends, which negative spacing pulls back.
+        var back: CGFloat = 0
 
         func holds(_ point: CGPoint) -> Bool {
             guard bounds.contains(point) else { return false }
@@ -781,7 +783,7 @@ final class Drawing {
             if vertical {
                 return abs(local.x) <= 0.8 * size && local.y >= min(0, reach) - margin && local.y <= max(0, reach) + margin
             }
-            return local.x >= min(0, reach) - margin && local.x <= max(0, reach) + margin && local.y >= -0.5 * size && local.y <= 1.2 * size
+            return local.x >= min(0, reach) - margin && local.x <= max(0, reach) + back + margin && local.y >= -0.5 * size && local.y <= 1.2 * size
         }
     }
 
@@ -1370,7 +1372,10 @@ final class Drawing {
         defer { order += 1 }
         guard runs.count < Drawing.runLimit, placed.invertible else { return }
         let size = max(abs(current.fontSize) * current.font.height, 0.5)
-        let margin = 0.3 * size, low = min(0, shown.advance) - margin, high = max(0, shown.advance) + margin
+        // Negative spacing pulls the pen back after the last glyph, short of its ink: letters
+        // stacked by -7 Tc ended 7 pt past the string's end, so its last word had no string.
+        let back = vertical ? 0 : max(0, -current.characterSpacing, -current.wordSpacing) * abs(current.horizontalScale)
+        let margin = 0.3 * size, low = min(0, shown.advance) - margin, high = max(0, shown.advance) + back + margin
         let local = vertical ? CGRect(x: -0.8 * size, y: low, width: 1.6 * size, height: high - low)
             : CGRect(x: low, y: -0.5 * size, width: high - low, height: 1.7 * size)
         let kind: TextRun.Kind = offDepth > 0 ? .off
@@ -1389,7 +1394,8 @@ final class Drawing {
         runs.append(TextRun(order: order, toText: placed.inverted(), reach: shown.advance, vertical: vertical, size: size, kind: kind,
                             crushed: crushed, text: spelling ?? "", height: height,
                             across: abs(direction.x) >= abs(direction.y), bounds: local.applying(placed),
-                            glyphs: shown.glyphs, shown: shown.text, clipped: Self.clippedAway(local.applying(placed), by: current.clip)))
+                            glyphs: shown.glyphs, shown: shown.text, clipped: Self.clippedAway(local.applying(placed), by: current.clip),
+                            back: back))
     }
 
     /// Whether a clip leaves under half of a string's bounds.

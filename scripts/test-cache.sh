@@ -7,8 +7,9 @@ set -u
 cd "$(dirname "$0")/.."
 swift build >/dev/null || exit 1
 pdf=.build/debug/pdf
-# This checkout's workers and runners, by their path: another session's are none of these checks' business.
-own="$(pwd)/.build/.*pdf __"
+# This checkout's workers and runners, by their real path, as they run: another session's are none of
+# these checks' business.
+own="$(pwd -P)/.build/.*pdf __"
 paper=testdata/smoke/arxiv-2607.16859.pdf
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT

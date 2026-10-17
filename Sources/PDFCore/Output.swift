@@ -112,6 +112,14 @@ public enum Output {
         var result = PageBlocks(units: [Unit(blocks: [Block(kind: .page, page: number, printed: layer?.label)])])
         let unsureByBlock = Dictionary(grouping: quality.unsure, by: \.block)
         func status(_ doubt: Doubt) -> PageQuality.Status { doubt.kind == .failed ? .failed : .lowQuality }
+        // The number of the page's last block so far: what has no block in the layer is numbered
+        // after it, the same with `--raw` or without, so a read cut there goes on past it.
+        var after = layer?.blocks.count ?? 0
+        // A damaged content stream: nothing of it shows, in the text or the image, so its block
+        // names no command.
+        let damaged = quality.doubts.first(where: { $0.reason == Quality.damagedReason }).map { doubt in
+            Block(kind: .failure, page: number, status: doubt.kind.rawValue, reason: doubt.reason)
+        }
 
         if let whole = quality.doubts.first(where: { $0.blocks == nil }) {
             var unit = Unit(blocks: [failureBlock(whole, page: number, block: nil, region: nil, path: path, raw: raw)],
@@ -128,6 +136,10 @@ public enum Output {
                     unit.doubtful = layer.blocks.count
                 }
             }
+            // On a page in doubt as a whole, the damage goes with the page's failure block, with no
+            // number as it has: a read that goes on from a block shows that one again each time,
+            // and a block numbered after it could never be reached.
+            if let damaged { unit.blocks.append(damaged) }
             result.units.append(unit)
         } else if let layer {
             for (index, block) in layer.blocks.enumerated() {
@@ -183,7 +195,7 @@ public enum Output {
             }
             // Text placed off the page has no block: PDFKit leaves it out of the page's text,
             // and only the drawing commands spell it.
-            var after = layer.blocks.count + (layer.unread?.count ?? 0)
+            after += layer.unread?.count ?? 0
             if let offPage = layer.offPage, !offPage.isEmpty {
                 let words = offPage.joined(separator: " ")
                 after += 1
@@ -201,22 +213,19 @@ public enum Output {
                 unit.hidden = 1
                 result.units.append(unit)
             }
+            if var damaged {
+                after += 1
+                damaged.block = after
+                result.units.append(Unit(blocks: [damaged], flag: .lowQuality))
+            }
         }
         if let old = layer?.replacedText {
             if raw {
                 // Numbered after the page's last block, so a read that goes on from it skips them.
-                result.units.append(Unit(blocks: [Block(kind: .oldOCR, page: number, block: (layer?.blocks.count ?? 0) + 1, text: old)]))
+                result.units.append(Unit(blocks: [Block(kind: .oldOCR, page: number, block: after + 1, text: old)]))
             } else {
                 result.oldLayers = 1
             }
-        }
-        // A damaged content stream: nothing of it shows, in the text or the image, so the block
-        // names no command. Numbered after every block before it, so a read cut here goes on past it.
-        if let layer, let doubt = quality.doubts.first(where: { $0.reason == Quality.damagedReason }) {
-            let last = max(layer.blocks.count, result.units.flatMap(\.blocks).compactMap(\.block).max() ?? 0)
-            result.units.append(Unit(blocks: [Block(kind: .failure, page: number, block: last + 1, status: doubt.kind.rawValue,
-                                                    reason: doubt.reason)],
-                                     flag: .lowQuality))
         }
         return result
     }

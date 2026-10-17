@@ -458,7 +458,22 @@ enum TextLayer {
             // The line's usual glyph height, for a word whose own glyphs have no boxes.
             let glyphHeight = median(characters.compactMap { glyphs.boxes[$0.index]?.height }.filter { $0 > 0 })
             var previous: HiddenReason?
-            for word in words where !word.isEmpty {
+            // A word whose letters change size more than threefold is judged part by part: PDFKit
+            // joined a hidden line's last word, set at half a point, clipped or white, to a huge
+            // invisible period after it, whose size and box, reaching the lines around, let the
+            // word read as text.
+            func bySize(_ word: [Int]) -> [[Int]] {
+                var parts: [[Int]] = [[]]
+                var last: CGFloat = 0
+                for index in word {
+                    let size = glyphs.sizes.indices.contains(index) ? glyphs.sizes[index] : 0
+                    if size > 0, last > 0, max(size, last) > 3 * min(size, last), !parts[parts.count - 1].isEmpty { parts.append([]) }
+                    parts[parts.count - 1].append(index)
+                    if size > 0 { last = size }
+                }
+                return parts
+            }
+            for word in words.flatMap(bySize) where !word.isEmpty {
                 defer { previous = hiddenStart[word[0]] }
                 let end = word[word.count - 1] + (widths[word[word.count - 1]] ?? 1)
                 guard var rect = visibility.box(of: NSRange(location: word[0], length: end - word[0])) else { continue }

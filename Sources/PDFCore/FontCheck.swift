@@ -200,25 +200,46 @@ public struct FontCheck: Sendable, Equatable {
         defer { CGPDFContentStreamRelease(stream) }
         FontCheck.run(stream, scan)
         self.init(scan)
-        damaged = FontCheck.damaged(stream)
+        damaged = FontCheck.damaged(stream, resources: scan.pageResources)
     }
 
-    /// Whether one of the streams declares 64 bytes or more and decodes to none. An empty stream,
-    /// compressed, takes a few bytes, ASCII85 and Flate together about 20, so a stream that long
-    /// held something that its filter could not give back.
-    static func damaged(_ content: CGPDFContentStreamRef) -> Bool {
-        guard let streams = CGPDFContentStreamGetStreams(content) else { return false }
+    /// Whether one of the streams declares 64 bytes or more and holds no operator: a stream whose
+    /// filter cannot give its data back gives the scanner nothing. An empty stream, compressed,
+    /// takes a few bytes, ASCII85 and Flate together about 20. Each stream is scanned, never copied
+    /// out: one of 600 KB that inflates to 600 MB took that much memory copied. A stream whose
+    /// length is missing or no number is not judged, nor a page with no resources to scan by.
+    static func damaged(_ content: CGPDFContentStreamRef, resources: CGPDFDictionaryRef?) -> Bool {
+        guard let resources, let create = createContentStream, let streams = CGPDFContentStreamGetStreams(content) else { return false }
         for index in 0..<CFArrayGetCount(streams) {
             guard let pointer = CFArrayGetValueAtIndex(streams, index) else { continue }
             let stream = CGPDFStreamRef(OpaquePointer(pointer))
-            var declared: CGPDFInteger = 0
-            guard let dictionary = CGPDFStreamGetDictionary(stream), CGPDFDictionaryGetInteger(dictionary, "Length", &declared),
-                  declared >= 64 else { continue }
-            var format = CGPDFDataFormat.raw
-            if CGPDFStreamCopyData(stream, &format).map(CFDataGetLength) ?? 0 == 0 { return true }
+            var declared: CGPDFReal = 0
+            guard let dictionary = CGPDFStreamGetDictionary(stream), CGPDFDictionaryGetNumber(dictionary, "Length", &declared),
+                  declared >= 64, let one = create(stream, resources, nil) else { continue }
+            defer { CGPDFContentStreamRelease(one) }
+            var operators = 0
+            withUnsafeMutablePointer(to: &operators) { counter in
+                let scanner = CGPDFScannerCreate(one, anyOperator, counter)
+                defer { CGPDFScannerRelease(scanner) }
+                CGPDFScannerScan(scanner)
+            }
+            if operators == 0 { return true }
         }
         return false
     }
+
+    /// Every operator of the content stream syntax (PDF 32000, annex A), each counted.
+    nonisolated(unsafe) private static let anyOperator: CGPDFOperatorTableRef = {
+        let table = CGPDFOperatorTableCreate()!
+        let names = "b B b* B* BDC BI BMC BT BX c cm CS cs d d0 d1 Do DP EI EMC ET EX f F f* G g gs h i ID j J K k l m M MP n "
+            + "q Q re RG rg ri s S SC sc SCN scn sh T* Tc Td TD Tf Tj TJ TL Tm Tr Ts Tw Tz v w W W* y ' \""
+        for name in names.split(separator: " ") {
+            CGPDFOperatorTableSetCallback(table, String(name)) { _, info in
+                info?.assumingMemoryBound(to: Int.self).pointee += 1
+            }
+        }
+        return table
+    }()
 
     /// Measures the page whose dictionary is `dictionary`, as `init(page:)` does, reading its
     /// content streams in turn. A name the page's resources lack is looked up in the resources of

@@ -150,10 +150,31 @@ import Testing
         #expect(!report.text.contains("pdf crop"))
         #expect(report.text.hasPrefix("paper.pdf · 1 page · read p.1 · flagged: p.1 (low-quality)"))
         // With text PDFKit left out as well, each place keeps its own block, and the damage comes last.
-        read.unread = [Unread(box: box, text: "ABC")]
+        read.unread = [Unread(box: box)]
         let both = Output.render(file: "paper.pdf", pageCount: 1, pages: [try page(0, read)])
         #expect(both.text.contains("⚠ p.1 ¶2 low-quality: the page draws text here that PDFKit left out of its text"))
         #expect(both.text.contains("⚠ p.1 ¶3 low-quality: part of the page's drawing commands is damaged"))
+        // `--raw` numbers it the same.
+        let raw = Output.pageBlocks(try page(0, read), picks: [:], path: "paper.pdf", raw: true).units.flatMap(\.blocks)
+        #expect(raw.contains { $0.kind == .failure && $0.block == 3 && $0.reason?.hasPrefix("part of the page's") == true })
+    }
+
+    /// On a page in doubt as a whole, the damage goes with the page's failure block, unnumbered as
+    /// it is: a block numbered after it could never be reached by a read that goes on, which shows
+    /// the failure block again each time.
+    @Test func aDamagedStreamOnAPageInDoubtAsAWholeGoesWithItsFailure() throws {
+        var read = layer(["Read by OCR, with nothing to check it against."])
+        read.checkFailed = true
+        read.damaged = true
+        read.replacedText = "the old layer"
+        for raw in [false, true] {
+            let units = Output.pageBlocks(try page(0, read, method: "ocr"), picks: [:], path: "scan.pdf", raw: raw).units
+            let failure = try #require(units.first { $0.blocks.first?.kind == .failure })
+            #expect(failure.blocks.filter { $0.kind == .failure }.map(\.block) == [nil, nil])
+            #expect(failure.blocks.last { $0.kind == .failure }?.reason?.hasPrefix("part of the page's drawing commands") == true)
+            #expect(units.filter { $0.blocks.contains { $0.kind == .failure } }.count == 1)
+            if raw { #expect(units.flatMap(\.blocks).first { $0.kind == .oldOCR }?.block == 2) }
+        }
     }
 
     func paragraphs(_ count: Int, words: Int) -> PageText {
