@@ -1,4 +1,4 @@
-<!-- what-we-build: approved 2026-10-18 -->
+<!-- what-we-build: drafted 2026-10-18 -->
 # Designs
 
 PDF files on the user's Mac and commands from an agent go in. Text with page addresses, PNG crops, search hits and failure reports come out, served from a local cache. In between, worker processes parse each page once, in steps that escalate only as far as the page needs, and store the result in SQLite. Behavior is in [FEATURES.md](FEATURES.md).
@@ -48,7 +48,6 @@ WORKER: a child process with time and memory limits, page by page
 
 OFF BY DEFAULT: added only when a goal fails without them
    · Layout model on Core ML: labels footnotes and headings in one pass
-   · Local vision model (milestone M3): hard pages and formulas
 
 (*) See the decision on fonts that hide spaces.
 ```
@@ -60,8 +59,8 @@ The "at risk" check comes from the M0 spike: a font that declares character 32 t
 ### Parsing
 
 - **Apple's engines first.** PDFKit and Vision do the work by default, and a downloaded model joins only where the Base setup measurably falls short of a goal. Cost: some pages read worse than a model would read them, until a measurement shows the gap. Holds as: every model that `pdf setup` downloads is listed in this document with the goal it improves and its measured gain over Base.
-- **The file's own structure first.** Tags, bookmarks, page labels and the text layer win over inference, and models fill only the gaps. Cost: a badly tagged PDF misleads the parser until a quality check catches it. Holds as: every block records its source (`file`, `layout`, `ocr` or `vlm`), and a model-made block appears only where the file states nothing.
-- **Escalate per page.** Each page goes through the text layer, the layout model when it is installed, OCR and a vision model when it is installed, in that order, and stops at the first step that reads it well. Cost: one document mixes methods, so quality varies from page to page. Holds as: every page record names the step that produced it.
+- **The file's own structure first.** Tags, bookmarks, page labels and the text layer win over inference, and models fill only the gaps. Cost: a badly tagged PDF misleads the parser until a quality check catches it. Holds as: every block records its source (`file`, `layout` or `ocr`), and a model-made block appears only where the file states nothing.
+- **Escalate per page.** Each page goes through the text layer, the layout model when it is installed, and OCR, in that order, and stops at the first step that reads it well; what none reads well goes to the agent as a crop. Cost: one document mixes methods, so quality varies from page to page. Holds as: every page record names the step that produced it.
 
 ### Failure
 
@@ -84,7 +83,7 @@ A page can read wrong while it looks right, and the agent believes what it is ha
 
 - **Pay once, read many times.** Results are keyed by page content and parser version, and failed pages are cached with their reasons too. Cost: disk space, and a cache that must stay correct. Holds as: no command parses a page whose key is already in the cache, except `reparse`.
 - **Annotations leave the cache alone.** The key hashes what each page draws, its boxes, content streams and resources, not the file's bytes, so a highlight appended to the file leaves every page key unchanged. Comments, highlights and form values are cached apart, by the file's bytes, so a new highlight re-reads only the annotations. Cost: hashing every page takes time when a file is added, about 1.3 ms per page on a 456-page file. Holds as: a test appends a highlight the way Acrobat saves one, and every page key stays the same. A file that PDFKit saved is the exception (see the decision on PDFKit saves).
-- **Same file, same answer.** Models are pinned, decoding never samples, and a vision model's output is cached. Cost: the project gives up the extra accuracy that sampling sometimes buys. Holds as: two parses of the same file with the same version produce byte-identical output.
+- **Same file, same answer.** Models are pinned and decoding never samples. Cost: the project gives up the extra accuracy that sampling sometimes buys. Holds as: two parses of the same file with the same version produce byte-identical output.
 
 ### Output
 
@@ -141,7 +140,6 @@ The tool supports macOS 11 and newer, on Apple Silicon and Intel. macOS 11 is th
 | PDFKit text, figures from drawing commands, and OCR in English, Chinese, French, German, Italian, Portuguese and Spanish | macOS 11 |
 | Layout models on Core ML, if a goal needs one | macOS 12, because the models convert to Core ML's ML Program format |
 | OCR in Japanese and Korean | macOS 13 |
-| The local vision model through MLX Swift | macOS 14 on Apple Silicon. MLX Swift declares macOS 14 as its minimum, and a Swift package cannot depend on a package with a higher minimum, so the vision model runs in a helper binary of its own. |
 | Scan structure: paragraphs, tables and lists | macOS 26 |
 
 | Option | For | Against |
@@ -298,6 +296,8 @@ On the smoke set's ten papers it found 64 figures, 77 tables and 84 equations, a
 
 ## Decision: equations as blocks now, LaTeX rebuilt from the page next — 2026-10-17
 
+Replaced on 2026-10-18 by "Decision: the agent reads figures, tables and equations from their crops, and its LaTeX is kept": the tool rebuilds no LaTeX.
+
 The user asked for equations in three steps: find where each is, recognize it, and turn it into LaTeX, from which the formula can be drawn again, so the agent reads LaTeX, which models read well, and the tool checks its own LaTeX by drawing it back and comparing it with the page. M2.6 takes the first two steps: a numbered equation is a block with its number and its crop, its text behind `--raw`, since PDFKit gives a display's lines out of place, as "_{r}. (3)" on a line of its own. The third, LaTeX rebuilt by rules from the glyphs' fonts and positions, is M2.13.
 
 | Option | For | Against |
@@ -305,6 +305,25 @@ The user asked for equations in three steps: find where each is, recognize it, a
 | **A block with its crop now, LaTeX next** | M2.6 stays its size, and the LaTeX step starts from the equations M2.6 finds. | Until M2.13 an agent crops each equation it needs. |
 | The text in place, with a marker | Costs no crop where the text reads well, as "∆W = W_{down}W_{up}". | Most displays read as scraps, a fraction's parts as blocks of their own. |
 | LaTeX from a model, in M3 | Reads scans too. | A download, and M3. |
+
+## Decision: the agent reads figures, tables and equations from their crops, and its LaTeX is kept — 2026-10-18
+
+The user, on 2026-10-18: what the tool cannot read for certain, the agent's own model reads from the image. Rules or OCR that turn a table or an equation into text cannot promise it right, and a wrong LaTeX looks right. The tool's job is to cut the tokens, the cost and the time an agent spends on a PDF, which GOALS.md measures, and a crop costs little: about 500 image tokens for an equation, 1,600 for a table. What the agent reads once should not be read again: with M2.13 it writes an equation's LaTeX back, the cache keeps it with the page, as it keeps a pick, and later reads show the LaTeX in place, labelled as the agent's reading, with no crop. This replaces the decision of 2026-10-17 to rebuild LaTeX by rules.
+
+| Option | For | Against |
+|---|---|---|
+| **The agent reads the crop, and writes its LaTeX back** | As right as the agent's reading of the image, and paid once a file: later reads, by any agent, take it from the cache. | Each equation costs a crop the first time, and a page of 28 is better cropped whole. A wrong reading stays until `pdf reparse` clears it, as a pick does. |
+| LaTeX rebuilt by rules from the glyphs, checked by drawing it back | No image tokens at all. | Not right for certain: a fraction or a matrix rebuilt wrong reads as right, and drawing it back needs a TeX engine. |
+| A local vision model | Reads formulas without the agent. | A download, and its readings are not right for certain either: dropped with M3.3. |
+
+## Decision: no local vision model; PDFKit and Apple's OCR read, the agent looks — 2026-10-18
+
+The user dropped M3.3, the local vision model for hard pages and formulas, on 2026-10-18: PDFKit and Apple's OCR carry the text, and what they cannot read for certain, a page in doubt, a table or an equation, goes to the agent as a crop. GOALS.md measures two setups, Base and Layout, no longer Full. M1's test sets read well so far, but no goal is measured yet: a goal that fails on scans OCR reads badly shows at the final wrap-up.
+
+| Option | For | Against |
+|---|---|---|
+| **No vision model** | Nothing more to download or keep, and one engine fewer whose readings can be wrong; the agent reads what needs eyes. | A scanned page that OCR misreads is flagged and cropped, and `pdf search` cannot find its words. |
+| A local vision model through MLX Swift (M3.3) | Reads hard scans and formulas without the agent, and their words reach the index. | Gigabytes to download, macOS 14 on Apple Silicon and a helper binary, and readings that are not right for certain. |
 
 ## Decision: alt text as hidden text, shown only with `--include-hidden` — 2026-10-17
 

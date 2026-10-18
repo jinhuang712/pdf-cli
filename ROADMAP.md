@@ -1,4 +1,4 @@
-<!-- what-we-build: approved 2026-10-18 -->
+<!-- what-we-build: drafted 2026-10-18 -->
 # Roadmap
 
 **Current milestone:** M1. An agent reads born-digital and scanned PDFs through the cache.
@@ -75,7 +75,7 @@ The spike shipped no features. It answered the riskiest questions.
   - [x] M2.5 Reading order across columns, with running headers, footers and publisher stamps set aside, counted in the summary line and shown with `--headers`
 - **Crop** (F5) and **Info** (F2): figures, tables and equations
   - [x] M2.6 Figures, tables and equations detected, listed by `pdf info` and cropped with `pdf crop`. Each table's and figure's text gives way to its block and stays behind `--raw`, and alt text shows with its figure. Found from numbered captions, M1.14's pictures and drawn shapes, and horizontal rules; an equation from its number set apart. Alt text is hidden text, shown only with `--include-hidden` (the user, 2026-10-17).
-  - [ ] M2.13 Equations as LaTeX, rebuilt by rules from the glyphs' fonts and positions, and checked by drawing the LaTeX back to an image and comparing it with the page's crop (the user's third step, 2026-10-17). See DESIGNS.md → "Decision: equations as blocks now, LaTeX rebuilt from the page next".
+  - [ ] M2.13 Equations as LaTeX, read by the agent: it reads an equation's crop and writes the LaTeX back with a command, as `pdf pick` saves a choice; the cache keeps it with the page, so later reads show the LaTeX in place, labelled as the agent's reading, with no crop. The tool rebuilds no LaTeX itself (the user, 2026-10-18). See DESIGNS.md → "Decision: the agent reads figures, tables and equations from their crops, and its LaTeX is kept".
   - Later: tables that continue across pages (M3.2)
 - **Notes** (F14)
   - [ ] M2.7 Footnotes, endnotes, headnotes, margin notes and author notes
@@ -85,7 +85,6 @@ The spike shipped no features. It answered the riskiest questions.
   - [ ] M2.9 `pdf dump`, with attachments saved and scripts written as text, never opened or run
 - **Reparse** (F10)
   - [ ] M2.10 `pdf reparse`, plain and with `--step ocr`
-  - Later: `--step vlm` (M3.3)
 - **Setup and doctor** (F12)
   - [ ] M2.11 `pdf setup` and `pdf doctor`, with the licence notice of every model `pdf setup` downloads: MIT covers only our own code. `pdf setup` asks how much memory parsing may take, as light, balanced or fastest with their numbers, or a number; the worker count follows from it and the cores, OCR pages weigh more, and fewer workers run under memory pressure. An agent says how soon it needs the pages, never how many workers. See DESIGNS.md → "Decision: the user sets parsing's memory, the tool the worker count".
 - **Failure reports** (F8): M2.12, the quality thresholds tuned until G11 passes, waits for the final wrap-up.
@@ -98,8 +97,6 @@ The spike shipped no features. It answered the riskiest questions.
   - [ ] M3.1 The embedding model chosen, and `pdf search` by meaning, Chinese queries included
 - **Crop** (F5): tables across pages
   - [ ] M3.2 Tables that continue across pages, linked as one table with a crop per page
-- **Reparse** (F10) and **Setup** (F12): the local vision model
-  - [ ] M3.3 A local vision model for hard pages and formulas, with `pdf setup vlm` and `pdf reparse --step vlm`
 - **Install**
   - [ ] M3.5 A Homebrew release that installs with one command
 **Exit criteria:** GOALS.md G1, G10, G14 and G15, measured at the final wrap-up.

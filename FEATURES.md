@@ -1,4 +1,4 @@
-<!-- what-we-build: approved 2026-10-18 -->
+<!-- what-we-build: drafted 2026-10-18 -->
 # Features
 
 ✅ built · 🚧 built with a gap · ⬜ planned
@@ -116,7 +116,7 @@ A table appears as a table block in place of its cells, where its caption or its
   crop: pdf crop paper.pdf --page 6 --table 3
 ```
 
-A figure appears the same way, as a figure block with its caption and the command that crops it; its labels, as a chart's ticks, go aside as `[figure text]`. A numbered equation is a block with its number and its crop, its symbols aside as `[equation text: its layout lost]`, since PDFKit gives a display's lines out of place; LaTeX for it comes with M2.13. A figure's alt text, which a tagged file gives for readers who cannot see it, is text a reader of the page never sees: a hidden-text marker after the figure, `alt text, the file's words for a picture`, and its words only with `--include-hidden` (F9). An image or a drawing outside every figure and table, such as a logo, a signature or a chart without a caption, gets a marker in place, its alt text marked the same way:
+A figure appears the same way, as a figure block with its caption and the command that crops it; its labels, as a chart's ticks, go aside as `[figure text]`. A numbered equation is a block with its number and its crop, its symbols aside as `[equation text: its layout lost]`, since PDFKit gives a display's lines out of place. The agent reads it from the crop, and with M2.13 writes its LaTeX back, which later reads show in place. A figure's alt text, which a tagged file gives for readers who cannot see it, is text a reader of the page never sees: a hidden-text marker after the figure, `alt text, the file's words for a picture`, and its words only with `--include-hidden` (F9). An image or a drawing outside every figure and table, such as a logo, a signature or a chart without a caption, gets a marker in place, its alt text marked the same way:
 
 ```text
 ¶7 [equation 2] crop: pdf crop paper.pdf --page 4 --equation 2
@@ -356,7 +356,6 @@ Reads pages again, with the usual method on the running macOS or with a stronger
 |---|---|
 | `pdf reparse <path>` | Reads every page again with the usual method, and replaces the cached results. `--page 7` limits it to one page. |
 | `pdf reparse <path> --page 7 --step ocr` | Reads page 7 again with the Mac's OCR, and replaces the cached result. |
-| `pdf reparse <path> --page 7 --step vlm` | Reads page 7 again with a local vision model. This step needs `pdf setup vlm` first. |
 
 Settings: none.
 
@@ -381,7 +380,6 @@ Gets the tool ready, and says what works on this Mac.
 | Command | What happens |
 |---|---|
 | `pdf setup` | Downloads the layout model. |
-| `pdf setup vlm` | Downloads the optional local vision model for hard pages. |
 | `pdf doctor` | Shows the macOS version, the models installed, the cache size, and what each missing piece would unlock. For example, the document structure of scanned pages needs macOS 26. |
 
 Settings: none.

@@ -39,7 +39,6 @@ The first three work today, built from source, and so does cropping a page or a 
 - It supports macOS 11 and newer, and no other platform.
 - The document structure of scanned pages needs macOS 26.
 - Scanned pages in Japanese or Korean need macOS 13.
-- The optional local vision model for hard pages needs Apple Silicon and macOS 14.
 - It returns text, crops and failure reports. The agent does the reasoning, so pdf-cli answers no questions by itself.
 
 ## Documents
