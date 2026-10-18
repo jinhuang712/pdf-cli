@@ -1,4 +1,4 @@
-<!-- what-we-build: drafted 2026-10-18 -->
+<!-- what-we-build: approved 2026-10-18 -->
 # Features
 
 ✅ built · 🚧 built with a gap · ⬜ planned
