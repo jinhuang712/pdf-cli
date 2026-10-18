@@ -1,4 +1,4 @@
-# Handoff — 2026-10-18
+# Handoff — 2026-10-19
 
 For whoever picks up pdf-cli next, a person or a new Claude Code session. Read this file first: it says where the project stands, what waits on the user, the direction the user has set, what to build next and how. The other docs hold the detail; `README.md` lists them.
 
@@ -6,8 +6,8 @@ For whoever picks up pdf-cli next, a person or a new Claude Code session. Read t
 
 - **Built and on `main`** (pushed, nothing half-done, no open branch): milestone M0; every task of M1, M1.1–M1.15; and M2.5, M2.6, M2.7 and M2.13 of M2.
 - **Not met yet:** the exit criteria of M1 and M2. They need the goals measured, and every goal in GOALS.md is still unmeasured: the measuring waits for the final wrap-up (the user, 2026-10-17).
-- **Docs:** the seven core docs were approved on 2026-10-18 with the direction below, and M2.13's edits the same day. M2.7's edits to DESIGNS, FEATURES, ROADMAP and README are drafted: their marks read `drafted`.
-- **Waiting on the user:** approval of M2.7's doc edits (a new decision in DESIGNS, F14 in FEATURES, M2.7 in ROADMAP, a line in README). Next in ROADMAP's order is M2.8.
+- **Docs:** all seven core docs are approved: the user approved them on 2026-10-18 with the direction below, M2.13's edits the same day, and M2.7's on 2026-10-19.
+- **Waiting on the user:** nothing. Next in ROADMAP's order is M2.8.
 
 ## The user's direction
 
