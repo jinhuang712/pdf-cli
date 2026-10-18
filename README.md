@@ -1,4 +1,4 @@
-<!-- what-we-build: drafted 2026-10-18 -->
+<!-- what-we-build: approved 2026-10-18 -->
 # pdf-cli
 
 > A PDF CLI tool that lets you read fast, cheap and accurately.

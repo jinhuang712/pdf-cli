@@ -6,8 +6,8 @@ For whoever picks up pdf-cli next, a person or a new Claude Code session. Read t
 
 - **Built and on `main`** (pushed, nothing half-done, no open branch): milestone M0; every task of M1, M1.1–M1.15; and M2.5, M2.6 and M2.13 of M2.
 - **Not met yet:** the exit criteria of M1 and M2. They need the goals measured, and every goal in GOALS.md is still unmeasured: the measuring waits for the final wrap-up (the user, 2026-10-17).
-- **Docs:** the user approved all seven core docs on 2026-10-18, with the direction below; M2.13 then set DESIGNS, FEATURES, ROADMAP and README back to `drafted`, until the user approves its edits.
-- **Waiting on the user:** approval of M2.13's doc edits. Next in ROADMAP's order is M2.7.
+- **Docs:** all seven core docs are approved: the user approved them on 2026-10-18 with the direction below, and M2.13's edits the same day.
+- **Waiting on the user:** nothing. Next in ROADMAP's order is M2.7.
 
 ## The user's direction
 
