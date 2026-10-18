@@ -1,14 +1,14 @@
 <!-- what-we-build: drafted 2026-10-18 -->
 # Roadmap
 
-**Current milestone:** M1. An agent reads born-digital and scanned PDFs through the cache.
+**Current milestone:** M2. M1's tasks are all built; its exit criteria, the goals measured and a week of daily use, wait for the final wrap-up, as every milestone's do (the user, 2026-10-17).
 
 ## Overview
 
 - ✅ **M0 — Spike.** Proven: Swift and Apple's engines carry the design. About 2 weeks.
 - ⬜ **M1 — Daily reader.** Usable: an agent reads born-digital and scanned PDFs through the cache, with keyword search and page crops. About 5–7 weeks, after M0.
 - ⬜ **M2 — Accurate layout.** Proven: two-column papers, footnotes, citations and figures read right. About 2–3 months, after M1.
-- ⬜ **M3 — Complete.** Usable: search by meaning, tables across pages, formulas and a one-command install; then a final wrap-up of detailed tests and tuning. About 1–2 months, after M2.
+- ⬜ **M3 — Complete.** Usable: search by meaning, tables across pages and a one-command install; then a final wrap-up of detailed tests and tuning. About 1–2 months, after M2.
 
 Each milestone groups its tasks by feature, in the order the tasks are built. A feature's number points to [FEATURES.md](FEATURES.md), and "Later" names the task that finishes it. A task's ID, such as M1.1, names its branches and commits.
 
@@ -47,7 +47,7 @@ The spike shipped no features. It answered the riskiest questions.
   - [x] M1.5 `pdf add`, `pdf ls`, `pdf rm` and `pdf gc`
 - **Info** (F2): the outline, page labels and section sizes
   - [x] M1.6 `pdf info` from bookmarks, page labels and the text layer, with the counts of comments, highlights and form fields, and the list of attachments and scripts
-  - Later: the figure list, with figure detection (M2.6)
+  - The figure list came with M2.6
 - **Read** (F3) and **Output basics** (F7): by page, printed page and section, with nothing dropped without a trace
   - [x] M1.7 `pdf read`, with addresses, `--json`, the budget, the provisional mark, and the marks for superscripts and subscripts
   - [x] M1.13 Comments, sticky notes, highlights, filled-in form fields and link targets, each at its position
@@ -57,13 +57,13 @@ The spike shipped no features. It answered the riskiest questions.
   - Later: search by meaning (M3.1)
 - **Crop** (F5): whole pages and regions
   - [x] M1.9 `pdf crop` for pages and regions
-  - Later: figures, tables and equations (M2.6)
+  - Figures, tables and equations came with M2.6
 - **Hidden text** (F9)
   - [x] M1.10 Hidden text replaced by a marker in place, with its words shown on request, text in layers switched off included
 - **Agent guide** (F13)
   - [x] M1.11 `pdf agent-guide` and its Claude Code skill
 - **Tests**
-  - [x] M1.12 A smoke set of 10 PDFs, and a safety set of broken PDFs and hidden-text PDFs. The safety set holds one hidden-text PDF per trick: text in the background's color, tiny, clipped, covered by an image, off the page and in a layer switched off, plus white text on a dark box, which counts as visible. It also holds PDFs with comments, form fields, links, attachments and scripts.
+  - [x] M1.12 A smoke set of 10 papers and a scan, and a safety set of broken PDFs and hidden-text PDFs. The safety set holds one hidden-text PDF per trick: text in the background's color, tiny, clipped, covered by an image, off the page and in a layer switched off, plus white text on a dark box, which counts as visible. It also holds PDFs with comments, form fields, links, attachments and scripts.
 
 **Exit criteria:** GOALS.md G2, G4, G9, G12, G13, G16 and G17, plus the author's own report after one week of daily use.
 
@@ -99,6 +99,9 @@ The spike shipped no features. It answered the riskiest questions.
   - [ ] M3.2 Tables that continue across pages, linked as one table with a crop per page
 - **Install**
   - [ ] M3.5 A Homebrew release that installs with one command
+
+M3.3, a local vision model for hard pages and formulas, was dropped on 2026-10-18 (DESIGNS.md → "Decision: no local vision model; PDFKit and Apple's OCR read, the agent looks"), and M3.4, `pdf memo`, moved to Later on 2026-10-17.
+
 **Exit criteria:** GOALS.md G1, G10, G14 and G15, measured at the final wrap-up.
 
 ## Final wrap-up ⬜
