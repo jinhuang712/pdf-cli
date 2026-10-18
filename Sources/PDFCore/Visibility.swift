@@ -1082,13 +1082,20 @@ final class Drawing {
     var textSeen = false
     /// Marked content open on the page, each level switched off or not, and how many are off.
     var marked: [Bool] = []
-    /// The marked content's IDs, beside `marked`, on the page's own level: a form's are its own.
+    /// The innermost marked-content ID open at each level, beside `marked`: an ID on the page's
+    /// own level, as a form's are its own, or the one around it.
     var markedIDs: [Int?] = []
     /// What the page draws inside marked content with an ID, an image or a shape, by the ID,
     /// which the file's structure gives alternate text for (`AltText`). At most 5,000.
     var contentMarks: [(id: Int, rect: CGRect)] = []
+    /// Records what marked content with an ID draws; past 5,000, the check is incomplete, as
+    /// the alt text of what comes after goes unread.
+    func mark(_ id: Int, _ rect: CGRect) {
+        if contentMarks.count < 5_000 { contentMarks.append((id, rect)) } else { incomplete = true }
+    }
+
     /// The innermost ID of the marked content open now.
-    var markedID: Int? { markedIDs.reversed().first { $0 != nil } ?? nil }
+    var markedID: Int? { markedIDs.last ?? nil }
     var offDepth = 0
     var depth = 0
     var operations = 0
@@ -1471,7 +1478,7 @@ final class Drawing {
             && (alpha(of: placed, over: rect)?.high ?? 1) < 0.5
         if fills, current.opacity >= 0.5, !clear {
             images.append(rect)
-            if let id = markedID, contentMarks.count < 5_000 { contentMarks.append((id, rect)) }
+            if let id = markedID { mark(id, rect) }
         }
         guard textSeen else { return }
         coverings.append(placed)
@@ -1578,7 +1585,7 @@ final class Drawing {
         let slanted = rectangle == nil && (curved || slantedLine)
         let kind: Shape = slanted ? .curve : filled && min(area.width, area.height) > 3 ? .bar : .rule
         shapes.append((area, kind))
-        if let id = markedID, contentMarks.count < 5_000 { contentMarks.append((id, area)) }
+        if let id = markedID { mark(id, area) }
     }
 
     /// The images and drawings a page shows a reader, each as a region in page space, largest
@@ -1894,8 +1901,9 @@ final class Drawing {
         }
         // Marked content, which a layer switched off hides.
         on("BMC") { _, drawing in
+            drawing.operations += 1
             drawing.marked.append(false)
-            drawing.markedIDs.append(nil)
+            drawing.markedIDs.append(drawing.markedID)
         }
         on("BDC") { scanner, drawing in
             // Each counts, so a flood of them ends the check as incomplete, not the page by time.
@@ -1919,7 +1927,7 @@ final class Drawing {
             drawing.marked.append(off)
             var id: CGPDFInteger = 0
             let marked = drawing.depth == 0 && properties.map { CGPDFDictionaryGetInteger($0, "MCID", &id) } == true
-            drawing.markedIDs.append(marked ? Int(id) : nil)
+            drawing.markedIDs.append(marked ? Int(id) : drawing.markedID)
             if off { drawing.offDepth += 1 }
         }
         on("EMC") { _, drawing in

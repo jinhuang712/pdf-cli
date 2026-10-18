@@ -377,8 +377,9 @@ enum TextLayer {
                     let caption: [Int] = Set(region.caption.map { blockOf[$0] }).sorted()
                     let inside: [Int] = Set(region.content.map { blockOf[$0] }).sorted()
                     var made = Region(kind: region.kind, number: region.number, box: fraction(region.box), caption: caption, blocks: inside)
-                    // A figure's or a table's pictures' alternate text is its own.
-                    let texts = pictures.indices.filter { alts[$0] != nil && Regions.share(of: fromTop(pictures[$0].core), inside: region.box) >= 0.5 }
+                    // A figure's or a table's pictures' alternate text is its own: those whose
+                    // markers `pdf read` leaves out for its block, by the same measure.
+                    let texts = pictures.indices.filter { alts[$0] != nil && Regions.share(of: fromTop(pictures[$0].rect), inside: region.box) >= 0.5 }
                         .compactMap { alts[$0] }
                     if region.kind != .equation, !texts.isEmpty { made.alt = texts.joined(separator: " · ") }
                     return made

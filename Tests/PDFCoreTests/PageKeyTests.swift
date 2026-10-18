@@ -9,13 +9,13 @@ let samplePaper = repoRoot.appendingPathComponent("testdata/smoke/arxiv-2608.045
 
 func coreGraphicsKeys(_ url: URL) throws -> [String] {
     let document = try #require(CGPDFDocument(url as CFURL))
-    var keyer = PageKeyer()
+    var keyer = PageKeyer(catalog: document.catalog)
     return (1...document.numberOfPages).map { keyer.key(for: document.page(at: $0)!) }
 }
 
 func pdfKitKeys(_ url: URL) throws -> [String] {
     let document = try #require(PDFDocument(url: url))
-    var keyer = PageKeyer()
+    var keyer = PageKeyer(catalog: document.documentRef?.catalog)
     return (0..<document.pageCount).map { keyer.key(for: document.page(at: $0)!.pageRef!) }
 }
 
@@ -24,6 +24,19 @@ func pdfKitKeys(_ url: URL) throws -> [String] {
         // The index reads keys through Core Graphics, and the parse through PDFKit. A
         // mismatch would look like a file that changed under the parser.
         #expect(try coreGraphicsKeys(samplePaper) == pdfKitKeys(samplePaper))
+    }
+
+    /// A page's alt text, from the file's structure tree, is part of its key: the same page
+    /// under another tree, or none, is parsed again (the M2.6 review found another file's alt
+    /// text served from the cache). A page with no tag keeps its key.
+    @Test func altTextIsInTheKey() throws {
+        let url = repoRoot.appendingPathComponent("testdata/safety/hidden-figure-alt.pdf")
+        #expect(try coreGraphicsKeys(url) == pdfKitKeys(url))
+        let document = try #require(CGPDFDocument(url as CFURL))
+        var tree = PageKeyer(catalog: document.catalog), none = PageKeyer()
+        let tagged = try #require(document.page(at: 1)), untagged = try #require(document.page(at: 2))
+        #expect(tree.key(for: tagged) != none.key(for: tagged))
+        #expect(tree.key(for: untagged) == none.key(for: untagged))
     }
 
     @Test func keysAreStable() throws {

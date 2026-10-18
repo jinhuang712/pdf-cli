@@ -39,6 +39,40 @@ import Testing
         let doi = [line("doi:10.1371/journal.pone.0008515.g004", 72, 388, width: 300),
                    line("Figure 5. In virtuo investigation of the model.", 72, 400, width: 300)]
         #expect(captions(doi) == ["figure 5"])
+        // Chinese, Russian and Japanese captions, the last numbered with full-width dashes.
+        #expect(captions([line("图 5 燃烧室内火焰传播的温度场", 72, 400)]) == ["figure 5"])
+        #expect(captions([line("Таблица 1. Сводная таблица метаанализов", 72, 400)]) == ["table 1"])
+        #expect(captions([line("図1－2－1－ 11 高齢者世帯の所得", 72, 400)]) == ["figure 1-2-1-11"])
+    }
+
+    /// A figure takes the short lines around its picture, but no line of running text, as a
+    /// paragraph's short last line next to it, and no picture beyond two lines of running text,
+    /// when one on its other side is its own.
+    @Test func aFigureTakesNoRunningText() {
+        let paragraph = [line("Selecting Tiers helps set the overall tone for how an organization will", 72, 150, width: 400),
+                         line("manage its cybersecurity risks.", 72, 162, width: 150), line("Figure 4: CSF Tiers.", 72, 290)]
+        let tiers = Regions.find(paragraph, pictures: [CGRect(x: 72, y: 178, width: 400, height: 100)], rules: [], size: size).regions
+        #expect(tiers.first?.content == [])
+        let between = [line("Annual report of the committee", 72, 60)]
+            + (0..<5).map { line("The committee reviewed the budget and found the reserve fund in good order \($0).", 72, 200 + 12 * CGFloat($0), width: 450) }
+            + [line("Figure 1. Spending by quarter.", 72, 270)]
+        let pictures = [CGRect(x: 72, y: 80, width: 450, height: 110), CGRect(x: 72, y: 290, width: 300, height: 120)]
+        let chart = Regions.find(between, pictures: pictures, rules: [], size: size).regions
+        #expect(chart.first?.content == [] && chart.first?.box.maxY == 410)
+    }
+
+    /// A table's rules are the pieces of one rule joined, about as wide as its first; a rule
+    /// across the page under a table in one column, and a footer's rule, are not its.
+    @Test func aTableTakesItsOwnRules() {
+        func pieces(_ y: CGFloat) -> [CGRect] { [72, 150, 220].map { CGRect(x: $0, y: y, width: $0 == 220 ? 70 : 78, height: 0.5) } }
+        let rules = pieces(100) + pieces(115) + pieces(160) + [CGRect(x: 72, y: 300, width: 468, height: 0.5), CGRect(x: 72, y: 750, width: 468, height: 0.5)]
+        let lines = [line("Table 2: Results.", 72, 85), line("Method Score", 80, 103, width: 150), line("Ours 0.91", 80, 125, width: 150),
+                     line("Base 0.80", 80, 140, width: 150)]
+            + (0..<6).map { line("Running text of the left column goes on below the table here \($0).", 72, 180 + 18 * CGFloat($0), width: 218) }
+            + (0..<6).map { line("Running text of the right column goes on beside the table here \($0).", 322, 180 + 18 * CGFloat($0), width: 218) }
+        let table = Regions.find(lines, pictures: [], rules: rules, size: size).regions.first
+        #expect(table?.content == [1, 2, 3])
+        #expect(table.map { $0.box.maxX < 300 && $0.box.maxY < 170 } == true)
     }
 
     /// A figure is the picture next to its caption; a table, the rules that chain from its
@@ -84,6 +118,9 @@ import Testing
         let found = Regions.equations(lines, visible: lines.map(\.text), taken: [], size: size)
         #expect(found.map(\.number) == ["3"])
         #expect(found.first?.content == [1, 2, 3])
+        // A regression table's header of column numbers is no equation.
+        let header = [line("Specification (1) (2) (3) (4) (5)", 72, 400, width: 400, tag: "5")]
+        #expect(Regions.equations(header, visible: header.map(\.text), taken: [], size: size).isEmpty)
     }
 
     /// The fixture's page: a chart tagged with planted alternate text and its caption, a table

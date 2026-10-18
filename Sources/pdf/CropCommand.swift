@@ -68,7 +68,7 @@ struct CropCommand: ParsableCommand {
         var region = bbox.flatMap(Box.parse)?.outward
         var caption: String?
         if let wanted {
-            let found = try Self.locate(wanted, page: page, path: path, docID: docID, store: store, reader: reader)
+            let found = try Self.locate(wanted, page: page, path: path, password: password, docID: docID, store: store, reader: reader)
             number = found.page + 1
             region = found.region.box.outward
             caption = found.caption
@@ -110,10 +110,16 @@ struct CropCommand: ParsableCommand {
         }
     }
 
+    /// Why the figure, table or equation asked for was not cropped: an error with no usage
+    /// after it, as the command was used right.
+    struct NotFound: Error, CustomStringConvertible {
+        var description: String
+    }
+
     /// The figure, table or equation asked for: on the page given, or else in the pages parsed so
     /// far, or else, when none of those holds it, in the whole file once it is parsed.
-    static func locate(_ wanted: (kind: Region.Kind, number: String), page: Int?, path: String, docID: String, store: Store,
-                       reader: Reader) throws -> (page: Int, region: Region, caption: String) {
+    static func locate(_ wanted: (kind: Region.Kind, number: String), page: Int?, path: String, password: String?, docID: String,
+                       store: Store, reader: Reader) throws -> (page: Int, region: Region, caption: String) {
         func layers() throws -> [(index: Int, layer: PDFCore.PageText)] {
             try InfoCommand.cachedPages(docID: docID, store: store).compactMap { page -> (index: Int, layer: PDFCore.PageText)? in
                 page.result.pageText.map { (page.index, $0) }
@@ -124,7 +130,7 @@ struct CropCommand: ParsableCommand {
         var found = Region.find(wanted.kind, wanted.number, in: pages)
         let keys = try store.pageKeys(docID: docID)
         if found.isEmpty, page != nil || pages.count < keys.count {
-            _ = try reader.read(path: path, pages: page.map { [$0 - 1] })
+            _ = try reader.read(path: path, pages: page.map { [$0 - 1] }, password: password)
             pages = try layers()
             if let page { pages = pages.filter { $0.index == page - 1 } }
             found = Region.find(wanted.kind, wanted.number, in: pages)
@@ -140,10 +146,10 @@ struct CropCommand: ParsableCommand {
             if wanted.kind != .equation {
                 message += ". A table drawn without rules, or a figure with no caption, is not found; pdf crop --page N --bbox crops any region"
             }
-            throw ValidationError(message)
+            throw NotFound(description: message)
         }
         if found.count > 1, Set(found.map(\.page)).count > 1 {
-            throw ValidationError("\(name) is on " + found.map { "p.\($0.page + 1)" }.joined(separator: " and ") + "; add --page")
+            throw NotFound(description: "\(name) is on " + found.map { "p.\($0.page + 1)" }.joined(separator: " and ") + "; add --page")
         }
         let layer = pages.first { $0.index == first.page }!.layer
         return (first.page, first.region, first.region.captionText(in: layer))

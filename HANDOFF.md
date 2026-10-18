@@ -1,10 +1,10 @@
-# Handoff — 2026-10-17
+# Handoff — 2026-10-18
 
 Where pdf-cli stands, what is in flight, and how the work has been done, for whoever picks it up next: a person, or a new Claude Code session. The project's own docs hold the detail; this file points into them and records what lives only in the working session.
 
 ## Where things stand
 
-**On `main`** (pushed): milestone M0, every task of milestone M1, M1.1–M1.15, and M2.5 of M2.
+**On `main`** (pushed): milestone M0, every task of milestone M1, M1.1–M1.15, and M2.5 and M2.6 of M2.
 
 | Command | Task | What it does |
 |---|---|---|
@@ -13,7 +13,7 @@ Where pdf-cli stands, what is in flight, and how the work has been done, for who
 | `pdf read` | M1.7 | Text by page, section or printed page, within a 5,000-token budget, with `next:` lines |
 | `pdf read --include-hidden` | M1.10 | Text a reader cannot see is a marker in place; this shows its words, labelled |
 | `pdf search` | M1.8 | Keyword search per paragraph (SQLite FTS5) and `--regex`, in one PDF or the library |
-| `pdf crop` | M1.9 | A page or region as a PNG sized to Claude's image limits |
+| `pdf crop` | M1.9, M2.6 | A page, a region, or a figure, a table or an equation by its number, as a PNG sized to Claude's image limits |
 | `pdf pick` | M1.3 | The agent's choice between two readings of an unsure word |
 | `pdf agent-guide` | M1.11 | The guide that teaches an agent the tool; `--install claude-code` writes it as a Claude Code skill |
 
@@ -23,11 +23,13 @@ Under them: worker processes with time and memory limits and a shared pool of sl
 
 **The TODO list is done** (2026-10-16, its last review fixed on 2026-10-17): the index walks the page tree once, `pdf ls` judges pages from a stored verdict column, a page's layer is decoded once per command, a locked file points to `--password-stdin`, which asks on a terminal, `pdf info`'s section table is capped, and a page whose drawn text PDFKit leaves out is flagged, or read by OCR when it lost 30% or more. The licence notices of `pdf setup`'s models moved to M2.11. Reports: `reports/TODO-page-tree-listing-password.md` and `reports/TODO-text-pdfkit-leaves-out.md`. The second review of the last fixes found 10 problems; 9 are fixed, and the chords a music font stacks stay a limit. Since then a place PDFKit left text out of shows only as its crop: what its strings spell goes out nowhere, `--raw` included, as each review found a new hidden string that `--raw` spelled.
 
-**M1.12, the test sets,** landed on 2026-10-17: `reports/M1.12-test-sets.md`. `scripts/smoke-check.sh` reads the 11 files of `testdata/smoke` whole and holds their flags to `testdata/smoke/expected-flags.tsv`; `scripts/safety-check.sh` runs the 23 files of `testdata/safety` and `hidden.pdf`, holds every planted string the generator lists in `testdata/safety/planted.tsv` to the normal output, and prints goal G16's line: 71 of 71 kept out, no crash or hang, since M2.5's review. Its review found that 4 of `hidden.pdf`'s pages let the last word of their planted line read, since M1.10; fixed. Both run inside `scripts/test-cache.sh`. The set found that a page whose content stream does not decode read as a fine empty page; it is now flagged low-quality, with a block that says part of the page is missing. Parser version 14 since M2.5, cache schema 8.
+**M1.12, the test sets,** landed on 2026-10-17: `reports/M1.12-test-sets.md`. `scripts/smoke-check.sh` reads the 11 files of `testdata/smoke` whole and holds their flags to `testdata/smoke/expected-flags.tsv`; `scripts/safety-check.sh` runs the 26 files of `testdata/safety` and `hidden.pdf`, holds every planted string the generator lists in `testdata/safety/planted.tsv` to the normal output, and prints goal G16's line: 72 of 72 kept out, no crash or hang, since M2.6. Its review found that 4 of `hidden.pdf`'s pages let the last word of their planted line read, since M1.10; fixed. Both run inside `scripts/test-cache.sh`. The set found that a page whose content stream does not decode read as a fine empty page; it is now flagged low-quality, with a block that says part of the page is missing. Parser version 15, page key 2 and index checks 10 since M2.6, cache schema 8.
 
 **M1.13, annotations,** landed on 2026-10-17: `reports/M1.13-annotations.md`. `pdf read` shows comments, notes, marks on words with the words a reader sees under them, filled-in fields and links, after the block each sits on, links inline in Markdown. They come from the file's facts, `Store.indexChecks` 8, so a file that gains highlights shows them with no page parsed again. Read them with CGPDF, never with PDFKit's annotation objects: PDFKit followed a link action chained to itself until it crashed.
 
 **M2.5, columns and running headers,** landed on 2026-10-17: `reports/M2.5-columns-headers.md`. The parse keeps PDFKit's order of a page's lines and moves only a band of two columns of running text, left column first (`ReadingOrder`); parser version 14. Running headers, footers, page numbers and publisher stamps are judged at read time against the pages within 4 parsed so far (`Furniture`): `pdf read` sets them aside with a count, `--headers` shows them, `pdf info` lists them, and headings leave them out. The check for an uncertain reading order moved to the final wrap-up, with M2.12. Its review found 10 problems, 7 fixed; a block with hidden text is never set aside, and `testdata/safety/hidden-in-page-number.pdf` makes G16 71 of 71.
+
+**M2.6, figures, tables and equations,** landed on 2026-10-18: `reports/M2.6-figures-tables-equations.md`. The parse finds them by rules, with no model (`Regions`): a numbered caption, in English, Chinese, Japanese, Russian and some European languages, with M1.14's pictures or the shapes drawn near it, the horizontal rules that chain from a table's caption, and an equation's number set apart. `pdf read` shows each as one block with its caption and its `pdf crop --figure 4` command, its text set aside, counted, and shown with `--raw`; `pdf info` lists them; `pdf search` names a hit inside one. On the smoke set's ten papers: 64 figures, 77 tables, 84 equations. The user's decisions: equations as LaTeX is the next step, M2.13, rebuilt by rules from the glyphs and checked by drawing it back; a picture's alt text is hidden text, shown only with `--include-hidden` (`AltText`, `testdata/safety/hidden-figure-alt.pdf`). Its review found 12 problems, 9 fixed, 2 in part, 1 kept: figures and tables that took running text, two hostile structures that ran a page out of time, now `broken-structure-loop.pdf` and `broken-marked-flood.pdf`, and a page key that left out the alt text.
 
 **Sample PDFs stay local** (the user, 2026-10-16): PDFs downloaded to measure M1's goals, as many as can be gathered, are never committed. 132 of them, 669 MB, live in the main checkout's `private/testset/`, which `.gitignore` keeps out: journal papers from PMC's open-access bucket and arXiv, "Attention Is All You Need" among them, which the user asked for, open textbooks, reports, essays, scans with and without a text layer, and Chinese, Japanese, Arabic, Hebrew and Russian files. `manifest.tsv` there gives each one's source, licence and SHA-256; `fetch_testset.py` downloads them again. 7 of the 139 listed failed: GAO refused, and NASA's and the CIA's links gave web pages. Further downloads wait for the user's OK on the sources.
 
@@ -39,10 +41,10 @@ Under them: worker processes with time and memory limits and a shared pool of sl
 2. **M1.11** landed on 2026-10-16: `reports/M1.11-agent-guide.md`. The guide lives in `Sources/PDFCore/AgentGuide.swift`; a new command or flag needs a line there, or a place on the test's short list of flags left out, or `Tests/pdfTests/AgentGuideTests.swift` fails.
 3. **M1.12** landed on 2026-10-17; its `carries-*.pdf` are M1.13's fixtures.
 4. **M1.13** and **M1.14** landed on 2026-10-17: `reports/M1.13-annotations.md`, `reports/M1.14-pictures.md`. Images and drawings are markers with their crop commands; M1.14's review found a stamp's name could carry a planted line into the output, now fixed, and boxes, bands and shaded cells read as drawings, now none.
-5. **M2.5** landed on 2026-10-17. **M2.6** next: figures, tables and equations detected, listed by `pdf info` and cropped with `pdf crop`. M2.1–M2.3 and M2.12 wait for the final wrap-up, and M2.4 only comes if a goal fails with rules alone.
+5. **M2.5** landed on 2026-10-17, **M2.6** on 2026-10-18. Next, in ROADMAP's order, **M2.7**, footnotes and other notes; **M2.13**, equations as LaTeX, builds on M2.6's equations and can come first if the user wants. M2.1–M2.3 and M2.12 wait for the final wrap-up, and M2.4 only comes if a goal fails with rules alone.
 6. M1's exit criteria: GOALS.md G2, G4, G9, G12, G13, G16 and G17, plus a week of the author's own daily use. Every goal is still unmeasured.
 
-`TODO.md` holds the follow-ups without a milestone: four, a content stream that inflates to 600 MB, which times its page out, links past the first 1,000 of a file, the cost of joining a page's shapes into drawings, and running headers that `pdf search` still finds.
+`TODO.md` holds the follow-ups without a milestone: five, a content stream that inflates to 600 MB, which times its page out, links past the first 1,000 of a file, the cost of joining a page's shapes into drawings, running headers that `pdf search` still finds, and `pdf crop --figure N` parsing a whole long file before it says a number is not there.
 
 ## How the work has been done
 

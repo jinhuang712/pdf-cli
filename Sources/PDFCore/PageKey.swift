@@ -30,23 +30,30 @@ extension SHA256 {
 }
 
 /// Hashes what a page draws: its boxes, its rotation, its content streams and the resources
-/// they use, such as fonts and images. Annotations, such as highlights and comments, stay out,
-/// so adding one leaves the key unchanged (DESIGNS.md → Principles → Cache).
+/// they use, such as fonts and images, and the alt text the file's structure tree gives what it
+/// draws (`AltText`). Annotations, such as highlights and comments, stay out, so adding one
+/// leaves the key unchanged (DESIGNS.md → Principles → Cache).
 ///
 /// One keyer serves one document. It remembers the hash of each shared object, such as a font
 /// that every page uses, so the object is read once.
 struct PageKeyer {
-    static let version = "pdf-cli page key 1"
+    static let version = "pdf-cli page key 2"
     /// Bounds the work on a hostile file whose objects nest without end.
     static let nodeBudget = 2_000_000
     static let maxDepth = 64
 
+    /// The document's catalog, which holds its structure tree.
+    private let catalog: CGPDFDictionaryRef?
     private var memo: [UnsafeRawPointer: SHA256.Digest] = [:]
     private var active: Set<UnsafeRawPointer> = []
     private var budget = 0
     /// How many times a hash was cut short by the budget, the depth limit or a loop. Such a
     /// hash depends on reading order, so it is never remembered.
     private var cuts = 0
+
+    init(catalog: CGPDFDictionaryRef? = nil) {
+        self.catalog = catalog
+    }
 
     mutating func key(for page: CGPDFPage) -> String {
         key(PageGeometry(page), page.dictionary)
@@ -82,6 +89,8 @@ struct PageKeyer {
         if let resources = PageKeyer.inherited(dictionary, "Resources") {
             feed(resources, into: &hasher, depth: 0)
         }
+        hasher.add("Structure")
+        hasher.add(AltText.digest(dictionary, catalog: catalog))
         return Hashing.hex(hasher.finalize())
     }
 

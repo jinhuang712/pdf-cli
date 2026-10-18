@@ -805,3 +805,38 @@ try corrupt.write([Page(name: "a page whose content stream is not what its filte
                         contentDictionary: "/Filter /FlateDecode")],
                   resources: "<< /Font << /F1 \(corruptFont) 0 R >> >>", to: "broken-stream.pdf", folder: "testdata/safety")
 print("wrote testdata/safety: broken-not-a-pdf.pdf, broken-empty.pdf, broken-cut-short.pdf, broken-xref.pdf, broken-stream.pdf")
+
+/// Bytes compressed as FlateDecode reads them: zlib's header, deflate, and the Adler-32 sum.
+func flate(_ bytes: [UInt8]) throws -> [UInt8] {
+    let deflated = try (Data(bytes) as NSData).compressed(using: .zlib) as Data
+    var a: UInt32 = 1, b: UInt32 = 0
+    for byte in bytes {
+        a = (a + UInt32(byte)) % 65521
+        b = (b + a) % 65521
+    }
+    let sum = (b << 16) | a
+    return [0x78, 0x9C] + Array(deflated) + [UInt8(sum >> 24), UInt8((sum >> 16) & 0xFF), UInt8((sum >> 8) & 0xFF), UInt8(sum & 0xFF)]
+}
+
+// Two hostile files from the M2.6 review, each of which took its page past the time limit: a
+// structure tree whose parent tree lists itself as its own kid twice, which a walk of it with
+// no memory of the nodes it saw takes 2^32 steps over, and a figure drawn in 300,000 levels of
+// marked content around 2,000 shapes, each of which looked through every level for its ID.
+let looped = Writer()
+let loopedFont = looped.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>")
+let loopedElement = looped.add("<< /Type /StructElem /S /Figure /Alt (Alt text of a chart.) /K 0 >>")
+let loopedTree = looped.objects.count + 1
+looped.add("<< /Kids [\(loopedTree) 0 R \(loopedTree) 0 R] >>")
+let loopedRoot = looped.add("<< /Type /StructTreeRoot /K [\(loopedElement) 0 R] /ParentTree \(loopedTree) 0 R >>")
+try looped.write([Page(name: "a structure tree whose parent tree is its own kid twice",
+                       content: visible + "/Figure << /MCID 0 >> BDC q 0.2 0.4 0.8 rg 100 400 200 120 re f Q EMC\n", extra: "/StructParents 0")],
+                 resources: "<< /Font << /F1 \(loopedFont) 0 R >> >>", catalog: "/StructTreeRoot \(loopedRoot) 0 R /MarkInfo << /Marked true >>",
+                 to: "broken-structure-loop.pdf", folder: "testdata/safety")
+let flood = Writer()
+let floodFont = flood.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>")
+let floodMarks = String(repeating: "/X BMC\n", count: 300_000)
+    + (0..<2_000).map { "\(72 + ($0 % 40) * 12) \(300 + ($0 / 40) * 6) 4 4 re f\n" }.joined()
+let floodForm = flood.add(stream: "/Type /XObject /Subtype /Form /BBox [0 0 612 792] /Filter /FlateDecode", try flate(Array(floodMarks.utf8)))
+try flood.write([Page(name: "2,000 shapes in 300,000 levels of marked content", content: visible + "/Figure << /MCID 0 >> BDC /Fx Do EMC\n")],
+                resources: "<< /Font << /F1 \(floodFont) 0 R >> /XObject << /Fx \(floodForm) 0 R >> >>",
+                to: "broken-marked-flood.pdf", folder: "testdata/safety")

@@ -479,8 +479,9 @@ public enum Output {
             return best.length == 0 ? nil : picked[best.start..<best.start + best.length].joined(separator: " ")
         }
         // Each image and drawing the page shows, with the command that crops it, but those inside
-        // a figure or a table, whose block crops them.
-        let covered = (layer?.regions ?? []).filter { $0.kind != .equation }.map(\.box)
+        // a figure or a table, whose block crops them and carries their alt text. A page in doubt
+        // as a whole shows no such block, so it shows them all.
+        let covered = heldBack ? [] : (layer?.regions ?? []).filter { $0.kind != .equation }.map(\.box)
         let outside = (layer?.pictures ?? []).filter { picture in !covered.contains { Output.share(of: picture.box, inside: $0) >= 0.5 } }
         let pictures = outside.map { picture -> Note in
             let box = Box(x: max(0, picture.box.x), y: max(0, picture.box.y), width: min(1, picture.box.width), height: min(1, picture.box.height))

@@ -16,18 +16,37 @@ enum AltText {
 
     /// The alternate text of each marked-content ID on the page that has one.
     static func lookup(_ page: CGPDFPage, ids: Set<Int>) -> [Int: String] {
-        guard !ids.isEmpty, let dictionary = page.dictionary, let catalog = page.document?.catalog else { return [:] }
+        guard !ids.isEmpty, let dictionary = page.dictionary else { return [:] }
+        return alts(dictionary, catalog: page.document?.catalog, ids: ids)
+    }
+
+    /// What the parse can read of the structure tree for a page, for its cache key
+    /// (`PageKeyer`): the alternate text of every ID on it, so a file that gains alt text, or
+    /// another file with the same page, is parsed again.
+    static func digest(_ dictionary: CGPDFDictionaryRef, catalog: CGPDFDictionaryRef?) -> String {
+        var parents: CGPDFInteger = 0
+        guard CGPDFDictionaryGetInteger(dictionary, "StructParents", &parents) else { return "none" }
+        let found = alts(dictionary, catalog: catalog, ids: nil).sorted { $0.key < $1.key }
+        return "parents \(parents)" + found.map { "\u{0}\($0.key) \($0.value)" }.joined()
+    }
+
+    /// The alternate text of each ID in `ids` that has one, or of every ID on the page, at most
+    /// 10,000, with `ids` nil.
+    static func alts(_ dictionary: CGPDFDictionaryRef, catalog: CGPDFDictionaryRef?, ids: Set<Int>?) -> [Int: String] {
+        guard let catalog else { return [:] }
+        var seen = Set<CGPDFDictionaryRef>()
         var parents: CGPDFInteger = 0
         var root: CGPDFDictionaryRef?, tree: CGPDFDictionaryRef?
         guard CGPDFDictionaryGetInteger(dictionary, "StructParents", &parents),
               CGPDFDictionaryGetDictionary(catalog, "StructTreeRoot", &root), let root,
               CGPDFDictionaryGetDictionary(root, "ParentTree", &tree), let tree,
-              let elements = entry(tree, key: Int(parents))
+              let elements = entry(tree, key: Int(parents), seen: &seen)
         else { return [:] }
         var array: CGPDFArrayRef?
         guard CGPDFObjectGetValue(elements, .array, &array), let array else { return [:] }
         var found: [Int: String] = [:]
-        for id in ids where id >= 0 && id < CGPDFArrayGetCount(array) {
+        let all = 0..<min(CGPDFArrayGetCount(array), 10_000)
+        for id in ids.map({ $0.filter { all.contains($0) }.sorted() }) ?? Array(all) {
             var element: CGPDFDictionaryRef?
             guard CGPDFArrayGetDictionary(array, id, &element), var current = element else { continue }
             // The element's own text, or its nearest parent's, as a figure whose parts are each
@@ -50,9 +69,10 @@ enum AltText {
     }
 
     /// A number tree's value for a key: its `/Nums`, or the kid whose `/Limits` hold the key, at
-    /// most 32 levels down.
-    static func entry(_ node: CGPDFDictionaryRef, key: Int, depth: Int = 0) -> CGPDFObjectRef? {
-        guard depth < 32 else { return nil }
+    /// most 32 levels down, each node once, 10,000 nodes at most: a node listed as its own kid
+    /// twice would otherwise take 2^32 visits.
+    static func entry(_ node: CGPDFDictionaryRef, key: Int, depth: Int = 0, seen: inout Set<CGPDFDictionaryRef>) -> CGPDFObjectRef? {
+        guard depth < 32, seen.count < 10_000, seen.insert(node).inserted else { return nil }
         var nums: CGPDFArrayRef?
         if CGPDFDictionaryGetArray(node, "Nums", &nums), let nums {
             let count = CGPDFArrayGetCount(nums)
@@ -76,7 +96,8 @@ enum AltText {
                CGPDFArrayGetInteger(limits, 1, &high), key < Int(low) || key > Int(high) {
                 continue
             }
-            if let found = entry(kid, key: key, depth: depth + 1) { return found }
+            if let found = entry(kid, key: key, depth: depth + 1, seen: &seen) { return found }
+            if seen.count >= 10_000 { return nil }
         }
         return nil
     }

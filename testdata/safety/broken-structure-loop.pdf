@@ -1,0 +1,47 @@
+%PDF-1.7
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R /StructTreeRoot 6 0 R /MarkInfo << /Marked true >> >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [7 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+4 0 obj
+<< /Type /StructElem /S /Figure /Alt (Alt text of a chart.) /K 0 >>
+endobj
+5 0 obj
+<< /Kids [5 0 R 5 0 R] >>
+endobj
+6 0 obj
+<< /Type /StructTreeRoot /K [4 0 R] /ParentTree 5 0 R >>
+endobj
+7 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 8 0 R /Resources << /Font << /F1 3 0 R >> >> /StructParents 0 >>
+endobj
+8 0 obj
+<<  /Length 225 >>
+stream
+BT /F1 12.0 Tf 72 720 Td (Visible words before the trick on this page.) Tj ET
+BT /F1 12.0 Tf 72 600 Td (Visible words after the trick on this page.) Tj ET
+/Figure << /MCID 0 >> BDC q 0.2 0.4 0.8 rg 100 400 200 120 re f Q EMC
+
+endstream
+endobj
+xref
+0 9
+0000000000 65535 f 
+0000000009 00000 n 
+0000000109 00000 n 
+0000000166 00000 n 
+0000000263 00000 n 
+0000000346 00000 n 
+0000000387 00000 n 
+0000000459 00000 n 
+0000000602 00000 n 
+trailer
+<< /Size 9 /Root 1 0 R >>
+startxref
+879
+%%EOF

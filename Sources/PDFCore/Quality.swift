@@ -120,8 +120,11 @@ public struct PageMeasures: Codable, Equatable, Sendable {
         let blocks = layer.blocks.map(\.agreement)
         blockAgreements = blocks.contains { $0 != nil } ? blocks : nil
         // Words inside a figure, a table or an equation go aside with its text, which the agent
-        // reads from the image: their doubt flags no page.
-        let inside = Set((layer.regions ?? []).flatMap { region in region.blocks.filter { !region.caption.contains($0) } })
+        // reads from the image: their doubt flags no page. A block with hidden text is never set
+        // aside (`Output`), so its doubt stays.
+        let inside = Set((layer.regions ?? []).flatMap { region in
+            region.blocks.filter { !region.caption.contains($0) && layer.blocks.indices.contains($0) && layer.blocks[$0].hidden?.isEmpty ?? true }
+        })
         let spans = (layer.unsure ?? []).filter { !inside.contains($0.block) }
         unsure = spans.isEmpty ? nil : spans
         unread = layer.unread.map(\.count)

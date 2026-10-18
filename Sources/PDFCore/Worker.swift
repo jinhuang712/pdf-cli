@@ -71,7 +71,7 @@ public enum Worker {
             return CGPDFStringCopyTextString(value) as String?
         }
         emit(WorkerEvent(kind: .opened, pageCount: count, producer: info("Producer"), title: info("Title")))
-        var keyer = PageKeyer()
+        var keyer = PageKeyer(catalog: document.catalog)
         // One walk of the page tree, where CGPDF would number its pages alike: asking CGPDF for
         // each page by its number took 17 s on a flat tree of 30,000 pages.
         let tree = PageTree(document)
@@ -163,7 +163,7 @@ public enum Worker {
             emit(WorkerEvent(kind: .openFailed, reason: OpenFailure.lockedReason))
             return 0
         }
-        var keyer = PageKeyer()
+        var keyer = PageKeyer(catalog: document.documentRef?.catalog)
         for index in pages {
             emit(WorkerEvent(kind: .start, page: index))
             plantedFault(at: index, phase: "")
