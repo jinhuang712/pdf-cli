@@ -67,11 +67,23 @@ struct CropCommand: ParsableCommand {
         var number = page ?? 1
         var region = bbox.flatMap(Box.parse)?.outward
         var caption: String?
+        // An equation's LaTeX that the agent kept, to check against the image, and the number to
+        // keep one by.
+        var kept: Transcript?
+        var equationNumber: String?
         if let wanted {
             let found = try Self.locate(wanted, page: page, path: path, password: password, docID: docID, store: store, reader: reader)
             number = found.page + 1
             region = found.region.box.outward
             caption = found.caption
+            if wanted.kind == .equation {
+                equationNumber = found.region.number
+                let keys = try store.pageKeys(docID: docID)
+                if keys.indices.contains(found.page) {
+                    kept = try Transcripts().transcripts(keys: [keys[found.page]])[keys[found.page]]?
+                        .first { $0.kind == .equation && $0.number == Region.normalized(found.region.number) }
+                }
+            }
         }
         let made: Crop.Made
         do {
@@ -98,15 +110,30 @@ struct CropCommand: ParsableCommand {
                 var height: Int
                 var tokens: Int
                 var caption: String?
+                var latex: String?
+                var transcribed: String?
             }
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.withoutEscapingSlashes, .sortedKeys]
             print(String(decoding: try encoder.encode(Body(file: path, page: number, bbox: region.map(Output.format), image: made.url.path,
-                                                           width: made.width, height: made.height, tokens: tokens, caption: caption)),
+                                                           width: made.width, height: made.height, tokens: tokens, caption: caption,
+                                                           latex: kept?.text, transcribed: kept?.day)),
                          as: UTF8.self))
         } else {
             print("\(made.url.path)  (~\(Info.thousands(tokens)) image tokens, \(made.width)×\(made.height) px)")
-            if let caption, !caption.isEmpty { print("p.\(number) · caption: \(caption)") } else if wanted != nil { print("p.\(number)") }
+            if let equationNumber {
+                let keep = "pdf transcribe \(Output.quoted(path)) --page \(number) --equation \(equationNumber) <<'EOF'"
+                if let kept {
+                    print("p.\(number) · LaTeX kept \(kept.day), which pdf read shows; check it against the image, and replace it with: \(keep)")
+                    print(kept.text.split(separator: "\n", omittingEmptySubsequences: false).map { "  \($0)" }.joined(separator: "\n"))
+                } else {
+                    print("p.\(number) · once read, keep its LaTeX for later reads: \(keep), then the LaTeX, then EOF")
+                }
+            } else if let caption, !caption.isEmpty {
+                print("p.\(number) · caption: \(caption)")
+            } else if wanted != nil {
+                print("p.\(number)")
+            }
         }
     }
 

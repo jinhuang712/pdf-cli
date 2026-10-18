@@ -103,6 +103,7 @@ struct ReadCommand: ParsableCommand {
         let annotations = Dictionary(grouping: facts?.annotations ?? [], by: \.page)
         let limit = Self.tokens(budget)!
         let picks = try Picks().picks(keys: keys)
+        let transcripts = try Transcripts().transcripts(keys: keys)
         let flags =
             (raw ? " --raw" : "") + (includeHidden ? " --include-hidden" : "") + (headers ? " --headers" : "")
             + (format == .text ? " --format text" : "")
@@ -112,7 +113,7 @@ struct ReadCommand: ParsableCommand {
         let named = scope
         var document = Output.Document(
             file: path, pageCount: pageCount, style: format == .md ? .md : .text, raw: raw, includeHidden: includeHidden,
-            headers: headers, picks: picks, budget: limit,
+            headers: headers, picks: picks, transcripts: transcripts, budget: limit,
             continuation: { page, block, offset in
                 let rest = named == "pages" ? " --page " + Self.spec(Array(order.drop { $0 != page })) : named
                 return "pdf read \(quotedPath)\(rest) --from \(Output.address(page: page, block: block, offset: offset))\(flags)"

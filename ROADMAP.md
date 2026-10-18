@@ -1,4 +1,4 @@
-<!-- what-we-build: approved 2026-10-18 -->
+<!-- what-we-build: drafted 2026-10-18 -->
 # Roadmap
 
 **Current milestone:** M2. M1's tasks are all built; its exit criteria, the goals measured and a week of daily use, wait for the final wrap-up, as every milestone's do (the user, 2026-10-17).
@@ -75,7 +75,7 @@ The spike shipped no features. It answered the riskiest questions.
   - [x] M2.5 Reading order across columns, with running headers, footers and publisher stamps set aside, counted in the summary line and shown with `--headers`
 - **Crop** (F5) and **Info** (F2): figures, tables and equations
   - [x] M2.6 Figures, tables and equations detected, listed by `pdf info` and cropped with `pdf crop`. Each table's and figure's text gives way to its block and stays behind `--raw`, and alt text shows with its figure. Found from numbered captions, M1.14's pictures and drawn shapes, and horizontal rules; an equation from its number set apart. Alt text is hidden text, shown only with `--include-hidden` (the user, 2026-10-17).
-  - [ ] M2.13 Equations as LaTeX, read by the agent: it reads an equation's crop and writes the LaTeX back with a command, as `pdf pick` saves a choice; the cache keeps it with the page, so later reads show the LaTeX in place, labelled as the agent's reading, with no crop. The tool rebuilds no LaTeX itself (the user, 2026-10-18). See DESIGNS.md → "Decision: the agent reads figures, tables and equations from their crops, and its LaTeX is kept".
+  - [x] M2.13 Equations as LaTeX, read by the agent: it reads an equation's crop and writes the LaTeX back with a command, as `pdf pick` saves a choice; the cache keeps it with the page, so later reads show the LaTeX in place, labelled as the agent's reading, with no crop. The tool rebuilds no LaTeX itself (the user, 2026-10-18). See DESIGNS.md → "Decision: the agent reads figures, tables and equations from their crops, and its LaTeX is kept". Built as `pdf transcribe <pdf> --page N --equation 5`, the LaTeX on standard input, and kept beside the picks; `pdf crop --equation` shows it, to check by.
   - Later: tables that continue across pages (M3.2)
 - **Notes** (F14)
   - [ ] M2.7 Footnotes, endnotes, headnotes, margin notes and author notes

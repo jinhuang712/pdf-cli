@@ -1,4 +1,4 @@
-<!-- what-we-build: approved 2026-10-18 -->
+<!-- what-we-build: drafted 2026-10-18 -->
 # Features
 
 ✅ built · 🚧 built with a gap · ⬜ planned
@@ -116,13 +116,30 @@ A table appears as a table block in place of its cells, where its caption or its
   crop: pdf crop paper.pdf --page 6 --table 3
 ```
 
-A figure appears the same way, as a figure block with its caption and the command that crops it; its labels, as a chart's ticks, go aside as `[figure text]`. A numbered equation is a block with its number and its crop, its symbols aside as `[equation text: its layout lost]`, since PDFKit gives a display's lines out of place. The agent reads it from the crop, and with M2.13 writes its LaTeX back, which later reads show in place. A figure's alt text, which a tagged file gives for readers who cannot see it, is text a reader of the page never sees: a hidden-text marker after the figure, `alt text, the file's words for a picture`, and its words only with `--include-hidden` (F9). An image or a drawing outside every figure and table, such as a logo, a signature or a chart without a caption, gets a marker in place, its alt text marked the same way:
+A figure appears the same way, as a figure block with its caption and the command that crops it; its labels, as a chart's ticks, go aside as `[figure text]`. A numbered equation is a block with its number and its crop, its symbols aside as `[equation text: its layout lost]`, since PDFKit gives a display's lines out of place. The agent reads it from the crop and keeps its LaTeX with `pdf transcribe`, below. A figure's alt text, which a tagged file gives for readers who cannot see it, is text a reader of the page never sees: a hidden-text marker after the figure, `alt text, the file's words for a picture`, and its words only with `--include-hidden` (F9). An image or a drawing outside every figure and table, such as a logo, a signature or a chart without a caption, gets a marker in place, its alt text marked the same way:
 
 ```text
 ¶7 [equation 2] crop: pdf crop paper.pdf --page 4 --equation 2
 
 [image] crop: pdf crop paper.pdf --page 3 --bbox 0.62,0.08,0.30,0.12
 ```
+
+An equation the agent has read is read once. `pdf transcribe` keeps the LaTeX the agent read from its crop, given on standard input, and every later read shows it in the equation's block, labelled as the agent's reading with its day, with the crop to check it by:
+
+```sh
+$ pdf transcribe paper.pdf --page 4 --equation 2 <<'EOF'
+\mathcal{L} = -\sum_{i} \log p(y_{i} \mid x_{i})
+EOF
+kept the LaTeX of equation 2 on p.4; pdf read shows it there, labelled [equation 2, transcribed 2026-10-18]
+```
+
+```text
+¶7 [equation 2, transcribed 2026-10-18]
+  $$\mathcal{L} = -\sum_{i} \log p(y_{i} \mid x_{i})$$
+  crop: pdf crop paper.pdf --page 4 --equation 2
+```
+
+The tool rebuilds no LaTeX itself, as rules cannot promise it right; what it keeps is the agent's, and the label says so. `--json` gives it as the block's `latex`, with `transcribed`. It is kept by the page's key, beside the picks in the agent's own folder: it holds for the same page in any file, a page that changes leaves it, and deleting the cache keeps it. Another transcribe replaces it, and `--clear` removes it. At most 4,000 characters, with no control characters, which could reorder or hide what the output shows; each line goes out indented, so none passes for a page or a block of its own. `pdf search` does not search it.
 
 Figures, tables and equations are found by rules on the page's lines and drawing commands, with no model:
 
@@ -204,7 +221,7 @@ $ pdf crop paper.pdf --figure 4
 p.15 · caption: Accuracy vs. dropout rate
 ```
 
-`--figure`, `--table` and `--equation` look in the pages parsed so far, and in the whole file once it is parsed when those do not hold it; `--page` narrows them to one page, and is needed where two pages hold the same number, as an appendix that numbers its tables again. An unknown number fails with the numbers found, once the whole file is parsed: on a long file that is not yet, that takes as long as its parse, 2 minutes for a 517-page textbook.
+`--figure`, `--table` and `--equation` look in the pages parsed so far, and in the whole file once it is parsed when those do not hold it; `--page` narrows them to one page, and is needed where two pages hold the same number, as an appendix that numbers its tables again. An unknown number fails with the numbers found, once the whole file is parsed: on a long file that is not yet, that takes as long as its parse, 2 minutes for a 517-page textbook. `--equation` also prints the LaTeX the agent kept for it, to check against the image, or else the `pdf transcribe` command that keeps it.
 
 The image is in color, and it is sized so small text in a chart stays readable. `pdf crop` prints the absolute path of the image file. The file stays for 7 days, and the same command makes it again after that.
 
@@ -213,7 +230,7 @@ $ pdf crop paper.pdf --page 2 --bbox 0.08,0.07,0.85,0.3
 /Users/me/Library/Caches/pdf-cli/crops/b430b72936d6cf8b/p2-0.08,0.07,0.85,0.30.png  (~1.5k image tokens, 1568×716 px)
 ```
 
-A region uses the same fractions as the positions in `pdf read --json` and the crop commands in failure blocks, taken on the page as stored, before any rotation; the image comes out upright. A region is rounded outward to hundredths of the page, so it always holds all of what was asked for. An image fits Claude's standard limits, 1,568 px on its long edge and about 1,568 image tokens, so a whole page costs about 1,500 tokens and a small region comes out enlarged, up to 6 times. It shows comments and highlights as a reader sees them. The same crop asked again within 7 days comes from the cache folder at once, and `pdf gc` removes older ones. `--password-stdin` opens a locked PDF, and `--json` gives the image's path, size and tokens.
+A region uses the same fractions as the positions in `pdf read --json` and the crop commands in failure blocks, taken on the page as stored, before any rotation; the image comes out upright. A region is rounded outward to hundredths of the page, so it always holds all of what was asked for. An image fits Claude's standard limits, 1,568 px on its long edge and about 1,568 image tokens, so a whole page costs about 1,500 tokens and a small region comes out enlarged, up to 6 times. It shows comments and highlights as a reader sees them. The same crop asked again within 7 days comes from the cache folder at once, and `pdf gc` removes older ones. `--password-stdin` opens a locked PDF, and `--json` gives the image's path, size and tokens, and an equation's kept LaTeX.
 
 Gap:
 - `--figure 4b` crops a sub-figure only where a caption numbers it so; a figure's panels are not found one by one. A table's notes below it are not part of its crop. Where a figure is mentioned in the text, as "mentioned on p.15", comes with cross-references in M2.8.

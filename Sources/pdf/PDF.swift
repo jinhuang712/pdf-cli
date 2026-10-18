@@ -6,7 +6,7 @@ struct PDF: AsyncParsableCommand {
         commandName: "pdf",
         abstract: "A PDF CLI tool that lets you read fast, cheap and accurately.",
         version: "0.0.0-spike",
-        subcommands: [AddCommand.self, InfoCommand.self, ReadCommand.self, SearchCommand.self, CropCommand.self, PickCommand.self,
+        subcommands: [AddCommand.self, InfoCommand.self, ReadCommand.self, SearchCommand.self, CropCommand.self, PickCommand.self, TranscribeCommand.self,
                       ListCommand.self, RemoveCommand.self,
                       GCCommand.self, AgentGuideCommand.self, Spike.self, DebugPages.self, DebugOCR.self, RunnerCommand.self, WorkerCommand.self]
     )

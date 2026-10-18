@@ -42,6 +42,8 @@ import Testing
                                      ("x,y,width,height", "0.1,0.2,0.3,0.4")] {
             text = text.replacingOccurrences(of: placeholder, with: value)
         }
+        // A redirection, as `<<'EOF'`, is the shell's, not the CLI's.
+        if let redirection = text.range(of: " <<") { text = String(text[..<redirection.lowerBound]) }
         text = text.replacingOccurrences(of: "<[^>]+>", with: "paper.pdf", options: .regularExpression)
         let words = text.split(separator: " ").map { $0 == "N" ? "1" : String($0) }
         return words.first == "pdf" ? Array(words.dropFirst()) : words

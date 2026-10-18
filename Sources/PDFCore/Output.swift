@@ -94,6 +94,10 @@ public enum Output {
         public var links: [Link]?
         /// A figure's, a table's or an equation's number, as its caption gives it.
         public var number: String?
+        /// An equation's LaTeX as the agent read it from the crop and kept it with `pdf transcribe`,
+        /// and the day it did (`Transcripts`).
+        public var latex: String?
+        public var transcribed: String?
 
         init(kind: Kind, page: Int, block: Int? = nil, box: Box = Box(x: 0, y: 0, width: 1, height: 1), text: String? = nil,
              printed: String? = nil, status: String? = nil, reason: String? = nil, score: Double? = nil,
@@ -147,13 +151,13 @@ public enum Output {
         var oldLayers = 0
     }
 
-    /// The blocks of one page, with the agent's picks applied.
+    /// The blocks of one page, with the agent's picks and transcripts applied.
     /// - Parameters:
     ///   - path: the path as a shell word, for the commands the blocks suggest.
     ///   - raw: show the text that normal output sets aside as doubtful, labelled with its reason.
     ///   - headers: show the running headers, footers and publisher stamps in place, labelled.
     static func pageBlocks(
-        _ page: Page, picks: [String: [Pick]], path: String, raw: Bool,
+        _ page: Page, picks: [String: [Pick]], transcripts: [String: [Transcript]] = [:], path: String, raw: Bool,
         includeHidden: Bool = false, headers: Bool = false
     ) -> PageBlocks {
         let (quality, picked) = judge(page, picks: picks)
@@ -267,7 +271,13 @@ public enum Output {
                 var block = Block(kind: kind, page: number, block: index + 1, box: region.box, text: text.isEmpty ? nil : Output.caption(text),
                                   commands: ["crop": "pdf crop \(path) --page \(number) --\(region.kind.rawValue) \(region.number)"])
                 block.number = region.number
-                var unit = Unit(blocks: [block], holdsText: !text.isEmpty)
+                // The LaTeX the agent kept for an equation, which goes out in place of its symbols.
+                let kept = (transcripts[page.key] ?? []).first { $0.kind == region.kind && $0.number == Region.normalized(region.number) }
+                if let kept {
+                    block.latex = kept.text
+                    block.transcribed = kept.day
+                }
+                var unit = Unit(blocks: [block], holdsText: !text.isEmpty || kept != nil)
                 unit.last = (region.caption + region.blocks).max().map { $0 + 1 }
                 unit.hidden = hidden
                 if let alt = region.alt, !alt.isEmpty {
@@ -584,6 +594,7 @@ public enum Output {
         /// Show the running headers, footers and publisher stamps in place, labelled.
         let headers: Bool
         let picks: [String: [Pick]]
+        let transcripts: [String: [Transcript]]
         /// About how many tokens the output may take. Nil means no limit.
         let budget: Int?
         /// The command that continues the read from a page, a block and an offset in its text.
@@ -614,7 +625,7 @@ public enum Output {
         ///   character in the block's text, such as `pdf read paper.pdf --page 4-9 --from p4.7`.
         public init(
             file: String, pageCount: Int, style: Style = .md, raw: Bool = false, includeHidden: Bool = false,
-            headers: Bool = false, picks: [String: [Pick]] = [:], budget: Int? = nil,
+            headers: Bool = false, picks: [String: [Pick]] = [:], transcripts: [String: [Transcript]] = [:], budget: Int? = nil,
             continuation: (@Sendable (Int, Int?, Int?) -> String)? = nil
         ) {
             let path = quoted(file)
@@ -626,6 +637,7 @@ public enum Output {
             self.includeHidden = includeHidden
             self.headers = headers
             self.picks = picks
+            self.transcripts = transcripts
             self.budget = budget
             self.continuation = continuation ?? { page, block, offset in
                 "pdf read \(path) --from " + Output.address(page: page, block: block, offset: offset)
@@ -639,7 +651,8 @@ public enum Output {
         /// alone is larger than the budget, cut inside after a word when it starts with text.
         /// Counts and flags come only from the units that go out.
         public mutating func add(_ page: Page, from block: Int? = nil, offset: Int? = nil) -> Bool {
-            let content = pageBlocks(page, picks: picks, path: path, raw: raw, includeHidden: includeHidden, headers: headers)
+            let content = pageBlocks(page, picks: picks, transcripts: transcripts, path: path, raw: raw, includeHidden: includeHidden,
+                                     headers: headers)
             let number = page.index + 1
             for (position, var unit) in content.units.enumerated() {
                 let at = unit.blocks.first?.block ?? unit.number
@@ -805,13 +818,13 @@ public enum Output {
 
     /// Every page in full, with no budget: the hidden `pdf debug-read` and the tests use it.
     public static func render(
-        file: String, pageCount: Int, pages: [Page], picks: [String: [Pick]] = [:],
+        file: String, pageCount: Int, pages: [Page], picks: [String: [Pick]] = [:], transcripts: [String: [Transcript]] = [:],
         savedByPDFKit: Bool = false, raw: Bool = false, style: Style = .md,
         includeHidden: Bool = false, headers: Bool = false
     ) -> Report {
         var document = Document(
             file: file, pageCount: pageCount, style: style, raw: raw, includeHidden: includeHidden,
-            headers: headers, picks: picks)
+            headers: headers, picks: picks, transcripts: transcripts)
         for page in pages { _ = document.add(page) }
         return document.report(savedByPDFKit: savedByPDFKit)
     }
@@ -956,6 +969,17 @@ public enum Output {
             }
             let label = "\(address(block)) [\(block.kind.rawValue) \(block.number ?? "")]"
             let crop = "crop: \(commands["crop"] ?? "")"
+            // The agent's LaTeX, labelled as its reading, indented so that no line of it reads as
+            // a page or a block of its own; the crop stays, to check it by.
+            if let latex = block.latex {
+                // A display environment of its own, as `align`, goes as written; anything else, an
+                // inner one as `aligned` included, between `$$`.
+                let display = latex.range(of: #"^\\begin\{(equation|align|gather|multline|flalign|eqnarray)\*?\}"#, options: .regularExpression)
+                let shown = display != nil ? latex : "$$\(latex)$$"
+                let lines = shown.split(separator: "\n", omittingEmptySubsequences: false).map { "  \($0)" }.joined(separator: "\n")
+                let head = "\(address(block)) [\(block.kind.rawValue) \(block.number ?? ""), transcribed \(block.transcribed ?? "")]"
+                return "\(head)" + (text.isEmpty ? "" : " \(text)") + "\n\(lines)\n  \(crop)"
+            }
             return text.isEmpty ? "\(label) \(crop)" : "\(label) \(text)\n  \(crop)"
         case .setAside:
             return "\(address(block)) [\(block.status ?? "")] \(block.text ?? "")"

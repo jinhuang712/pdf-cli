@@ -1,4 +1,4 @@
-<!-- what-we-build: approved 2026-10-18 -->
+<!-- what-we-build: drafted 2026-10-18 -->
 # Designs
 
 PDF files on the user's Mac and commands from an agent go in. Text with page addresses, PNG crops, search hits and failure reports come out, served from a local cache. In between, worker processes parse each page once, in steps that escalate only as far as the page needs, and store the result in SQLite. Behavior is in [FEATURES.md](FEATURES.md).
@@ -315,6 +315,16 @@ The user, on 2026-10-18: what the tool cannot read for certain, the agent's own 
 | **The agent reads the crop, and writes its LaTeX back** | As right as the agent's reading of the image, and paid once a file: later reads, by any agent, take it from the cache. | Each equation costs a crop the first time, and a page of 28 is better cropped whole. A wrong reading stays until `pdf reparse` clears it, as a pick does. |
 | LaTeX rebuilt by rules from the glyphs, checked by drawing it back | No image tokens at all. | Not right for certain: a fraction or a matrix rebuilt wrong reads as right, and drawing it back needs a TeX engine. |
 | A local vision model | Reads formulas without the agent. | A download, and its readings are not right for certain either: dropped with M3.3. |
+
+## Decision: `pdf transcribe` takes the LaTeX on standard input and keeps it beside the picks — 2026-10-18
+
+M2.13's command, `pdf transcribe paper.pdf --page 4 --equation 5`, reads the LaTeX from standard input, as a quoted heredoc gives it, and keeps it by the page's key and the equation's number in the agent's own folder, beside the picks. `pdf read` shows it in the equation's block, labelled `[equation 5, transcribed <day>]`, each line indented, with the crop still there to check it by, and `pdf crop --equation 5` prints it beside the image.
+
+| Option | For | Against |
+|---|---|---|
+| **Standard input, kept beside the picks** | LaTeX goes in as written: a heredoc in quotes keeps its backslashes, dollar signs and primes. Deleting the cache keeps the agent's work, and the page's key keeps it to the page it was read from. | Two lines more to write than a flag, which the guide shows. |
+| The LaTeX as a flag's value | One line. | A shell word in single quotes breaks on a prime, as `f'(x)`, and one in double quotes takes `$` and backslashes as the shell's. |
+| Kept in the cache, with the page | One place for a page's data. | The cache is rebuilt at every parser version and deleted at will; the agent's reading would go with it. |
 
 ## Decision: no local vision model; PDFKit and Apple's OCR read, the agent looks — 2026-10-18
 
