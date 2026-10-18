@@ -251,9 +251,15 @@ public struct Info: Encodable, Sendable {
         let named = #"(?i)^(abstract|introduction|related work|background|methods?|methodology|experiments?|results|discussion|conclusions?|limitations|acknowledge?ments?|references|bibliography|appendix(\s+[A-Z])?)$"#
         func plain(_ text: String) -> String { text.lowercased().filter(\.isLetter) }
         func exact(_ text: String) -> String { text.lowercased().split(whereSeparator: \.isWhitespace).joined(separator: " ") }
-        // A footnote, an endnote or a margin note is no heading, though "1 Equal contribution" reads as one.
+        // A footnote, an endnote or a margin note is no heading, though "1 Equal contribution" reads
+        // as one; numbered headings that look like a list of endnotes but are none, as "1
+        // Introduction" to "4 Discussion" on one page, stay headings.
+        let digests = Dictionary(
+            pages.compactMap { page in page.result.pageText.map { (page.index, Notes.digest($0, index: page.index)) } }
+        ) { first, _ in first }
+        let judged = digests.values.contains { !$0.notes.isEmpty } ? Notes.resolve(pages: pages.map(\.index), digests: digests) : [:]
         func noted(_ page: Output.Page, _ index: Int) -> Bool {
-            page.result.pageText?.notes?.contains { $0.blocks.contains(index) } == true
+            judged[page.index]?.entries.contains { $0.blocks.contains(index) } == true
         }
         func nearEdge(_ block: TextBlock) -> Bool { block.box.y < 0.12 || block.box.y + block.box.height > 0.9 }
         // A running header repeats word for word, or, when it carries the page number, letter

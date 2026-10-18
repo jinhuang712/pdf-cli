@@ -437,10 +437,34 @@ check "pdf crop --table shows it" "Markdown kept [0-9-]*, which pdf read shows" 
 notes=testdata/smoke/arxiv-2608.04589.pdf
 read=$(run $pdf read $notes --page 1-2 --budget all)
 check "a footnote is cited in the text as [^3]" "Source-Limited Track\[\^3\], which restricts" "$read"
-check "its words follow the output under Notes" "^\[\^3\] (p.2) Source-Limited Track: competitions/11279/$" "$read"
+# The URL on the note's line is a block of its own in PDFKit's text, which stays in the body
+# (FEATURES.md → F14 → Gap): only the note's own words are checked.
+check "its words follow the output under Notes" "^\[\^3\] (p.2) Source-Limited Track: " "$read"
 check "the author note is a footnote under its sign" "^\[\^\*\] (p.1) " "$read"
 check "--notes off counts them in the summary" "footnotes and endnotes: [0-9]* set aside (show: --notes end)" "$(run $pdf read $notes --page 1-2 --budget all --notes off | head -1)"
-check "--notes inline puts the note by its paragraph" "^\[\^4\] Open-Source Track: competitions/13868/$" "$(run $pdf read $notes --page 2 --budget all --notes inline)"
+check "--notes inline puts the note by its paragraph" "^\[\^4\] Open-Source Track: " "$(run $pdf read $notes --page 2 --budget all --notes inline)"
+check "a read from a search hit inside a note shows the note" "^\[\^3\] (p.2) Source-Limited Track: " "$(run $pdf read $notes --from p2.16)"
+check "a section's read shows the notes of its blocks" "^\[\^2\] (p.2) EgoVis: " "$(run $pdf read $notes --section Introduction --budget all)"
+check "--footnote takes no flag of a read's output" "--footnote shows one note whole: it takes only --json" "$(run $pdf read $notes --footnote 3 --notes off)"
+# The M2.7 review's made pages (testdata/notes). Notes are judged against the pages parsed so
+# far, so the whole file is read first, in a home kept.
+kept $pdf read testdata/notes/two-chapters.pdf --budget all > /dev/null
+read=$(kept $pdf read testdata/notes/two-chapters.pdf --page 2 --budget all)
+check "the read is of a file parsed whole" "· read p.2 · flagged: none$" "$(head -1 <<<"$read")"
+check "each chapter's text cites its own list's notes" "the source\[\^2\.5\]" "$read"
+if grep -q "the source\[\^[0-9]\]" <<<"$read"; then
+    echo "FAIL  chapter 2 cites chapter 1's notes"
+    failures=$((failures + 1))
+fi
+check "a unit's power is no reference, the marker after a word is" "5 cm^{2} was used, as the board\[\^2\] said" "$(run $pdf read testdata/notes/units.pdf --budget all)"
+check "numbered steps under a heading Notes stay text" "^¶[0-9]* 1\. Step 1: open the valve" "$(run $pdf read testdata/notes/notes-heading-list.pdf --budget all)"
+check "numbered headings stay sections in pdf info" "4 Discussion" "$(run $pdf info testdata/notes/short-headings.pdf)"
+flood=$(run $pdf read testdata/notes/margin-flood2.pdf --budget 300)
+check "margin notes keep to the budget" "^next: " "$flood"
+if [ "${#flood}" -ge 4000 ]; then
+    echo "FAIL  a read of a margin flood at --budget 300 is ${#flood} bytes"
+    failures=$((failures + 1))
+fi
 check "--footnote shows a note and the places that cite it" "p.2 ¶[0-9]*: .*Track\[\^3\]" "$(run $pdf read $notes --footnote 3)"
 check "an unknown footnote fails, naming those found" "no footnote or endnote is 99; it has \*, 1, 2" "$(run $pdf read $notes --footnote 99)"
 check "pdf info lists the author notes" "^author notes: \[\^\*\] " "$(run $pdf info $notes)"

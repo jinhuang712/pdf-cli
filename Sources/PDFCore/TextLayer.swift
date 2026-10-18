@@ -148,6 +148,8 @@ public struct PageText: Codable, Equatable, Sendable {
     public var notes: [PageNote]? = nil
     /// The page has a heading that opens a list of endnotes.
     public var noteHeading: Bool? = nil
+    /// Another heading, as "References", ends a list of endnotes on the page.
+    public var noteListEnded: Bool? = nil
 
     public var text: String { blocks.map(\.text).joined(separator: "\n\n") }
 }
@@ -399,6 +401,7 @@ enum TextLayer {
         let notes = Notes.find(layer.blocks, regions: layer.regions ?? [])
         if !notes.notes.isEmpty { layer.notes = notes.notes }
         if notes.heading { layer.noteHeading = true }
+        if notes.ended { layer.noteListEnded = true }
         if let offPage = visibility?.drawing.offPage.filter({ !$0.isEmpty }), !offPage.isEmpty { layer.offPage = offPage }
         if visibility?.drawing.incomplete == true { layer.hiddenCheckIncomplete = true }
         if !pictures.isEmpty {

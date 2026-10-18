@@ -4,10 +4,10 @@ For whoever picks up pdf-cli next, a person or a new Claude Code session. Read t
 
 ## Where things stand
 
-- **Built and on `main`** (pushed, nothing half-done, no open branch): milestone M0; every task of M1, M1.1–M1.15; and M2.5, M2.6 and M2.13 of M2.
+- **Built and on `main`** (pushed, nothing half-done, no open branch): milestone M0; every task of M1, M1.1–M1.15; and M2.5, M2.6, M2.7 and M2.13 of M2.
 - **Not met yet:** the exit criteria of M1 and M2. They need the goals measured, and every goal in GOALS.md is still unmeasured: the measuring waits for the final wrap-up (the user, 2026-10-17).
-- **Docs:** all seven core docs are approved: the user approved them on 2026-10-18 with the direction below, and M2.13's edits the same day.
-- **Waiting on the user:** nothing. Next in ROADMAP's order is M2.7.
+- **Docs:** the seven core docs were approved on 2026-10-18 with the direction below, and M2.13's edits the same day. M2.7's edits to DESIGNS, FEATURES, ROADMAP and README are drafted: their marks read `drafted`.
+- **Waiting on the user:** approval of M2.7's doc edits (a new decision in DESIGNS, F14 in FEATURES, M2.7 in ROADMAP, a line in README). Next in ROADMAP's order is M2.8.
 
 ## The user's direction
 
@@ -25,25 +25,25 @@ Read this before designing anything. Each line points to where it is written dow
 | Command | Task | What it does |
 |---|---|---|
 | `pdf add`, `ls`, `rm`, `gc` | M1.5 | The library: parse ahead of time, list, forget, clean up |
-| `pdf info` | M1.6, M2.6 | A first look: title, sections with sizes, flags, comments, attachments, scripts, running headers, figures and tables |
+| `pdf info` | M1.6, M2.6, M2.7 | A first look: title, sections with sizes, flags, comments, attachments, scripts, running headers, figures and tables, author notes and note counts |
 | `pdf read` | M1.7 | Text by page, section or printed page, within a 5,000-token budget, with `next:` lines |
 | `pdf read --include-hidden` | M1.10 | Text a reader cannot see is a marker in place; this shows its words, labelled |
 | `pdf read --raw` | M1.3, M2.6 | Shows the text set aside: doubtful text, an old OCR layer, a table's or a figure's flat text |
 | `pdf read --headers` | M2.5 | Shows the running headers, footers and page numbers set aside |
+| `pdf read --notes end\|inline\|off`, `--footnote ID` | M2.7 | Footnotes and endnotes as `[^7]` in the text, their words after the output, by their paragraph or left out and counted; one note with the places that cite it. Margin notes after their paragraph, a headnote labelled in place |
 | `pdf search` | M1.8 | Keyword search per paragraph (SQLite FTS5) and `--regex`, in one PDF or the library |
 | `pdf crop` | M1.9, M2.6 | A page, a region, or a figure, a table or an equation by its number, as a PNG sized to Claude's image limits |
 | `pdf pick` | M1.3 | The agent's choice between two readings of an unsure word, kept beside the library |
 | `pdf transcribe` | M2.13 | The LaTeX of an equation, or the Markdown of a table, that the agent read from its crop, kept so later reads show it |
 | `pdf agent-guide` | M1.11 | The guide that teaches an agent the tool; `--install claude-code` writes it as a Claude Code skill |
 
-Under them: worker processes with time and memory limits and one pool of slots (M1.1, M1.15); the text layer with the space repair (M1.2); quality checks with failure and unsure blocks (M1.3); Apple OCR for scans (M1.4); the hidden-text check (M1.10); annotations (M1.13); images and drawings marked in place (M1.14); reading order across columns and running headers (M2.5); figures, tables and equations (M2.6). Parser version 16, page key 2, index checks 10, cache schema 8: raise the parser version when the parse's output changes, the page key's when what it hashes changes, and the index checks when the index's checks change.
+Under them: worker processes with time and memory limits and one pool of slots (M1.1, M1.15); the text layer with the space repair (M1.2); quality checks with failure and unsure blocks (M1.3); Apple OCR for scans (M1.4); the hidden-text check (M1.10); annotations (M1.13); images and drawings marked in place (M1.14); reading order across columns and running headers (M2.5); figures, tables and equations (M2.6); footnotes, endnotes, headnotes and margin notes (M2.7). Parser version 17, page key 2, index checks 10, cache schema 8: raise the parser version when the parse's output changes, the page key's when what it hashes changes, and the index checks when the index's checks change.
 
 ## What comes next
 
-1. **M2.7, notes:** footnotes, endnotes, headnotes, margin notes and author notes (FEATURES.md → F14).
-2. **The rest of M2,** in ROADMAP's order, which is the order of building; a task's ID is its name, not its place, so M2.13, added last, was listed and built before M2.7: M2.8 citations and references, M2.9 `pdf dump`, M2.10 `pdf reparse`, which clears the picks of the pages it parses again but should keep their transcripts, read from the image, which a parse leaves as it is, M2.11 `pdf setup` and `pdf doctor`. M2.4, a layout model, comes only if a goal fails with rules alone.
-3. **M3:** M3.1 search by meaning, M3.2 tables across pages, M3.5 the Homebrew release.
-4. **The final wrap-up:** the open test set, the question set and the scorer (M2.1–M2.3), the quality thresholds (M2.12), the question set run in Claude Code (M3.6), the workers' memory, and every goal measured.
+1. **The rest of M2,** in ROADMAP's order, which is the order of building; a task's ID is its name, not its place, so M2.13, added last, was built before M2.7: M2.8 citations and references, M2.9 `pdf dump`, M2.10 `pdf reparse`, which clears the picks of the pages it parses again but should keep their transcripts, read from the image, which a parse leaves as it is, M2.11 `pdf setup` and `pdf doctor`. M2.4, a layout model, comes only if a goal fails with rules alone.
+2. **M3:** M3.1 search by meaning, M3.2 tables across pages, M3.5 the Homebrew release.
+3. **The final wrap-up:** the open test set, the question set and the scorer (M2.1–M2.3), the quality thresholds (M2.12), the question set run in Claude Code (M3.6), the workers' memory, and every goal measured.
 
 `TODO.md` holds five follow-ups with no milestone: a content stream that inflates to 600 MB, links past the first 1,000 of a file, the cost of joining shapes into drawings, running headers that `pdf search` still finds, and `pdf crop --figure N` parsing a whole long file before it says the number is not there.
 
@@ -70,7 +70,7 @@ Under them: worker processes with time and memory limits and one pool of slots (
 - Each task's report, with its review's findings: `reports/`, listed in `reports/README.md`. Read the report of the last task that touched the code you change.
 - The known limits of each feature: FEATURES.md, under each feature's Gap.
 - The agent guide: `Sources/PDFCore/AgentGuide.swift`. A new command or flag needs a line there, or a place on the test's short list of flags left out, or `Tests/pdfTests/AgentGuideTests.swift` fails. The guide stays under 2,000 tokens, which the test checks.
-- Test fixtures: `testdata/smoke`, 11 real files, 10 arXiv papers and a scan, their flags held in `expected-flags.tsv`; `testdata/safety`, 26 made files: one hidden-text trick each, files that carry comments, links and the like, and broken and hostile files, their planted strings in `planted.tsv`; and `testdata/hidden`, the hidden-text reviews' hostile pages. `scripts/make-hidden-fixture.swift` makes the files of the last two, the same bytes each run.
+- Test fixtures: `testdata/smoke`, 11 real files, 10 arXiv papers and a scan, their flags held in `expected-flags.tsv`; `testdata/safety`, 26 made files: one hidden-text trick each, files that carry comments, links and the like, and broken and hostile files, their planted strings in `planted.tsv`; `testdata/hidden`, the hidden-text reviews' hostile pages; and `testdata/notes`, the M2.7 review's made pages of notes, lists, units and margin floods. `scripts/make-hidden-fixture.swift` makes the files of the last two, the same bytes each run.
 
 **Traps:**
 
@@ -102,3 +102,4 @@ Each report holds the measurements, the review's findings and the tests.
 | M2.5 Columns and running headers | 2026-10-17 | Only a band of two columns of running text moves; running headers are judged at read time against the pages within 4. A block with hidden text is never set aside. | `M2.5-columns-headers.md` |
 | M2.13 The agent's LaTeX and Markdown kept | 2026-10-18 | `pdf transcribe` keeps what the agent read from a crop, beside the picks, by page key and the number the page gives; each line goes out four spaces in, so none forges the output's structure. Its review found 9 problems, all fixed, and one in M2.6's equation numbers, as "(A.1)", fixed too: parser version 16. | `M2.13-transcribe.md` |
 | M2.6 Figures, tables and equations | 2026-10-18 | Found by rules from numbered captions, pictures and drawn shapes, rules, and an equation's number set apart. 64 figures, 77 tables and 84 equations on the smoke papers. A region never takes running text; a block with hidden text is never set aside. Its review found 12 problems: 9 fixed, 2 in part, 1 kept. | `M2.6-figures-tables-equations.md` |
+| M2.7 Notes | 2026-10-18 | Found by rules from a size per line, markers and positions; which pages are lists, the references and the IDs are judged at read time against the pages parsed so far. Endnotes find their references all at once, the longest common subsequence of their markers before their lists, so a chapter whose markers are lost costs only its own links; a list the text never cites is none. A note counts against the budget where the read takes it. Its review found 20 problems: 13 fixed, 5 in part, 2 kept. | `M2.7-notes.md` |

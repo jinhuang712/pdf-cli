@@ -40,6 +40,15 @@ public struct PageNotes: Equatable, Sendable {
         /// What stands between the braces of `^{…}`, as "7" or "1,†".
         public var token: String
         public var ids: [String]
+        /// Which of the block's references with this token it is, counted from 0: in "5 cm^{2}
+        /// … the board^{2}", only one leads to note 2.
+        public var index = 0
+
+        public init(token: String, ids: [String], index: Int = 0) {
+            self.token = token
+            self.ids = ids
+            self.index = index
+        }
     }
 
     public var entries: [Entry] = []
@@ -61,6 +70,9 @@ enum Notes {
         var notes: [PageNote] = []
         /// The page has a block that heads a list of endnotes: "Notes", "Endnotes".
         var heading = false
+        /// Another heading, as "References", ends a list of endnotes on the page: the page after
+        /// does not go on from it.
+        var ended = false
     }
 
     /// Signs a note may start with.
@@ -79,6 +91,11 @@ enum Notes {
     private static let raised = try! NSRegularExpression(pattern: #"\^\{([^{}]{1,12})\}"#)
     private static let heading = try! NSRegularExpression(
         pattern: #"^(?:(?:end|chapter|part)\s?)?notes(?:\s+(?:to|for|on)\s+.{1,40})?$"#, options: [.caseInsensitive])
+    /// The heading of a part that ends a list of notes.
+    private static let otherHeading = try! NSRegularExpression(
+        pattern:
+            #"^(?:[0-9]{1,2}\.?\s+|[A-Z]\.?\s+)?(?:references|bibliography|works cited|literature cited|acknowledge?ments?|appendix(?:\s+[A-Z0-9]{1,3})?|glossary|about the authors?)\s*[:.]?$"#,
+        options: [.caseInsensitive])
     /// A bare number at a line's start, before a space and a word.
     private static let numberStart = try! NSRegularExpression(pattern: #"^([0-9]{1,3})[.)]?\s+\S"#)
     private static let dottedStart = try! NSRegularExpression(pattern: #"^([0-9]{1,3})\.\s+\S"#)
@@ -132,20 +149,34 @@ enum Notes {
         return nil
     }
 
-    /// The raised markers inside a block's text: where, what is between the braces, and the
-    /// notes' markers it names. Only a marker that follows a punctuation mark or a word of two
-    /// letters or more counts: `x^{2}` and `10^{3}` are maths.
-    static func references(in text: String) -> [(range: NSRange, token: String, markers: [String])] {
+    /// The raised markers inside a block's text: where, what is between the braces, the notes'
+    /// markers it names, and which of the block's references with this token it is. Only a marker
+    /// that follows a punctuation mark or a word of two letters or more counts: `x^{2}` and
+    /// `10^{3}` are maths, and so is a unit's power, as `5 cm^{2}`.
+    static func references(in text: String) -> [(range: NSRange, token: String, markers: [String], index: Int)] {
         let ns = text as NSString
-        var found: [(NSRange, String, [String])] = []
+        var found: [(NSRange, String, [String], Int)] = []
+        var seen: [String: Int] = [:]
         raised.enumerateMatches(in: text, range: NSRange(location: 0, length: ns.length)) { match, _, _ in
-            guard let match, follows(ns, match.range.location) else { return }
+            guard let match, follows(ns, match.range.location), !power(ns, match.range) else { return }
             let token = ns.substring(with: match.range(at: 1))
             let markers = token.split(separator: ",", omittingEmptySubsequences: false).map { marker(String($0), letters: true) }
             guard !markers.isEmpty, markers.allSatisfy({ $0 != nil }) else { return }
-            found.append((match.range, token, markers.compactMap { $0 }))
+            found.append((match.range, token, markers.compactMap { $0 }, seen[token, default: 0]))
+            seen[token, default: 0] += 1
         }
         return found
+    }
+
+    private static let unit = try! NSRegularExpression(pattern: #"[0-9][  ]?[A-Za-zµμ]{1,3}$"#)
+
+    /// A unit's square or cube after a number: `5 cm^{2}`, `3 km^{3}`.
+    static func power(_ text: NSString, _ range: NSRange) -> Bool {
+        let token = text.substring(with: range)
+        guard token == "^{2}" || token == "^{3}" else { return false }
+        let start = max(0, range.location - 6)
+        let before = text.substring(with: NSRange(location: start, length: range.location - start))
+        return match(unit, before) != nil
     }
 
     static func isSign(_ marker: String) -> Bool { marker.contains { signs.contains($0) } }
@@ -290,6 +321,19 @@ enum Notes {
             for reference in references(in: blocks[index].text) { referred.formUnion(reference.markers) }
         }
 
+        // A table's notes, right under it, read as text after its block (FEATURES.md → F14).
+        let tables = regions.filter { $0.kind == .table }.map(\.box)
+        func underTable(_ box: Box) -> Bool {
+            tables.contains { table in
+                let gap = box.y - (table.y + table.height)
+                return gap >= -0.01 && gap <= 0.04 && overlap(table, box) >= 0.5
+            }
+        }
+
+        // The sizes of running text in the page's upper part, where no footnote stands.
+        let upper = blocks.indices.filter { eligible($0) && blocks[$0].box.y < 0.4 && blocks[$0].visibleText.count >= 100 }
+            .compactMap { size(blocks[$0]) }
+
         // Footnotes.
         var tried = 0
         for index in blocks.indices where !taken.contains(index) && eligible(index) && isSmall(index) && blocks[index].box.y >= 0.4 {
@@ -297,8 +341,15 @@ enum Notes {
             tried += 1
             guard tried <= 200 else { break }
             guard let lead = leading(text(index)),
-                lead.raised || isSign(lead.marker) || referred.contains(lead.marker)
+                lead.raised || isSign(lead.marker) || referred.contains(lead.marker),
+                !underTable(blocks[index].box)
             else { continue }
+            // A number set as text, not raised, leads no note in a size the page sets running text
+            // in above its lower part: a journal page set in 10 and 9 points starts a Methods
+            // paragraph with a citation's number that lost its raise.
+            if !lead.raised, !isSign(lead.marker), let own = size(blocks[index]), upper.contains(where: { abs($0 - own) <= 0.3 }) {
+                continue
+            }
             let block = blocks[index]
             // Body-size text below it in its column makes it a note to something, or a list.
             let bodyBelow = blocks.indices.contains { other in
@@ -336,11 +387,19 @@ enum Notes {
                 break
             }
         }
+        // A list ends at the next heading of another part: a list of references after the notes
+        // is no notes.
+        var end = blocks.count
+        for index in blocks.indices where index >= after && blocks[index].lines.count <= 2 && match(otherHeading, text(index)) != nil {
+            end = index
+            found.ended = true
+            break
+        }
         // Every run of three or more numbers that go up, as a page holds where one chapter's notes
         // end and the next chapter's begin.
         var chain: [(index: Int, number: Int)] = []
         var runs: [[(index: Int, number: Int)]] = []
-        for index in blocks.indices where index >= after && eligible(index) && !taken.contains(index) {
+        for index in blocks.indices where index >= after && index < end && eligible(index) && !taken.contains(index) {
             guard let lead = numbered(text(index)) else { continue }
             if let last = chain.last, lead.number > last.number, lead.number <= last.number + 8 {
                 chain.append((index, lead.number))
@@ -356,7 +415,7 @@ enum Notes {
             for (position, item) in best.enumerated() {
                 var members = [item.index]
                 var next = item.index + 1
-                let limit = position + 1 < best.count ? best[position + 1].index : blocks.count
+                let limit = position + 1 < best.count ? best[position + 1].index : end
                 while next < limit, eligible(next), !taken.contains(next), !entries.contains(next),
                     size(blocks[next]) == size(blocks[item.index]), Furniture.pageNumber(text(next)) == nil
                 {
@@ -399,8 +458,15 @@ enum Notes {
         func horizontal(_ block: TextBlock) -> Bool {
             block.lines.filter { $0.box.width >= 2 * $0.box.height }.count * 10 >= block.lines.count * 7
         }
+        // The columns' text is in the body's size, or the size most of the words of the page's wide
+        // blocks have, where a lead paragraph in large type makes the body's size its own.
+        var weights: [Double: Int] = [:]
+        for index in blocks.indices where eligible(index) && blocks[index].box.width > 0.3 {
+            if let size = size(blocks[index]) { weights[size, default: 0] += blocks[index].visibleText.count }
+        }
+        let running = min(body, weights.max { ($0.value, $0.key) < ($1.value, $1.key) }?.key ?? body)
         let columns = blocks.indices.filter {
-            eligible($0) && size(blocks[$0]).map { $0 >= body * 0.93 } == true && blocks[$0].visibleText.count >= 40 && horizontal(blocks[$0])
+            eligible($0) && size(blocks[$0]).map { $0 >= running * 0.93 } == true && blocks[$0].visibleText.count >= 40 && horizontal(blocks[$0])
         }
         if columns.count >= 3 {
             let lefts = columns.map { blocks[$0].box.x }.sorted()
@@ -430,8 +496,10 @@ enum Notes {
     struct Digest {
         var notes: [PageNote]
         var heading: Bool
-        /// The raised markers in the page's body blocks that name a marker, in reading order.
-        var references: [(block: Int, token: String, markers: [String])]
+        var ended = false
+        /// The raised markers in the page's body blocks that name a marker, in reading order, in
+        /// the text a reader sees.
+        var references: [(block: Int, token: String, markers: [String], index: Int)]
         /// The first words of each note block, for the first pages only, to tell author notes.
         var texts: [Int: String]
     }
@@ -440,9 +508,9 @@ enum Notes {
         let notes = layer.notes ?? []
         let inNote = Set(notes.flatMap(\.blocks))
         let inside = Set((layer.regions ?? []).flatMap { $0.caption + $0.blocks })
-        var references: [(Int, String, [String])] = []
+        var references: [(Int, String, [String], Int)] = []
         for (block, item) in layer.blocks.enumerated() where !inNote.contains(block) && !inside.contains(block) {
-            for found in Notes.references(in: item.text) { references.append((block, found.token, found.markers)) }
+            for found in Notes.references(in: item.visibleText) { references.append((block, found.token, found.markers, found.index)) }
         }
         var texts: [Int: String] = [:]
         if index < 2 {
@@ -451,7 +519,8 @@ enum Notes {
                     separator: " ")
             }
         }
-        return Digest(notes: notes, heading: layer.noteHeading ?? false, references: references, texts: texts)
+        return Digest(
+            notes: notes, heading: layer.noteHeading ?? false, ended: layer.noteListEnded ?? false, references: references, texts: texts)
     }
 
     /// A footnote of the first pages that tells about the authors: a sign for a marker, or
@@ -480,10 +549,12 @@ enum Notes {
 
     /// The notes of each page asked for, counted from 0, judged against the pages parsed so far.
     /// Numbering that restarts, as in each chapter or on each page, starts a series, and ids then
-    /// carry theirs, but the first's: "3.7" is the seventh note of the third series, "7" of the first. A list of endnotes is the
-    /// notes under a heading "Notes", and the pages that go on from it with numbers that
-    /// follow. A note's reference is the next raised marker of its number in the text since the
-    /// last one, or, for an endnote, in the pages since the last list.
+    /// carry theirs, but the first's: "3.7" is the seventh note of the third series, "7" of the
+    /// first. A list of endnotes is the notes under a heading "Notes", and the pages that go on
+    /// from it with numbers that follow, of which the text cites one at least. A footnote's
+    /// reference is the next raised marker of its number on its page; an endnote's, the last
+    /// before its list, or before the reference of the note after it, in the pages that are no
+    /// list (`align`).
     static func resolve(pages: [Int], digests: [Int: Digest]) -> [Int: PageNotes] {
         let order = digests.keys.sorted()
 
@@ -494,12 +565,15 @@ enum Notes {
         var active = false
         var lastNumber = 0
         var previous = -2
+        var ended = false
         for page in order {
             let digest = digests[page]!
             let entries = digest.notes.filter { $0.kind == .endnote }
             let first = entries.first.flatMap { $0.marker.flatMap(Int.init) }
-            if page != previous + 1 { active = false }
+            // A list goes on over the next page only, and not past another part's heading.
+            if page != previous + 1 || ended { active = false }
             previous = page
+            ended = digest.ended
             if digest.heading, !entries.isEmpty {
                 // A running header "Notes to Chapter 1" heads every page of the list: a page that
                 // follows one goes on from it.
@@ -517,83 +591,237 @@ enum Notes {
             }
         }
 
-        // The numbering's series, and each note's id.
         struct Item {
             var page: Int
             var note: PageNote
-            var series: Int
+            /// The list of endnotes it is in.
+            var run: Int?
+            /// The reference it was matched to, in `places`, and the others that lead to it.
+            var place: Int? = nil
+            var more: [Int] = []
+            var series = 0
+            /// For a sign that stands more than once on its page, which of them it is, from 1.
+            var ordinal = 1
         }
         var items: [Item] = []
-        var series = 0
-        var highest = 0
-        var lastRun: Int?
-        // A sign names a note by itself, or by its page where the sign stands on more than one:
-        // only numbers make series.
-        var signPages: [String: Set<Int>] = [:]
         for page in order {
             let notes = (digests[page]!.notes.filter { $0.kind == .footnote } + (kept[page] ?? [])).enumerated()
                 .sorted { ($0.element.blocks[0], $0.offset) < ($1.element.blocks[0], $1.offset) }.map(\.element)
-            for note in notes {
-                guard let marker = note.marker else { continue }
-                guard let number = Int(marker) else {
-                    signPages[marker, default: []].insert(page)
-                    items.append(Item(page: page, note: note, series: 0))
-                    continue
-                }
-                // Numbering restarts where a number does not go up, or a list of endnotes begins.
-                var restart = number <= highest
-                if note.kind == .endnote {
-                    if run[page] != lastRun { restart = true }
-                    lastRun = run[page]
-                }
-                if restart || series == 0 {
-                    series += 1
-                    highest = 0
-                }
-                highest = max(highest, number)
-                items.append(Item(page: page, note: note, series: series))
+            for note in notes where note.marker != nil {
+                items.append(Item(page: page, note: note, run: note.kind == .endnote ? run[page] : nil))
             }
+        }
+
+        // The references, in reading order.
+        struct Place {
+            var page: Int
+            var block: Int
+            var token: String
+            var index: Int
+            var markers: [String]
+        }
+        var places: [Place] = []
+        var firstPlace: [Int: Int] = [:]
+        for page in order {
+            firstPlace[page] = places.count
+            for reference in digests[page]!.references {
+                places.append(Place(page: page, block: reference.block, token: reference.token, index: reference.index, markers: reference.markers))
+            }
+        }
+        var taken = Set<String>()
+        /// Matches the notes, in their order, to references among `candidates`, in theirs: each
+        /// note takes the next reference of its marker that no note has, unless the next note's
+        /// marker comes first, which means its own reference was lost: the notes after it still
+        /// find theirs.
+        func align(_ notes: [Int], _ candidates: [Int]) {
+            var cursor = 0
+            for (position, item) in notes.enumerated() {
+                guard let marker = items[item].note.marker else { continue }
+                let following = position + 1 < notes.count ? items[notes[position + 1]].note.marker : nil
+                var at = cursor
+                var found: Int?
+                while at < candidates.count {
+                    let place = places[candidates[at]]
+                    if place.markers.contains(marker), !taken.contains("\(candidates[at])|\(marker)") {
+                        found = at
+                        break
+                    }
+                    if let following, following != marker, place.markers.contains(following),
+                        !taken.contains("\(candidates[at])|\(following)")
+                    {
+                        break
+                    }
+                    at += 1
+                }
+                guard let found else { continue }
+                taken.insert("\(candidates[found])|\(marker)")
+                items[item].place = candidates[found]
+                // The same reference may name the next note too, as `^{1,†}`.
+                cursor = found
+            }
+        }
+        // Footnotes, on their page.
+        let byPage = Dictionary(grouping: items.indices.filter { items[$0].note.kind == .footnote }, by: { items[$0].page })
+        for page in byPage.keys.sorted() {
+            let start = firstPlace[page]!
+            let range = start..<start + digests[page]!.references.count
+            align(byPage[page]!, Array(range))
+            // The page's other markers of a footnote's number lead to it too, as authors' to the
+            // affiliation they share, where no other note of the page has that marker.
+            let markers = Dictionary(grouping: byPage[page]!, by: { items[$0].note.marker! })
+            for (marker, notes) in markers where notes.count == 1 && items[notes[0]].place != nil {
+                for position in range where places[position].markers.contains(marker) && !taken.contains("\(position)|\(marker)") {
+                    taken.insert("\(position)|\(marker)")
+                    items[notes[0]].more.append(position)
+                }
+            }
+        }
+        // Endnotes: the most of them matched in order to references in the text that is no list,
+        // each before its list (the longest common subsequence of their markers), and of such
+        // matchings the one with the latest references, closest to each list. All the notes at
+        // a book's end, or a chapter's after it, find their chapter's text, though a list between
+        // was missed, and a chapter whose markers the text lost leaves its own notes unmatched,
+        // not its neighbours'.
+        let listPages = Set(run.keys)
+        let byRun = Dictionary(grouping: items.indices.filter { items[$0].run != nil }, by: { items[$0].run! })
+        let startOf = byRun.mapValues { $0.map { items[$0].page }.min()! }
+        var elements: [(place: Int, marker: String)] = []
+        for (position, place) in places.enumerated() where !listPages.contains(place.page) {
+            for marker in place.markers where !taken.contains("\(position)|\(marker)") { elements.append((position, marker)) }
+        }
+        // Each marker's elements, latest first.
+        var latest: [String: [Int]] = [:]
+        for element in elements.indices.reversed() { latest[elements[element].marker, default: []].append(element) }
+        // Hunt and Szymanski's method, from the end of both: `thresholds[k]` is the least distance
+        // from the end at which a matching of k + 1 notes can stop so far.
+        struct Link {
+            var note: Int
+            var element: Int
+            var previous: Int?
+        }
+        var links: [Link] = []
+        var thresholds: [Int] = []
+        var ends: [Int] = []
+        for note in byRun.keys.sorted().flatMap({ byRun[$0]! }).reversed() {
+            let start = firstPlace[startOf[items[note].run!]!] ?? places.count
+            // A reference within the 400 latest of its marker before the list: no chapter is so far back.
+            let candidates = Array((latest[items[note].note.marker!] ?? []).lazy.filter { elements[$0].place < start }.prefix(400))
+            // Farthest from the end first, so a note extends no matching it is already in.
+            for element in candidates.reversed() {
+                let distance = elements.count - 1 - element
+                var low = 0
+                var high = thresholds.count
+                while low < high {
+                    let middle = (low + high) / 2
+                    if thresholds[middle] < distance { low = middle + 1 } else { high = middle }
+                }
+                links.append(Link(note: note, element: element, previous: low > 0 ? ends[low - 1] : nil))
+                if low == thresholds.count {
+                    thresholds.append(distance)
+                    ends.append(links.count - 1)
+                } else {
+                    thresholds[low] = distance
+                    ends[low] = links.count - 1
+                }
+            }
+        }
+        var link = ends.last
+        var matchedElement: [Int: Int] = [:]
+        while let current = link {
+            items[links[current].note].place = elements[links[current].element].place
+            matchedElement[links[current].note] = links[current].element
+            taken.insert("\(elements[links[current].element].place)|\(elements[links[current].element].marker)")
+            link = links[current].previous
+        }
+        // A series of notes cites one stretch of text. Where its references straddle a "1" that
+        // starts the text's numbering again, it took an earlier chapter's markers for want of a
+        // few of its own: it keeps those after that "1", and its notes before them match from there.
+        // A "1" that a 2 follows within the next 5 markers, and a 3 within 5 after, in 3 pages: a
+        // lone `^{1}`, as a figure's or a stray one, starts nothing.
+        func near(_ marker: String, after start: Int, from origin: Int) -> Int? {
+            elements[(start + 1)..<min(start + 6, elements.count)].firstIndex {
+                $0.marker == marker && places[$0.place].page <= places[elements[origin].place].page + 3
+            }
+        }
+        let restarts = elements.indices.filter { start in
+            guard elements[start].marker == "1", let two = near("2", after: start, from: start) else { return false }
+            return near("3", after: two, from: start) != nil
+        }
+        for number in byRun.keys.sorted() {
+            var series: [[Int]] = []
+            var last = Int.max
+            for note in byRun[number]! {
+                let value = Int(items[note].note.marker!) ?? 0
+                if value <= last { series.append([]) }
+                series[series.count - 1].append(note)
+                last = value
+            }
+            for notes in series {
+                let matched = notes.compactMap { matchedElement[$0] }
+                guard let first = matched.first, let end = matched.last,
+                    let restart = restarts.last(where: { $0 > first && $0 < end && !matched.contains($0) })
+                else { continue }
+                for note in notes {
+                    guard let element = matchedElement[note], element < restart else { continue }
+                    taken.remove("\(elements[element].place)|\(elements[element].marker)")
+                    items[note].place = nil
+                    matchedElement[note] = nil
+                }
+                let kept = notes.first { matchedElement[$0] != nil }
+                let stop = kept.flatMap { matchedElement[$0] }.map { elements[$0].place } ?? elements[restart].place
+                let window = (elements[restart].place...max(stop, elements[restart].place)).filter { !listPages.contains(places[$0].page) }
+                align(Array(notes.prefix { matchedElement[$0] == nil }), window)
+            }
+        }
+        // A list that the text never cites is none: a numbered list of steps under a heading "Notes".
+        let cited = Set(items.filter { $0.place != nil }.compactMap(\.run))
+        items.removeAll { $0.run.map { !cited.contains($0) } ?? false }
+
+        // The numbering's series. A sign names a note by itself, or by its page where the sign
+        // stands on more than one page or twice on one: only numbers make series.
+        var series = 0
+        var highest = 0
+        var lastRun: Int?
+        var signPages: [String: Set<Int>] = [:]
+        var signsOnPage: [String: Int] = [:]
+        for position in items.indices {
+            let marker = items[position].note.marker!
+            guard let number = Int(marker) else {
+                let page = items[position].page
+                signPages[marker, default: []].insert(page)
+                signsOnPage["\(page)|\(marker)", default: 0] += 1
+                items[position].ordinal = signsOnPage["\(page)|\(marker)"]!
+                continue
+            }
+            // Numbering restarts where a number does not go up, or a list of endnotes begins.
+            var restart = number <= highest
+            if items[position].note.kind == .endnote {
+                if items[position].run != lastRun { restart = true }
+                lastRun = items[position].run
+            }
+            if restart || series == 0 {
+                series += 1
+                highest = 0
+            }
+            highest = max(highest, number)
+            items[position].series = series
         }
         func id(_ item: Item) -> String {
             let marker = item.note.marker ?? ""
-            if item.series == 0 { return (signPages[marker]?.count ?? 0) > 1 ? "p\(item.page + 1)\(marker)" : marker }
+            if item.series == 0 {
+                let several = (signPages[marker]?.count ?? 0) > 1 || (signsOnPage["\(item.page)|\(marker)"] ?? 0) > 1
+                return several ? "p\(item.page + 1)\(marker)" + (item.ordinal > 1 ? "\(item.ordinal)" : "") : marker
+            }
             // The first series goes unprefixed, so an id does not change while later pages parse.
             return item.series > 1 ? "\(item.series).\(marker)" : marker
         }
-
-        // References: for each note, the next raised marker with its number.
         var identified: [String: [String: String]] = [:]
-        func match(_ notes: [Item], among references: [(page: Int, block: Int, token: String, markers: [String])]) -> [String: String] {
-            var cursor = 0
-            var used: [String: String] = [:]
-            for item in notes {
-                guard let marker = item.note.marker else { continue }
-                let position =
-                    references.indices[cursor...].first { references[$0].markers.contains(marker) }
-                    ?? references.indices.first { references[$0].markers.contains(marker) }
-                guard let position else { continue }
-                cursor = position
-                let reference = references[position]
-                identified["\(reference.page).\(reference.block).\(reference.token)", default: [:]][marker] = id(item)
-                used[marker] = id(item)
+        for item in items {
+            guard let position = item.place, let marker = item.note.marker else { continue }
+            for position in [position] + item.more {
+                let place = places[position]
+                identified["\(place.page).\(place.block).\(place.token).\(place.index)", default: [:]][marker] = id(item)
             }
-            return used
-        }
-        for page in order {
-            let own = items.filter { $0.page == page && $0.note.kind == .footnote }
-            guard !own.isEmpty else { continue }
-            _ = match(own, among: digests[page]!.references.map { (page, $0.block, $0.token, $0.markers) })
-        }
-        var from = 0
-        for number in Set(run.values).sorted() {
-            let pagesOfRun = run.filter { $0.value == number }.keys.sorted()
-            guard let start = pagesOfRun.first else { continue }
-            let pool = order.filter { $0 >= from && $0 < start }.flatMap { page in
-                digests[page]!.references.map { (page, $0.block, $0.token, $0.markers) }
-            }
-            let own = items.filter { run[$0.page] == number && $0.note.kind == .endnote }
-            _ = match(own, among: pool)
-            from = (pagesOfRun.last ?? start) + 1
         }
 
         var result: [Int: PageNotes] = [:]
@@ -616,33 +844,33 @@ enum Notes {
             }
             notes.entries = entries.enumerated().sorted { ($0.element.first, $0.offset) < ($1.element.first, $1.offset) }.map(\.element.entry)
             for reference in digest.references {
-                guard let ids = identified["\(page).\(reference.block).\(reference.token)"],
+                guard let ids = identified["\(page).\(reference.block).\(reference.token).\(reference.index)"],
                     reference.markers.allSatisfy({ ids[$0] != nil })
                 else { continue }
                 notes.references[reference.block, default: []].append(
-                    PageNotes.Reference(token: reference.token, ids: reference.markers.compactMap { ids[$0] }))
+                    PageNotes.Reference(token: reference.token, ids: reference.markers.compactMap { ids[$0] }, index: reference.index))
             }
             if !notes.entries.isEmpty || !notes.references.isEmpty { result[page] = notes }
         }
         return result
     }
 
-    /// A block's text with its references to notes written `[^7]`: the first raised marker of
-    /// each reference's token that a note's marker can follow.
+    /// A block's text with its references to notes written `[^7]`: each the raised marker of its
+    /// token and its place among the block's references with that token.
     static func linked(_ text: String, _ references: [PageNotes.Reference]) -> String {
-        var text = text
+        guard !references.isEmpty else { return text }
+        let found = Notes.references(in: text)
+        var replacements: [(range: NSRange, text: String)] = []
         for reference in references {
-            let token = "^{\(reference.token)}"
-            var from = text.startIndex
-            while let range = text.range(of: token, range: from..<text.endIndex) {
-                if follows(text as NSString, text.utf16.distance(from: text.startIndex, to: range.lowerBound)) {
-                    text.replaceSubrange(range, with: reference.ids.map { "[^\($0)]" }.joined())
-                    break
-                }
-                from = range.upperBound
-            }
+            guard let place = found.first(where: { $0.token == reference.token && $0.index == reference.index }) else { continue }
+            replacements.append((place.range, reference.ids.map { "[^\($0)]" }.joined()))
         }
-        return text
+        // From the end, so the places before stay where they are.
+        var result = text as NSString
+        for replacement in replacements.sorted(by: { $0.range.location > $1.range.location }) {
+            result = result.replacingCharacters(in: replacement.range, with: replacement.text) as NSString
+        }
+        return result as String
     }
 
     /// A note's text: its blocks' visible text joined, without the marker it starts with.
@@ -691,6 +919,8 @@ public struct NoteIndex {
         public var page: Int
         public var text: String
         public var references: [Place]
+        /// Pages of the file are not parsed yet, so the note's id and its references can change.
+        public var provisional: Bool? = nil
     }
 
     public enum Outcome: Equatable, Sendable {
@@ -712,8 +942,17 @@ public struct NoteIndex {
             for entry in judged[page]!.entries where entry.id != nil { all.append((page, entry)) }
         }
         let ids = all.compactMap(\.entry.id)
+        // "7" also names "3.7", so it names a note alone only when one series has a 7; "*" names
+        // "p3*", a sign's id on one of the pages it stands on.
+        func named(_ id: String) -> Bool {
+            if id.hasSuffix("." + wanted) { return true }
+            guard id.hasPrefix("p"), !wanted.isEmpty else { return false }
+            let rest = id.dropFirst().drop(while: \.isNumber)
+            return rest.hasPrefix(wanted) && rest.dropFirst(wanted.count).allSatisfy(\.isNumber)
+        }
         var matches = all.filter { $0.entry.id == wanted }
-        if matches.isEmpty { matches = all.filter { $0.entry.id!.hasSuffix("." + wanted) } }
+        let others = all.filter { $0.entry.id != wanted && named($0.entry.id!) }
+        if matches.isEmpty || Int(wanted) != nil { matches += others }
         guard let match = matches.first else { return .missing(ids) }
         guard matches.count == 1 else { return .ambiguous(matches.map { $0.entry.id! }) }
         let layer = try store.results(keys: [keys[match.page]])[keys[match.page]]?.pageText

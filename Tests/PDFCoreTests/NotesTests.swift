@@ -29,7 +29,25 @@ import Testing
         let found = Notes.find(layer.blocks, regions: regions)
         if !found.notes.isEmpty { layer.notes = found.notes }
         if found.heading { layer.noteHeading = true }
+        if found.ended { layer.noteListEnded = true }
         return layer
+    }
+
+    func digests(_ layers: [PageText]) -> [Int: Notes.Digest] {
+        Dictionary(uniqueKeysWithValues: layers.enumerated().map { ($0.offset, Notes.digest($0.element, index: $0.offset)) })
+    }
+
+    func resolve(_ layers: [PageText]) -> [Int: PageNotes] {
+        Notes.resolve(pages: Array(layers.indices), digests: digests(layers))
+    }
+
+    /// A page of text that cites the notes `numbers` in order.
+    func citing(_ numbers: [Int]) -> PageText {
+        page([body(0.1, numbers.map { "A claim^{\($0)} was made." }.joined(separator: " ") + " " + sentence), body(0.3), body(0.5)])
+    }
+
+    func heading(_ text: String, _ y: Double) -> Item {
+        Item(text: text, box: Box(x: 0.1, y: y, width: 0.2, height: 0.02), size: 14)
     }
 
     let sentence = "The committee argued that the proposal would change how the laboratory shares its data with others."
@@ -110,6 +128,43 @@ import Testing
         #expect(Notes.linked("a^{2} then word^{2} and word^{3}", references) == "a^{2} then word[^2] and word^{3}")
     }
 
+    /// A unit's power is no reference; every other marker of a footnote's number on its page
+    /// leads to it, as authors' markers to the affiliation they share.
+    @Test func aUnitsPowerIsNoReferenceAndEveryCitingLinks() {
+        let layer = page([
+            body(0.1, "A plate of 5 cm^{2} was used, as the board^{2} said, and the board^{2} agreed. " + sentence), body(0.3),
+            body(0.5), note(0.88, "^{2}The board's minutes, 2019."),
+        ])
+        let found = resolve([layer])
+        #expect(found[0]?.references[0]?.map(\.index) == [0, 1])
+        let linked = Notes.linked(layer.blocks[0].text, found[0]?.references[0] ?? [])
+        #expect(linked.hasPrefix("A plate of 5 cm^{2} was used, as the board[^2] said, and the board[^2] agreed."))
+    }
+
+    /// Text a reader cannot see is never a note, and its markers cite none.
+    @Test func hiddenTextIsNoNoteAndCitesNone() {
+        var layer = page([
+            body(0.1, "A claim^{1} by someone, and a planted^{2} one. " + sentence), body(0.3), body(0.5),
+            note(0.85, "^{1}A note one can see."), note(0.88, "^{2}A planted note in white."),
+        ])
+        let planted = (layer.blocks[0].text as NSString).range(of: " and a planted^{2} one.")
+        layer.blocks[0].hidden = [Hidden(offset: planted.location, length: planted.length, reason: .background)]
+        layer.blocks[4].hidden = [Hidden(offset: 0, length: layer.blocks[4].text.utf16.count, reason: .background)]
+        let found = Notes.find(layer.blocks, regions: [])
+        #expect(found.notes.map(\.marker) == ["1"])
+        layer.notes = found.notes
+        let digest = Notes.digest(layer, index: 0)
+        #expect(digest.references.map(\.token) == ["1"])
+    }
+
+    @Test func aSignTwiceOnAPageHasTwoIds() {
+        let layer = page([
+            body(0.1, "Ann Lee^{*} and Bo Wu^{*} wrote it. " + sentence), body(0.3), body(0.5),
+            note(0.84, "* Department of Things, University."), note(0.88, "* Department of Others, Institute."),
+        ])
+        #expect(resolve([layer])[0]?.entries.compactMap(\.id) == ["p1*", "p1*2"])
+    }
+
     @Test func aReferenceNamesSeveralNotes() {
         let layer = page([
             body(0.1, "Haoru Tan^{1,†} wrote it. " + sentence + " " + sentence), body(0.3), body(0.5),
@@ -156,19 +211,76 @@ import Testing
         let second = page([body(0.05)] + entries(6...9))
         let third = page([body(0.05)] + entries(1...4))
         // A page that goes on from the list; a page that starts at 1 again goes on too, as the next
-        // chapter's notes.
-        let found = Notes.resolve(
-            pages: [0, 1, 2],
-            digests: [
-                0: Notes.digest(first, index: 0), 1: Notes.digest(second, index: 1),
-                2: Notes.digest(third, index: 2),
-            ])
-        #expect(found[0]?.entries.compactMap(\.id) == ["1", "2", "3", "4", "5"])
-        #expect(found[1]?.entries.compactMap(\.id) == ["6", "7", "8", "9"])
-        #expect(found[2]?.entries.compactMap(\.id) == ["2.1", "2.2", "2.3", "2.4"])
+        // chapter's notes. The text before cites both chapters' notes.
+        let text = [citing(Array(1...9)), citing(Array(1...4))]
+        let found = resolve(text + [first, second, third])
+        #expect(found[2]?.entries.compactMap(\.id) == ["1", "2", "3", "4", "5"])
+        #expect(found[3]?.entries.compactMap(\.id) == ["6", "7", "8", "9"])
+        #expect(found[4]?.entries.compactMap(\.id) == ["2.1", "2.2", "2.3", "2.4"])
+        // Each chapter's text cites its own notes.
+        #expect(found[0]?.references[0]?.flatMap(\.ids) == (1...9).map(String.init))
+        #expect(found[1]?.references[0]?.flatMap(\.ids) == ["2.1", "2.2", "2.3", "2.4"])
         // The same list without the page after it has one series, and plain ids.
-        let alone = Notes.resolve(pages: [0, 1], digests: [0: Notes.digest(first, index: 0), 1: Notes.digest(second, index: 1)])
-        #expect(alone[1]?.entries.compactMap(\.id) == ["6", "7", "8", "9"])
+        let alone = resolve([text[0], first, second])
+        #expect(alone[2]?.entries.compactMap(\.id) == ["6", "7", "8", "9"])
+    }
+
+    @Test func aListOfNotesTheTextNeverCitesIsNone() {
+        // A numbered list of steps under a heading "Notes".
+        let steps = page([body(0.05), body(0.15), heading("Notes", 0.3)] + entries(1...5, from: 0.35))
+        #expect(steps.notes?.count == 5)
+        #expect(resolve([page([body(0.1), body(0.3), body(0.5)]), steps])[1] == nil)
+    }
+
+    @Test func anotherHeadingEndsAListOfNotes() {
+        let numbered = (1...6).map { number in
+            Item(
+                text: "[\(number)] Smith, a paper of the field, page \(number).",
+                box: Box(x: 0.1, y: 0.62 + 0.05 * Double(number), width: 0.8, height: 0.02), size: 10)
+        }
+        let list = page([heading("Notes", 0.1)] + entries(1...3, from: 0.15) + [heading("References", 0.55)] + numbered)
+        #expect(list.noteListEnded == true)
+        #expect(list.notes?.compactMap(\.marker) == ["1", "2", "3"])
+        // The page after does not go on from the list, though its numbers start at 1.
+        let after = page([body(0.05)] + entries(1...4))
+        let found = resolve([citing([1, 2, 3]), list, after])
+        #expect(found[1]?.entries.compactMap(\.id) == ["1", "2", "3"])
+        #expect(found[2] == nil)
+    }
+
+    /// Each list after its chapter: the text before the list cites it, though the list of the
+    /// chapter between was missed.
+    @Test func endnotesCiteTheirChapterThoughAListBetweenWasMissed() {
+        let list = page([heading("Notes", 0.1)] + entries(1...3, from: 0.15) + [body(0.5)])
+        let found = resolve([citing([1, 2, 3]), list, citing([1, 2, 3]), citing([1, 2, 3]), list])
+        #expect(found[0]?.references[0]?.flatMap(\.ids) == ["1", "2", "3"])
+        #expect(found[2] == nil)
+        #expect(found[3]?.references[0]?.flatMap(\.ids) == ["2.1", "2.2", "2.3"])
+    }
+
+    /// All the notes at the end: a chapter whose markers the text lost leaves its notes
+    /// unmatched, and the chapter before keeps its own.
+    @Test func endnotesAtTheEndFindTheirChapters() {
+        let list = page([heading("Notes", 0.1)] + entries(1...3, from: 0.15) + entries(1...4, from: 0.35) + entries(1...3, from: 0.6))
+        let found = resolve([citing([1, 2, 3]), citing([1, 2, 3, 4]), page([body(0.1), body(0.3), body(0.5)]), list])
+        #expect(found[0]?.references[0]?.flatMap(\.ids) == ["1", "2", "3"])
+        #expect(found[1]?.references[0]?.flatMap(\.ids) == ["2.1", "2.2", "2.3", "2.4"])
+        #expect(found[3]?.entries.count == 10)
+    }
+
+    /// A series that took an earlier chapter's markers for want of one of its own keeps the
+    /// references after the text's numbering starts again.
+    @Test func aSeriesCitesOneStretchOfText() {
+        let list = page([heading("Notes", 0.1)] + entries(1...5, from: 0.15) + [body(0.5)])
+        // The second chapter lost its marker 4: the first chapter's 1 to 4 and the second's 5
+        // match more notes than the second's own.
+        let found = resolve([citing([1, 2, 3, 4]), citing([1, 2, 3, 5]), list])
+        #expect(found[0] == nil)
+        #expect(found[1]?.references[0]?.flatMap(\.ids) == ["1", "2", "3", "5"])
+        // A lone 1 in the text, as a figure's, starts no numbering: the notes around it keep theirs.
+        let stray = resolve([citing([1, 2, 3]), citing([1]), citing([4, 5]), list])
+        #expect(stray[0]?.references[0]?.flatMap(\.ids) == ["1", "2", "3"])
+        #expect(stray[2]?.references[0]?.flatMap(\.ids) == ["4", "5"])
     }
 
     @Test func endnotesThatRunTogetherInOneBlockComeApart() {
@@ -302,5 +414,82 @@ import Testing
         #expect(text.contains("(whole: pdf read paper.pdf --footnote 1)"))
         #expect(text.contains("more note"))
         #expect(Output.tokens(text) < 5_500)
+    }
+
+    /// A page of notes, whose blocks show nothing in place, stops at the budget, and the reads
+    /// that go on show each note once.
+    @Test func aPageOfNotesStopsAtTheBudgetAndGoesOn() throws {
+        let words = String(repeating: "a source of the claim, cited at length ", count: 7)
+        var items = [body(0.02), body(0.15)]
+        for number in 1...10 { items.append(note(0.4 + 0.055 * Double(number), "^{\(number)}" + words)) }
+        let layer = page(items)
+        #expect(layer.notes?.count == 10)
+        let page = try outputPage(0, layer, notes: resolve([layer])[0] ?? PageNotes())
+        var from: Int?
+        var seen: [String] = []
+        for _ in 0..<12 {
+            var document = Output.Document(file: "paper.pdf", pageCount: 1, budget: 400)
+            _ = document.add(page, from: from)
+            let text = document.report().text
+            #expect(Output.tokens(text) < 400 + 150)
+            seen += text.matches(of: /\[\^(\d+)\] \(p\.1\)/).map { String($0.1) }
+            guard let next = document.next else { break }
+            from = Int(next.firstMatch(of: /--from p1\.(\d+)/)!.1)
+        }
+        #expect(seen == (1...10).map(String.init))
+    }
+
+    /// A search hit inside a footnote leads to a read from there: it shows the note, whose
+    /// reference stands above.
+    @Test func aReadThatStartsInsideANoteShowsIt() throws {
+        var document = Output.Document(file: "paper.pdf", pageCount: 1)
+        _ = document.add(try withFootnote(), from: 4)
+        #expect(document.report().text.contains("[^1] (p.1) Chair of the board, 2019."))
+    }
+
+    /// A read of one section shows the notes no block refers to whose own block is in it.
+    @Test func aSectionReadShowsTheNotesOfItsBlocks() throws {
+        let next = Item(text: "2 Method", box: Box(x: 0.1, y: 0.02, width: 0.2, height: 0.02), size: 14)
+        let layer = page([body(0.1), body(0.3), body(0.5), note(0.85, "^{3}Chair of the board, 2019."), next])
+        let page = try outputPage(0, layer, notes: resolve([layer])[0] ?? PageNotes())
+        var document = Output.Document(file: "paper.pdf", pageCount: 1)
+        document.until = (page: 1, block: 5)
+        _ = document.add(page)
+        let text = document.report().text
+        #expect(text.contains("[^3] (p.1) Chair of the board"))
+        #expect(!text.contains("2 Method"))
+    }
+
+    /// Margin notes go out with their paragraph whole, so past about 1,000 tokens they read in
+    /// their place instead, within the budget.
+    @Test func marginNotesPastTheirBoundReadInPlace() throws {
+        // About 400 tokens each: two go with the paragraph, the third reads in its place.
+        let long = String(repeating: "see also the chapter on rivers and lakes ", count: 40)
+        let margins = (0..<3).map { Item(text: long, box: Box(x: 0.76, y: 0.12 + 0.02 * Double($0), width: 0.2, height: 0.015), size: 8, lines: 3) }
+        let layer = page([body(0.1, width: 0.6), body(0.3, width: 0.6), body(0.5, width: 0.6)] + margins)
+        #expect(layer.notes?.filter { $0.kind == .margin }.count == 3)
+        let text = Output.render(file: "paper.pdf", pageCount: 1, pages: [try outputPage(0, layer, notes: resolve([layer])[0] ?? PageNotes())]).text
+        #expect(text.matches(of: /\[margin\]/).count == 2)
+        #expect(text.contains("¶6 see also the chapter"))
+    }
+
+    @Test func aLinkStaysOutOfANotesMark() {
+        let text = "Prolific[^3] paid 3 dollars"
+        #expect(Output.place("3", in: text).map { text[$0.lowerBound...].hasPrefix("3 dollars") } == true)
+        #expect(Output.place("4", in: "Prolific[^4]") == nil)
+    }
+
+    /// "1 Introduction" to "4 Discussion" on one page make a run of numbers, as a list of endnotes,
+    /// but no list is cited, so they stay headings.
+    @Test func numberedHeadingsThatLookLikeAListStayHeadings() throws {
+        var items: [Item] = []
+        for (number, title) in ["Introduction", "Method", "Results", "Discussion"].enumerated() {
+            items.append(Item(text: "\(number + 1) \(title)", box: Box(x: 0.1, y: 0.05 + 0.22 * Double(number), width: 0.3, height: 0.02), size: 14))
+            items.append(body(0.08 + 0.22 * Double(number)))
+        }
+        let layer = page(items)
+        #expect(layer.notes?.count == 4)
+        let sections = Info.headings([try outputPage(0, layer, notes: PageNotes())])
+        #expect(sections.map(\.title) == ["1 Introduction", "2 Method", "3 Results", "4 Discussion"])
     }
 }

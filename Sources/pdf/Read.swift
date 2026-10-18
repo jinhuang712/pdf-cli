@@ -65,6 +65,12 @@ struct ReadCommand: ParsableCommand {
         if footnote != nil, scopes > 0 || from != nil {
             throw ValidationError("--footnote reads the whole document for the note: it takes no --page, --printed-page, --section, --full or --from")
         }
+        if footnote != nil, notes != .end || budget != "5000" || raw || headers || includeHidden || format != .md {
+            throw ValidationError("--footnote shows one note whole: it takes only --json")
+        }
+        if let footnote, footnote.trimmingCharacters(in: .whitespaces).isEmpty {
+            throw ValidationError("--footnote takes a note's id, such as 7, 3.7 or *")
+        }
     }
 
     func run() throws {
@@ -200,15 +206,18 @@ struct ReadCommand: ParsableCommand {
         }
         _ = try reader.read(path: path, pages: nil)
         let keys = try store.pageKeys(docID: docID)
-        let parsed = try store.cachedKeys(keys).count
+        // Pages alike share a key, so the pages parsed are counted by page, as a read counts them.
+        let cached = try store.cachedKeys(keys)
+        let parsed = keys.filter { cached.contains($0) }.count
         var index = NoteIndex()
         let outcome = try index.lookup(id, keys: keys, store: store)
         let provisional = parsed < pageCount ? " · provisional: \(parsed) of \(pageCount) pages parsed" : ""
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.withoutEscapingSlashes, .sortedKeys]
         switch outcome {
-        case .found(let note):
+        case .found(var note):
             if json {
+                if parsed < pageCount { note.provisional = true }
                 print(String(decoding: try encoder.encode(note), as: UTF8.self))
                 return
             }
