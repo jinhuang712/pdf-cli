@@ -15,17 +15,26 @@ public enum Output {
         /// The page's running headers, footers and publisher stamps, by block, judged against
         /// the pages around it (`Furniture`).
         public var furniture: [Int: Furniture.Kind]
+        /// The page's notes and the references to them, judged against the document (`Notes`).
+        public var notes: PageNotes
 
         public init(
             index: Int, result: PageResult, key: String, annotations: [FileFacts.Annotation] = [],
-            furniture: [Int: Furniture.Kind] = [:]
+            furniture: [Int: Furniture.Kind] = [:], notes: PageNotes = PageNotes()
         ) {
             self.index = index
             self.result = result
             self.key = key
             self.annotations = annotations
             self.furniture = furniture
+            self.notes = notes
         }
+    }
+
+    /// Where a read shows footnotes and endnotes: after the text it read, beside the paragraph
+    /// that refers to each, or not at all.
+    public enum NotesMode: String, Sendable {
+        case end, inline, off
     }
 
     public struct Report: Equatable, Sendable {
@@ -57,6 +66,9 @@ public enum Output {
             /// A figure, a table or a numbered equation, in place of the text inside it: its
             /// number, its caption and the command that crops it (`Region`).
             case figure, table, equation
+            /// A footnote or an endnote's text, with its id: after the text, or by the block that
+            /// refers to it.
+            case note
             /// The text inside a figure, a table or an equation, shown with `--raw`, labelled with
             /// what it lost.
             case setAside = "set-aside-text"
@@ -99,6 +111,9 @@ public enum Output {
         public var latex: String?
         public var markdown: String?
         public var transcribed: String?
+        /// A note's id, as "7" or "3.7", and for a note listed after the text, the page it is on.
+        public var id: String?
+        public var place: String?
 
         init(kind: Kind, page: Int, block: Int? = nil, box: Box = Box(x: 0, y: 0, width: 1, height: 1), text: String? = nil,
              printed: String? = nil, status: String? = nil, reason: String? = nil, score: Double? = nil,
@@ -139,6 +154,9 @@ public enum Output {
         var number: Int? = nil
         /// How many blocks of text inside figures, tables and equations the unit sets aside.
         var inside = 0
+        /// How many footnotes and endnotes the unit holds out of the text: shown after it, by the
+        /// block that refers to each, or not at all.
+        var notes = 0
         /// For a figure, a table or an equation, the number of its last block: a read that goes
         /// on from a block inside it, as a search hit's, shows it.
         var last: Int? = nil
@@ -150,6 +168,8 @@ public enum Output {
         var units: [Unit]
         /// The page carries a text layer that OCR replaced, which only `--raw` shows.
         var oldLayers = 0
+        /// The notes that go after the text, with the number of the block that refers to each.
+        var collected: [(block: Block, at: Int?)] = []
     }
 
     /// The blocks of one page, with the agent's picks and transcripts applied.
@@ -159,7 +179,7 @@ public enum Output {
     ///   - headers: show the running headers, footers and publisher stamps in place, labelled.
     static func pageBlocks(
         _ page: Page, picks: [String: [Pick]], transcripts: [String: [Transcript]] = [:], path: String, raw: Bool,
-        includeHidden: Bool = false, headers: Bool = false
+        includeHidden: Bool = false, headers: Bool = false, notesMode: NotesMode = .end
     ) -> PageBlocks {
         let (quality, picked) = judge(page, picks: picks)
         let layer = page.result.pageText
@@ -308,6 +328,108 @@ public enum Output {
                 }
                 return unit
             }
+            // Notes. A footnote or an endnote goes out of the text, to follow the output, or the
+            // block that refers to it, or nowhere; a margin note goes after the paragraph it stands
+            // beside; a headnote stays in place, labelled. A note whose blocks are in doubt, have
+            // unsure words, hold hidden text or are set aside as running headers stays text.
+            var noteAt: [Int: Int] = [:]
+            var firstOf: [Int: Int] = [:]
+            var marginAt = Set<Int>()
+            var headnoteAt = Set<Int>()
+            var noteBlocks: [Int: Block] = [:]
+            var referenceOf: [Int: Int] = [:]
+            var startsAt: [Int: Int] = [:]
+            for (position, entry) in page.notes.entries.enumerated() {
+                let members = entry.blocks.filter(layer.blocks.indices.contains)
+                guard let first = members.first,
+                    members.allSatisfy({
+                        page.furniture[$0] == nil && !inDoubt($0) && unsureByBlock[$0] == nil
+                            && captionOf[$0] == nil && insideOf[$0] == nil && (layer.blocks[$0].hidden ?? []).isEmpty
+                    })
+                else { continue }
+                switch entry.kind {
+                case .headnote:
+                    headnoteAt.insert(first)
+                case .margin:
+                    marginAt.insert(first)
+                case .footnote, .endnote:
+                    guard let id = entry.id else { continue }
+                    var note = Block(
+                        kind: .note, page: number, text: Notes.text(of: entry, in: layer),
+                        status: entry.author ? "author note" : entry.kind.rawValue)
+                    note.id = id
+                    noteBlocks[position] = note
+                    firstOf[position] = first
+                    for member in members { noteAt[member] = position }
+                    startsAt[first, default: 0] += 1
+                    for (block, references) in page.notes.references where references.contains(where: { $0.ids.contains(id) }) {
+                        referenceOf[position] = min(referenceOf[position] ?? Int.max, block)
+                    }
+                }
+            }
+            // A page's notes take about 4,000 tokens at most and one note 800, as a paragraph's
+            // annotations are held to 1,000: a page of thousands of small blocks that start with a
+            // number must not run a read over its budget. What is left out is counted, and
+            // `--footnote` shows any note whole.
+            var leftOut = 0
+            var firstLeftOut: String?
+            var spent = 0
+            for position in noteBlocks.keys.sorted(by: { firstOf[$0]! < firstOf[$1]! }) {
+                var note = noteBlocks[position]!
+                if tokens(note.text ?? "") > Output.noteTokens {
+                    note.text = prefix(note.text ?? "", tokens: Output.noteTokens) + "… (whole: pdf read \(path) --footnote \(note.id ?? ""))"
+                    noteBlocks[position] = note
+                }
+                let cost = tokens(render(note, style: .md, raw: false))
+                if spent + cost > Output.pageNoteTokens, spent > 0 {
+                    noteBlocks[position] = nil
+                    leftOut += 1
+                    firstLeftOut = firstLeftOut ?? note.id
+                } else {
+                    spent += cost
+                }
+            }
+            // A margin note goes after the block it stands level with, else the nearest above.
+            var marginsAfter: [Int: [Block]] = [:]
+            for index in marginAt.sorted() {
+                let box = layer.blocks[index].box
+                let candidates = layer.blocks.indices.filter {
+                    $0 != index && page.furniture[$0] == nil && noteAt[$0] == nil && !marginAt.contains($0) && !headnoteAt.contains($0)
+                        && captionOf[$0] == nil && insideOf[$0] == nil && !inDoubt($0)
+                }
+                func gap(_ other: Int) -> Double {
+                    let found = layer.blocks[other].box
+                    return max(0, found.x - (box.x + box.width), box.x - (found.x + found.width))
+                }
+                let level = candidates.filter {
+                    layer.blocks[$0].box.y <= box.y + 0.005 && box.y <= layer.blocks[$0].box.y + layer.blocks[$0].box.height
+                }
+                let anchor =
+                    level.min { gap($0) < gap($1) }
+                    ?? candidates.filter { layer.blocks[$0].box.y <= box.y }.max { layer.blocks[$0].box.y < layer.blocks[$1].box.y }
+                    ?? candidates.first
+                guard let anchor else {
+                    marginAt.remove(index)
+                    continue
+                }
+                marginsAfter[anchor, default: []].append(
+                    Block(
+                        kind: .text, page: number, block: index + 1, box: layer.blocks[index].box,
+                        text: shown(
+                            layer.blocks[index].text, pick: nil, choices: [], hidden: [], includeHidden: includeHidden,
+                            path: path, page: number),
+                        status: "margin"))
+            }
+            var inlineAt: [Int: [Block]] = [:]
+            var inlineLeft: [Block] = []
+            var inlinePlaced = Set<Int>()
+            for position in noteBlocks.keys.sorted(by: { firstOf[$0]! < firstOf[$1]! }) where notesMode == .inline {
+                if let block = referenceOf[position], let note = noteBlocks[position] {
+                    inlineAt[block, default: []].append(note)
+                } else if let note = noteBlocks[position] {
+                    inlineLeft.append(note)
+                }
+            }
             for (index, block) in layer.blocks.enumerated() {
                 for position in anchors[index] ?? [] { result.units.append(regionUnit(position, at: index)) }
                 if let doubt = quality.doubts.first(where: { $0.blocks?.contains(index) == true }) {
@@ -357,6 +479,21 @@ public enum Output {
                     result.units.append(unit)
                     continue
                 }
+                // A footnote or an endnote, which goes out of the text, and a margin note, which
+                // goes after the paragraph it stands beside: a unit of its own that shows nothing.
+                if furniture == nil, let position = noteAt[index] {
+                    var unit = Unit(blocks: [], number: index + 1)
+                    unit.notes = firstOf[position] == index ? startsAt[index] ?? 1 : 0
+                    attach(notes.filter { $0.anchor == index }, to: &unit, number: index + 1)
+                    result.units.append(unit)
+                    continue
+                }
+                if furniture == nil, marginAt.contains(index) {
+                    var unit = Unit(blocks: [], number: index + 1)
+                    attach(notes.filter { $0.anchor == index }, to: &unit, number: index + 1)
+                    result.units.append(unit)
+                    continue
+                }
                 // Unsure words inside text a reader cannot see stay hidden with it.
                 let runs = block.hidden ?? []
                 let spans = (unsureByBlock[index] ?? []).filter { span in
@@ -364,14 +501,16 @@ public enum Output {
                 }
                 let choices = spans.filter(\.pickable)
                 let looks = spans.filter { !$0.pickable }
-                let text = shown(
-                    block.text, pick: picked[index], choices: choices, hidden: runs, includeHidden: includeHidden,
-                    path: path, page: number)
+                let text = Notes.linked(
+                    shown(
+                        block.text, pick: picked[index], choices: choices, hidden: runs, includeHidden: includeHidden,
+                        path: path, page: number),
+                    page.notes.references[index] ?? [])
                 var unit = Unit(
                     blocks: [
                         Block(
                             kind: .text, page: number, block: index + 1, box: block.box, text: text,
-                            status: furniture?.rawValue)
+                            status: furniture?.rawValue ?? (headnoteAt.contains(index) ? "headnote" : nil))
                     ],
                     holdsText: !block.visibleText.isEmpty)
                 unit.hidden = runs.count
@@ -383,6 +522,11 @@ public enum Output {
                 }
                 if !links.isEmpty { unit.blocks[0].links = links }
                 attach(others, to: &unit, number: index + 1)
+                unit.blocks += marginsAfter[index] ?? []
+                if let attached = inlineAt[index] {
+                    unit.blocks += attached
+                    inlinePlaced.insert(index)
+                }
                 if !choices.isEmpty && picked[index] == nil {
                     unit.blocks.append(unsureBlock(choices, block: block, page: number, index: index, path: path))
                     unit.flag = .unsure
@@ -431,6 +575,29 @@ public enum Output {
                 after += 1
                 damaged.block = after
                 result.units.append(Unit(blocks: [damaged], flag: .lowQuality))
+            }
+            // Notes that no block of the page refers to, after its other blocks; with the notes
+            // that go after the text, which the read collects.
+            for block in inlineAt.keys.sorted() where !inlinePlaced.contains(block) { inlineLeft += inlineAt[block]! }
+            let more =
+                leftOut == 0
+                ? nil
+                : Block(
+                    kind: .annotation, page: number,
+                    text: "\(leftOut) more note\(leftOut == 1 ? "" : "s") on this page, not shown: pdf read \(path) --footnote \(firstLeftOut ?? "")",
+                    status: "more")
+            if notesMode == .inline, let more { inlineLeft.append(more) }
+            if !inlineLeft.isEmpty {
+                after += 1
+                var unit = Unit(blocks: inlineLeft)
+                for position in unit.blocks.indices { unit.blocks[position].block = after }
+                result.units.append(unit)
+            }
+            if notesMode == .end {
+                for position in noteBlocks.keys.sorted(by: { firstOf[$0]! < firstOf[$1]! }) {
+                    result.collected.append((noteBlocks[position]!, referenceOf[position].map { $0 + 1 }))
+                }
+                if let more { result.collected.append((more, nil)) }
             }
             rest(notes.filter { $0.anchor == nil })
         } else {
@@ -597,6 +764,8 @@ public enum Output {
         let includeHidden: Bool
         /// Show the running headers, footers and publisher stamps in place, labelled.
         let headers: Bool
+        /// Where footnotes and endnotes show.
+        let notesMode: NotesMode
         let picks: [String: [Pick]]
         let transcripts: [String: [Transcript]]
         /// About how many tokens the output may take. Nil means no limit.
@@ -614,6 +783,12 @@ public enum Output {
         var furniture = 0
         /// Blocks of text inside figures, tables and equations set aside.
         var inside = 0
+        /// Footnotes and endnotes held out of the text.
+        var notesAside = 0
+        /// The footnotes and endnotes that follow the output, from the pages read to their end,
+        /// or as far as the references the read reached. They count against the budget, which a
+        /// page's notes may pass: the read does not stop to cut a note off.
+        public private(set) var endNotes: [Block] = []
         var holdsText = false
         /// Runs of text a reader cannot see, by page, among the units that went out.
         var hidden: [(page: Int, count: Int)] = []
@@ -629,7 +804,8 @@ public enum Output {
         ///   character in the block's text, such as `pdf read paper.pdf --page 4-9 --from p4.7`.
         public init(
             file: String, pageCount: Int, style: Style = .md, raw: Bool = false, includeHidden: Bool = false,
-            headers: Bool = false, picks: [String: [Pick]] = [:], transcripts: [String: [Transcript]] = [:], budget: Int? = nil,
+            headers: Bool = false, notes: NotesMode = .end, picks: [String: [Pick]] = [:],
+            transcripts: [String: [Transcript]] = [:], budget: Int? = nil,
             continuation: (@Sendable (Int, Int?, Int?) -> String)? = nil
         ) {
             let path = quoted(file)
@@ -640,6 +816,7 @@ public enum Output {
             self.raw = raw
             self.includeHidden = includeHidden
             self.headers = headers
+            self.notesMode = notes
             self.picks = picks
             self.transcripts = transcripts
             self.budget = budget
@@ -655,13 +832,19 @@ public enum Output {
         /// alone is larger than the budget, cut inside after a word when it starts with text.
         /// Counts and flags come only from the units that go out.
         public mutating func add(_ page: Page, from block: Int? = nil, offset: Int? = nil) -> Bool {
-            let content = pageBlocks(page, picks: picks, transcripts: transcripts, path: path, raw: raw, includeHidden: includeHidden,
-                                     headers: headers)
+            let content = pageBlocks(
+                page, picks: picks, transcripts: transcripts, path: path, raw: raw, includeHidden: includeHidden,
+                headers: headers, notesMode: notesMode)
             let number = page.index + 1
+            // The notes that follow the output go out for the page read as far as the read got.
+            var reached: Int?
             for (position, var unit) in content.units.enumerated() {
                 let at = unit.blocks.first?.block ?? unit.number
                 if position > 0, let block, (unit.last ?? at ?? Int.max) < block { continue }
-                if position > 0, let until, until.page == number, (at ?? Int.max) >= until.block { break }
+                if position > 0, let until, until.page == number, (at ?? Int.max) >= until.block {
+                    reached = until.block
+                    break
+                }
                 // A unit that shows nothing, as a running header set aside, costs nothing.
                 guard let first = unit.blocks.first else {
                     emit(unit, page: number)
@@ -674,6 +857,7 @@ public enum Output {
                     // Only this page's heading is out in this read, so this unit goes out anyway.
                     guard position > 0 && rendered.count == 1 else {
                         next = continuation(number, position == 0 ? nil : first.block, nil)
+                        collect(content, page: number, before: position == 0 ? 0 : first.block, from: block)
                         return false
                     }
                     if first.kind == .text, let text = unit.blocks[0].text {
@@ -688,6 +872,7 @@ public enum Output {
                             cut.blocks[0].text = kept + "…"
                             emit(cut, page: number)
                             next = continuation(number, first.block, (resumed ? offset ?? 0 : 0) + shownHere)
+                            collect(content, page: number, before: first.block, from: block)
                             return false
                         }
                     }
@@ -698,7 +883,27 @@ public enum Output {
             // layer, which only `--raw` shows, counts as set aside.
             if pagesRead.last != number { pagesRead.append(number) }
             oldLayers += content.oldLayers
+            collect(content, page: number, before: reached, from: block)
             return true
+        }
+
+        /// Adds the page's notes that go after the output: those whose reference lies before
+        /// block `limit`, or all of them (and those no block refers to) where the page was read to
+        /// its end, and, on a read that goes on from block `from`, those whose reference lies at
+        /// or after it: the read before it showed the others.
+        mutating func collect(_ content: PageBlocks, page number: Int, before limit: Int?, from: Int?) {
+            for item in content.collected {
+                if let at = item.at {
+                    if let limit, at >= limit { continue }
+                    if let from, at < from { continue }
+                } else if limit != nil {
+                    continue
+                }
+                var note = item.block
+                note.place = "p.\(number)"
+                endNotes.append(note)
+                used += tokens(render(note, style: style, raw: raw))
+            }
         }
 
         mutating func emit(_ unit: Unit, page: Int) {
@@ -720,6 +925,7 @@ public enum Output {
             doubtful += unit.doubtful
             furniture += unit.furniture
             inside += unit.inside
+            notesAside += unit.notes
             holdsText = holdsText || unit.holdsText
             if unit.hidden > 0 {
                 if let last = hidden.last, last.page == page {
@@ -752,6 +958,9 @@ public enum Output {
             } else if !aside.isEmpty {
                 summary.append("set aside: " + aside.joined(separator: ", ") + " (show: --raw)")
             }
+            if notesMode == .off, notesAside > 0 {
+                summary.append("footnotes and endnotes: \(notesAside) set aside (show: --notes end)")
+            }
             if furniture > 0 {
                 summary.append(
                     headers
@@ -771,6 +980,10 @@ public enum Output {
                                + "and an earlier copy may read better")
             }
             var parts = [summary.joined(separator: " · ")] + rendered
+            if !endNotes.isEmpty {
+                parts.append(style == .md ? "## Notes" : "=== Notes ===")
+                parts += endNotes.map { render($0, style: style, raw: raw) }
+            }
             if let stopped { parts.append("⚠ stopped: \(stopped)") }
             if let next { parts.append("next: \(next)") }
             let exitCode: Int32 = flagged.isEmpty ? 0 : holdsText || pagesRead.isEmpty ? 2 : 3
@@ -788,6 +1001,7 @@ public enum Output {
                 var oldOCRLayers: Int
                 var runningHeaders: Int
                 var textInsideFigures: Int
+                var notes: Int
             }
             struct HiddenText: Encodable {
                 var page: Int
@@ -812,10 +1026,11 @@ public enum Output {
                 Body(
                     file: file, pageCount: pageCount, pagesRead: pagesRead,
                     flagged: flagged.map { Flag(page: $0.page, status: $0.status.rawValue) },
-                    setAside: Aside(doubtfulBlocks: doubtful, oldOCRLayers: oldLayers, runningHeaders: headers ? 0 : furniture,
-                                    textInsideFigures: inside),
+                    setAside: Aside(
+                        doubtfulBlocks: doubtful, oldOCRLayers: oldLayers, runningHeaders: headers ? 0 : furniture,
+                        textInsideFigures: inside, notes: notesMode == .off ? notesAside : 0),
                     hidden: hidden.map { HiddenText(page: $0.page, places: $0.count) },
-                    provisional: parsed.map { $0 < pageCount } ?? false, savedByPDFKit: savedByPDFKit, blocks: blocks,
+                    provisional: parsed.map { $0 < pageCount } ?? false, savedByPDFKit: savedByPDFKit, blocks: blocks + endNotes,
                     stopped: stopped, next: next.map { $0 + " --json" }))
         }
     }
@@ -824,11 +1039,11 @@ public enum Output {
     public static func render(
         file: String, pageCount: Int, pages: [Page], picks: [String: [Pick]] = [:], transcripts: [String: [Transcript]] = [:],
         savedByPDFKit: Bool = false, raw: Bool = false, style: Style = .md,
-        includeHidden: Bool = false, headers: Bool = false
+        includeHidden: Bool = false, headers: Bool = false, notes: NotesMode = .end
     ) -> Report {
         var document = Document(
             file: file, pageCount: pageCount, style: style, raw: raw, includeHidden: includeHidden,
-            headers: headers, picks: picks, transcripts: transcripts)
+            headers: headers, notes: notes, picks: picks, transcripts: transcripts)
         for page in pages { _ = document.add(page) }
         return document.report(savedByPDFKit: savedByPDFKit)
     }
@@ -945,8 +1160,12 @@ public enum Output {
                 if let range = text.range(of: link.text) { text.replaceSubrange(range, with: linked(link.text, to: link.target, style: style)) }
             }
             // A running header, footer or publisher stamp, shown with `--headers`.
-            let label = block.status.flatMap(Furniture.Kind.init(rawValue:)).map { "[\($0.label)] " } ?? ""
+            let label =
+                block.status.flatMap(Furniture.Kind.init(rawValue:)).map { "[\($0.label)] " }
+                ?? (block.status == "headnote" || block.status == "margin" ? "[\(block.status!)] " : "")
             return "\(address(block)) \(label)\(text)"
+        case .note:
+            return "[^\(block.id ?? "")]" + (block.place.map { " (\($0))" } ?? "") + " " + (block.text ?? "")
         case .annotation:
             let kind = block.status ?? "comment"
             let by = block.author.map { " · \($0)" } ?? ""
@@ -1017,6 +1236,10 @@ public enum Output {
 
     /// About how many tokens one paragraph's annotations may take.
     static let annotationTokens = 1_000
+
+    /// About how many tokens one note may take, and the notes of one page.
+    static let noteTokens = 800
+    static let pageNoteTokens = 4_000
 
     /// What `--raw` labels the text inside a region with: what it lost.
     static func insideLabel(_ kind: Region.Kind) -> String {

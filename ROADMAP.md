@@ -1,4 +1,4 @@
-<!-- what-we-build: approved 2026-10-18 -->
+<!-- what-we-build: drafted 2026-10-18 -->
 # Roadmap
 
 **Current milestone:** M2. M1's tasks are all built; its exit criteria, the goals measured and a week of daily use, wait for the final wrap-up, as every milestone's do (the user, 2026-10-17).
@@ -78,7 +78,7 @@ The spike shipped no features. It answered the riskiest questions.
   - [x] M2.13 Equations as LaTeX, read by the agent: it reads an equation's crop and writes the LaTeX back with `pdf transcribe <pdf> --page N --equation 5`, on standard input, as `pdf pick` saves a choice, and a table's Markdown with `--table 2` (the user, 2026-10-18). It is kept beside the picks, by the page's key, and later reads show it in place, labelled as the agent's reading, with the crop still there to check it by; `pdf crop` shows it too. The tool rebuilds no LaTeX itself (the user, 2026-10-18). See DESIGNS.md → "Decision: the agent reads figures, tables and equations from their crops, and its LaTeX is kept".
   - Later: tables that continue across pages (M3.2)
 - **Notes** (F14)
-  - [ ] M2.7 Footnotes, endnotes, headnotes, margin notes and author notes
+  - [x] M2.7 Footnotes, endnotes, headnotes, margin notes and author notes, found by rules from sizes, markers and positions. A footnote or endnote is `[^7]` in its text, its words after the output under `## Notes` (`--notes inline` by its paragraph, `--notes off` out and counted), and `pdf read --footnote 7` shows it with the places that cite it; margin notes follow the paragraph they stand beside, a headnote stays in place, labelled, and `pdf info` lists the author notes. Parser version 17.
 - **Citations and references** (F15)
   - [ ] M2.8 Citations, references and cross-references
 - **Dump** (F6)

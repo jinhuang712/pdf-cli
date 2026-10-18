@@ -58,6 +58,9 @@ public struct Info: Encodable, Sendable {
     public var runningHeaders: [RunningHeader]
     /// Every figure and table found in the pages parsed so far, in page order.
     public var figures: [Figure]
+    /// How many footnotes, endnotes, author notes, margin notes and headnotes `pdf read` finds in
+    /// the pages parsed so far, by kind; none that is zero.
+    public var noteCounts: [String: Int]
 
     public struct Figure: Encodable, Equatable, Sendable {
         /// "figure" or "table".
@@ -99,7 +102,23 @@ public struct Info: Encodable, Sendable {
             .joined(separator: "\n")
         self.doi = Info.match(#"\b10\.\d{4,9}/[^\s"<>]+"#, in: opening).map { $0.trimmingCharacters(in: CharacterSet(charactersIn: ".,;)]")) }
         self.arXiv = Info.match(#"arXiv:\d{4}\.\d{4,5}(v\d+)?"#, in: opening).map { String($0.dropFirst(6)) }
-        self.notes = Info.notes(first)
+        // Footnotes, endnotes and the rest, judged against the pages parsed so far.
+        let digests = Dictionary(layers.compactMap { index, layer in layer.map { (index, Notes.digest($0, index: index)) } }) { first, _ in first }
+        let judged = Notes.resolve(pages: layers.map(\.0), digests: digests)
+        var counts: [String: Int] = [:]
+        var authors: [String] = []
+        for index in judged.keys.sorted() {
+            for entry in judged[index]!.entries {
+                let key = entry.author ? "authorNotes" : entry.kind == .margin ? "marginNotes" : "\(entry.kind.rawValue)s"
+                counts[key, default: 0] += 1
+                if entry.author, authors.count < 3, let layer = layers.first(where: { $0.0 == index })?.1 {
+                    let text = Notes.text(of: .footnote, blocks: entry.blocks, in: layer)
+                    authors.append("[^\(entry.id ?? "")] " + (text.count > 160 ? String(text.prefix(160)) + "…" : text))
+                }
+            }
+        }
+        self.noteCounts = counts
+        self.notes = authors.isEmpty ? Info.notes(first) : authors
         self.pageCount = pageCount
         self.pagesParsed = pages.count
         self.columns = Info.columns(layers.compactMap { $0.1 })
@@ -232,6 +251,10 @@ public struct Info: Encodable, Sendable {
         let named = #"(?i)^(abstract|introduction|related work|background|methods?|methodology|experiments?|results|discussion|conclusions?|limitations|acknowledge?ments?|references|bibliography|appendix(\s+[A-Z])?)$"#
         func plain(_ text: String) -> String { text.lowercased().filter(\.isLetter) }
         func exact(_ text: String) -> String { text.lowercased().split(whereSeparator: \.isWhitespace).joined(separator: " ") }
+        // A footnote, an endnote or a margin note is no heading, though "1 Equal contribution" reads as one.
+        func noted(_ page: Output.Page, _ index: Int) -> Bool {
+            page.result.pageText?.notes?.contains { $0.blocks.contains(index) } == true
+        }
         func nearEdge(_ block: TextBlock) -> Bool { block.box.y < 0.12 || block.box.y + block.box.height > 0.9 }
         // A running header repeats word for word, or, when it carries the page number, letter
         // for letter near the page's edge. A chapter's heading in the body, as "1 Introduction"
@@ -252,7 +275,7 @@ public struct Info: Encodable, Sendable {
             // headers nearly letter for letter.
             for (index, block) in (page.result.pageText?.blocks ?? []).enumerated()
             where block.lines.count == 1 && block.visibleText.split(separator: " ").count <= 12
-                && furniture[page.index]?[index] == nil
+                && furniture[page.index]?[index] == nil && !noted(page, index)
             {
                 let text = block.visibleText.trimmingCharacters(in: .whitespaces)
                 guard (seen[exact(text)]?.count ?? 0) < 3,
@@ -446,7 +469,14 @@ public struct Info: Encodable, Sendable {
                       + (pagesReadByOCR > 0 ? ", OCR on \(pagesReadByOCR)" : ""))
         layout.append("~\(Info.thousands(tokens)) tokens" + (pagesParsed < pageCount ? " in the pages parsed so far" : ""))
         lines.append(layout.joined(separator: " · "))
-        if !notes.isEmpty { lines.append("notes: " + notes.joined(separator: " · ")) }
+        if !notes.isEmpty { lines.append("author notes: " + notes.joined(separator: " · ")) }
+        let kinds = [("footnotes", "footnote"), ("endnotes", "endnote"), ("marginNotes", "margin note"), ("headnotes", "headnote")]
+        let found = kinds.compactMap { key, name in noteCounts[key].map { "\($0) \(name)\($0 == 1 ? "" : "s")" } }
+        if !found.isEmpty {
+            lines.append(
+                "notes read apart from the text: " + found.joined(separator: ", ")
+                    + " (pdf read: `--notes end|inline|off`, `--footnote ID`)")
+        }
         if !runningHeaders.isEmpty {
             let shown = runningHeaders.prefix(6).map { header -> String in
                 let kind = header.kind == Furniture.Kind.stamp.rawValue ? "publisher stamp" : header.kind

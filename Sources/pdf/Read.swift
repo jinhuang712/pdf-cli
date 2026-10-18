@@ -18,6 +18,10 @@ struct ReadCommand: ParsableCommand {
         case md, text
     }
 
+    enum NotesOption: String, ExpressibleByArgument {
+        case end, inline, off
+    }
+
     @Argument(help: "Path to a PDF file.") var path: String
     @Option(name: .customLong("page"),
             help: ArgumentHelp("Pages by their position in the file, such as 3, 3-5 or 3,7-9. The flag can repeat.",
@@ -36,6 +40,16 @@ struct ReadCommand: ParsableCommand {
     @Flag(help: "Show the text set aside as doubtful, labelled with its reason.") var raw = false
     @Flag(help: "Show the words of text a reader cannot see, labelled, in place of their markers.") var includeHidden = false
     @Flag(help: "Show the running headers, footers, page numbers and publisher stamps in place, labelled.") var headers = false
+    @Option(
+        help: ArgumentHelp(
+            "Where footnotes and endnotes show: end of the output, inline by the paragraph that refers to each, or off.",
+            valueName: "end|inline|off"))
+    var notes: NotesOption = .end
+    @Option(
+        help: ArgumentHelp(
+            "Show one footnote or endnote, as 7 or 3.7 where numbering restarts, with the places that refer to it.",
+            valueName: "id"))
+    var footnote: String?
     @Flag(help: "Print JSON.") var json = false
 
     func validate() throws {
@@ -48,11 +62,15 @@ struct ReadCommand: ParsableCommand {
         }
         let scopes = [!pageSpecs.isEmpty, printedPage != nil, section != nil, full].filter { $0 }.count
         if scopes > 1 { throw ValidationError("choose one of --page, --printed-page, --section and --full") }
+        if footnote != nil, scopes > 0 || from != nil {
+            throw ValidationError("--footnote reads the whole document for the note: it takes no --page, --printed-page, --section, --full or --from")
+        }
     }
 
     func run() throws {
         let store = try Store()
         let reader = Reader(store: store, library: try Library())
+        if let footnote { return try self.footnote(footnote) }
         let resume = from.flatMap(Self.place)
         var wanted: [Int] = []
         for number in pageSpecs.flatMap({ Self.pages($0)! }) where !wanted.contains(number) { wanted.append(number) }
@@ -106,6 +124,7 @@ struct ReadCommand: ParsableCommand {
         let transcripts = try Transcripts().transcripts(keys: keys)
         let flags =
             (raw ? " --raw" : "") + (includeHidden ? " --include-hidden" : "") + (headers ? " --headers" : "")
+            + (notes == .end ? "" : " --notes \(notes.rawValue)")
             + (format == .text ? " --format text" : "")
             + (budget == "5000" ? "" : " --budget \(budget)")
         let quotedPath = Output.quoted(path)
@@ -113,7 +132,8 @@ struct ReadCommand: ParsableCommand {
         let named = scope
         var document = Output.Document(
             file: path, pageCount: pageCount, style: format == .md ? .md : .text, raw: raw, includeHidden: includeHidden,
-            headers: headers, picks: picks, transcripts: transcripts, budget: limit,
+            headers: headers, notes: Output.NotesMode(rawValue: notes.rawValue) ?? .end, picks: picks,
+            transcripts: transcripts, budget: limit,
             continuation: { page, block, offset in
                 let rest = named == "pages" ? " --page " + Self.spec(Array(order.drop { $0 != page })) : named
                 return "pdf read \(quotedPath)\(rest) --from \(Output.address(page: page, block: block, offset: offset))\(flags)"
@@ -124,6 +144,7 @@ struct ReadCommand: ParsableCommand {
         // for the pages it shows.
         let batch = max(1, min(8, (limit ?? 40_000) / 1_000))
         var index = 0
+        var noteIndex = NoteIndex()
         reading: while index < numbers.count {
             let chunk = Array(numbers[index..<min(index + batch, numbers.count)])
             // The file can change or go away between chunks. Pages of another version must not
@@ -135,12 +156,14 @@ struct ReadCommand: ParsableCommand {
             }
             // Running headers and footers, judged against the pages around these that are parsed.
             let furniture = (try? Furniture.find(pages: results.map(\.page), keys: keys, store: store)) ?? [:]
+            // Footnotes, endnotes and the rest, judged against the pages parsed so far.
+            let judged = (try? noteIndex.resolve(pages: results.map(\.page), keys: keys, store: store)) ?? [:]
             for (page, result) in results {
                 let resume = index == 0 && page + 1 == start?.page
                 let added = document.add(
                     Output.Page(
                         index: page, result: result, key: keys[page], annotations: annotations[page] ?? [],
-                        furniture: furniture[page] ?? [:]),
+                        furniture: furniture[page] ?? [:], notes: judged[page] ?? PageNotes()),
                     from: resume ? start?.block : nil, offset: resume ? start?.offset : nil)
                 if !added { break reading }
                 index += 1
@@ -158,6 +181,54 @@ struct ReadCommand: ParsableCommand {
             print(report.text, terminator: "")
         }
         if report.exitCode != 0 { throw ExitCode(report.exitCode) }
+    }
+
+    /// One footnote or endnote by its id, with the places that refer to it, from the whole
+    /// document: every page is parsed first, as a section's end needs.
+    func footnote(_ id: String) throws {
+        let store = try Store()
+        let reader = Reader(store: store, library: try Library())
+        let docID: String
+        let pageCount: Int
+        switch try reader.read(path: path, pages: [0]) {
+        case .fileFailed(let reason):
+            print(json ? Self.failureJSON(path, reason) : "\(path): failed: \(Output.failure(reason, file: path))")
+            throw ExitCode(3)
+        case .pages(let id, let count, _):
+            docID = id
+            pageCount = count
+        }
+        _ = try reader.read(path: path, pages: nil)
+        let keys = try store.pageKeys(docID: docID)
+        let parsed = try store.cachedKeys(keys).count
+        var index = NoteIndex()
+        let outcome = try index.lookup(id, keys: keys, store: store)
+        let provisional = parsed < pageCount ? " · provisional: \(parsed) of \(pageCount) pages parsed" : ""
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.withoutEscapingSlashes, .sortedKeys]
+        switch outcome {
+        case .found(let note):
+            if json {
+                print(String(decoding: try encoder.encode(note), as: UTF8.self))
+                return
+            }
+            var lines = ["\(path) · \(note.kind) \(note.id) · p.\(note.page)\(provisional)", "[^\(note.id)] \(note.text)"]
+            if note.references.isEmpty {
+                lines.append("referenced: no raised marker of this number was found in the text")
+            } else {
+                lines.append("referenced:")
+                lines += note.references.map { "  p.\($0.page) ¶\($0.block): \($0.excerpt)" }
+            }
+            print(lines.joined(separator: "\n\n").replacingOccurrences(of: "\n\nreferenced:\n\n", with: "\n\nreferenced:\n"))
+        case .missing(let ids):
+            throw ValidationError(
+                "no footnote or endnote is \(id)"
+                    + (ids.isEmpty
+                        ? "; the file has none"
+                        : "; it has " + ids.prefix(12).joined(separator: ", ") + (ids.count > 12 ? ", and \(ids.count - 12) more" : "")))
+        case .ambiguous(let ids):
+            throw ValidationError("\(id) names notes in several series of numbering; use one of " + ids.joined(separator: ", "))
+        }
     }
 
     /// The page, counted from 1, that bears a printed number, from the file's page labels. A file

@@ -432,6 +432,19 @@ check "later reads show it under the caption" "^¶3 \[table 1, transcribed [0-9-
 check "its rows four spaces in" "^    | Ours | 0.91 |$" "$read"
 check "pdf crop --table shows it" "Markdown kept [0-9-]*, which pdf read shows" "$(kept $pdf crop $regions --page 2 --table 1)"
 
+# Footnotes (M2.7): out of the body, cited as [^3] in the text, their words after it, and one
+# shown by its number with the places that cite it.
+notes=testdata/smoke/arxiv-2608.04589.pdf
+read=$(run $pdf read $notes --page 1-2 --budget all)
+check "a footnote is cited in the text as [^3]" "Source-Limited Track\[\^3\], which restricts" "$read"
+check "its words follow the output under Notes" "^\[\^3\] (p.2) Source-Limited Track: competitions/11279/$" "$read"
+check "the author note is a footnote under its sign" "^\[\^\*\] (p.1) " "$read"
+check "--notes off counts them in the summary" "footnotes and endnotes: [0-9]* set aside (show: --notes end)" "$(run $pdf read $notes --page 1-2 --budget all --notes off | head -1)"
+check "--notes inline puts the note by its paragraph" "^\[\^4\] Open-Source Track: competitions/13868/$" "$(run $pdf read $notes --page 2 --budget all --notes inline)"
+check "--footnote shows a note and the places that cite it" "p.2 ¶[0-9]*: .*Track\[\^3\]" "$(run $pdf read $notes --footnote 3)"
+check "an unknown footnote fails, naming those found" "no footnote or endnote is 99; it has \*, 1, 2" "$(run $pdf read $notes --footnote 99)"
+check "pdf info lists the author notes" "^author notes: \[\^\*\] " "$(run $pdf info $notes)"
+
 # Pages nobody waits for parse slowly, at background priority, so runners get a minute to finish.
 for _ in $(seq 60); do
     pgrep -f "$own" >/dev/null || break

@@ -1,4 +1,4 @@
-<!-- what-we-build: approved 2026-10-18 -->
+<!-- what-we-build: drafted 2026-10-18 -->
 # Designs
 
 PDF files on the user's Mac and commands from an agent go in. Text with page addresses, PNG crops, search hits and failure reports come out, served from a local cache. In between, worker processes parse each page once, in steps that escalate only as far as the page needs, and store the result in SQLite. Behavior is in [FEATURES.md](FEATURES.md).
@@ -334,6 +334,19 @@ The user dropped M3.3, the local vision model for hard pages and formulas, on 20
 |---|---|---|
 | **No vision model** | Nothing more to download or keep, and one engine fewer whose readings can be wrong; the agent reads what needs eyes. | A scanned page that OCR misreads is flagged and cropped, and `pdf search` cannot find its words. |
 | A local vision model through MLX Swift (M3.3) | Reads hard scans and formulas without the agent, and their words reach the index. | Gigabytes to download, macOS 14 on Apple Silicon and a helper binary, and readings that are not right for certain. |
+
+## Decision: notes by size, marker and position; their words after the text, and a series names them — 2026-10-18
+
+M2.7 finds footnotes, endnotes, a headnote and margin notes with rules, as M2.5 and M2.6 do. A footnote is a block set smaller than the page's text, in the lower part of the page, that starts with its marker, with no body text below it in its column; an endnote is an entry of a run of numbers under a heading "Notes"; a margin note stands wholly beside the columns; a headnote is a small paragraph under a chapter's heading. A font size per line is kept for this (`TextLine.size`), and the parse breaks a block where a line starts with a raised marker. What depends on the whole document, which pages are a list of notes, the references and the numbering, is judged when a page is read, against the pages parsed so far, as running headers are. `pdf read` leaves the text of a footnote out of the body, puts `[^7]` where it is cited, and prints the notes after the output, under `## Notes`, so a paragraph reads whole and the note's words cost tokens only once; `--notes inline` and `--notes off` change it, and `--footnote 7` shows one note with its references. Numbering that restarts makes a series, and the ID carries it, as `3.7`.
+
+| Option | For | Against |
+|---|---|---|
+| **Rules on size, marker and position; texts after the output** | Nothing to download; the body reads whole; one `[^7]` leads to the words, on the page or by `--footnote`. A note costs tokens once, where the agent chooses. | A footnote set in the body's size is missed; a marker the text does not raise is no reference. IDs come from the pages parsed so far, so they can change while a file parses. |
+| A layout model that labels footnotes (egret-medium) | Labels footnotes, headers and captions in one pass, whatever their size. | A download, unmeasured on our own pages, and M2.4 builds it only if a goal fails with rules alone. |
+| Footnotes left in the text, in their place | Nothing found, nothing wrong. | A footnote in the middle of a paragraph's page breaks the sentence it follows, and goal G7 asks for 95% kept out of the body. |
+| Each page's notes at the end of its page | The note stays near its reference. | A read of three pages repeats a heading three times, and an endnote or a series that crosses pages has no page. |
+
+Cost: a read's budget does not cut a note off, so a page of long footnotes can run it over by their size. Holds as: the notes' words go out once, `[^id]` and `## Notes` never carry text that a reader of the page does not see, and no note is dropped without a trace: `--notes off` counts them in the summary line.
 
 ## Decision: alt text as hidden text, shown only with `--include-hidden` — 2026-10-17
 

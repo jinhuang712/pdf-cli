@@ -1,9 +1,9 @@
-<!-- what-we-build: approved 2026-10-18 -->
+<!-- what-we-build: drafted 2026-10-18 -->
 # Features
 
 ✅ built · 🚧 built with a gap · ⬜ planned
 
-F1 and F11 are ✅ built, F2, F3, F4, F5, F7, F8, F9 and F13 are 🚧 built with a gap, and every other feature is ⬜ planned. The commands and output samples show the intended behavior.
+F1 and F11 are ✅ built, F2, F3, F4, F5, F7, F8, F9, F13 and F14 are 🚧 built with a gap, and every other feature is ⬜ planned. The commands and output samples show the intended behavior.
 
 ## F1 — Add ✅
 
@@ -431,21 +431,59 @@ The guide is about 1,700 tokens. It names only commands and flags that are built
 
 Settings: none.
 
-## F14 — Notes ⬜
+## F14 — Notes 🚧
 
 Gives every kind of note in a document its own place, apart from the body text.
 
 | Kind | What the user sees |
 |---|---|
-| Footnotes and endnotes | A marker such as `[^7]` in the text. The note texts follow at the end of the output by default. `--notes end\|inline\|off` changes this. |
-| One footnote | `pdf read <path> --footnote 7` shows the note and every place that references it. When numbering restarts in each chapter, the ID includes the chapter, as in `--footnote 3.7`. |
-| Headnote | A block labelled `[headnote]` at the start of its article or chapter |
+| Footnotes and endnotes | A marker such as `[^7]` in the text where the note is cited. The note texts follow at the end of the output by default, under `## Notes`. `--notes end\|inline\|off` changes this: `inline` puts each right after the paragraph that cites it, `off` leaves them out and counts them in the summary line. |
+| One footnote | `pdf read <path> --footnote 7` shows the note and every place that references it. When numbering restarts in each chapter, the ID includes the series, as in `--footnote 3.7`. |
+| Headnote | A block labelled `[headnote]`, in place, at the start of its article or chapter |
 | Running headers, footers and publisher stamps | Left out of the text, counted in the summary line and listed once by `pdf info`. `--headers` keeps them in place. |
-| Table and figure notes | Shown with their table or figure, in `read` and in `crop` |
-| Author notes | Shown in `pdf info` |
-| Margin notes | Blocks labelled `[margin]`, beside the paragraph they belong to |
+| Table and figure notes | Shown with their table or figure, in `read` and in `crop` (M2.6 leaves them as text after the block: see the Gap) |
+| Author notes | A footnote on the first two pages that tells about the authors, as "equal contribution" or an affiliation set under a sign: shown in `pdf info`, and in `pdf read` as a footnote |
+| Margin notes | Blocks labelled `[margin]`, after the paragraph they stand beside |
+
+```text
+paper.pdf · 4 pages · read p.1–4 · flagged: none
+
+## p.2
+
+¶5 The model was trained on public data[^3], and the rest of the paper follows.
+
+## Notes
+
+[^*] (p.1) Equal contribution.
+
+[^3] (p.2) Source-Limited Track: competitions/11279/
+```
+
+```sh
+$ pdf read paper.pdf --footnote 3
+paper.pdf · footnote 3 · p.2
+
+[^3] Source-Limited Track: competitions/11279/
+
+referenced:
+  p.2 ¶5: …trained on public data[^3], and the rest of the paper…
+```
+
+`pdf info` counts them: `notes read apart from the text: 12 footnotes, 3 margin notes (pdf read: --notes end|inline|off, --footnote ID)`, and lists the author notes as `author notes: [^*] Equal contribution.`. `--json` gives a note as a block of kind `note` with its `id`, its `status` (`footnote`, `endnote` or `author note`) and, for one listed after the text, its `place`.
 
 Settings: none.
+
+Gap:
+- Notes are found by rules, with no model, from font sizes, positions and markers. Pages read by OCR have none: OCR's lines carry no sizes.
+- A **footnote** is a block in the lower 60% of the page, set at least 7% and half a point smaller than the page's text (its size is the largest that 5% of the page's characters have, so footnotes that outweigh the text do not make it), which starts with its marker, a raised number or sign, or a number when the text raises the same number, with no body-size text below it in its column. The smaller blocks that go on right below it, within a line's height, join it. A footnote set in the body's size, as some books do, is not found, and a footnote that goes on over the page's end reads on the next page as a small block of running text. Lines that start with a raised marker, or with the next number in a run of small lines, begin a block, since a column of notes set with no gap would join into one.
+- A reference is a raised marker after a punctuation mark or a word of two letters or more, matched to a note of the page in the order they stand: `x^{2}`, `10^{3}` and `(a+b)^{2}` stay as the PDF spells them, and so does a marker after a closing bracket, `see (1)^{2}`. A marker set as full-size text, as `[7]`, is not a reference. A note whose marker nothing cites is shown all the same, last on its page with `--notes inline`.
+- An **endnote** is an entry of a run of three or more numbers that go up, under a heading "Notes", "Endnotes" or "Notes to Chapter 3", which may be a running header, and on the pages that go on from it, with a number after the last, or 1 again for the next chapter's. Entries set as running text, with the next number inside a line, as the 9/11 Commission Report's, come apart there. A numbered list of references with no such heading is none, and an entry that goes on over a page's end reads on the next page as a block of text. Its reference is the next raised marker of its number in the pages since the last list of notes, so a chapter's notes cite that chapter's text.
+- A note's ID is its marker, as `7`. Numbering that restarts, a note numbered no higher than the one before, or the next list of endnotes, makes a new series, and its notes' IDs carry its number, as `3.7`; the first series' IDs stay plain, so an ID does not change while later pages parse. "Series" counts the restarts, so it is the chapter's number only where every chapter has a note. A document that numbers its footnotes from 1 on each page has an ID such as `12.1` for the first note of the twelfth page that has notes. A sign is its own ID, `*`, or `p3*` where the sign stands on more than one page. Series come from the pages parsed so far, so while a file parses, a note read from the middle of it can change its ID, as the summary line's `provisional` says. `pdf read paper.pdf --footnote 7` parses the whole file first.
+- The notes of a page go out when the read reaches its end, or, on a read the budget stops, those whose reference it passed, and they count against the budget without being cut by it. A page's notes take 4,000 tokens at most and one note 800; the rest is counted, as `3 more notes on this page, not shown`, and `--footnote` shows any note whole.
+- An **author note** is a footnote on the first two pages under a sign, or with words as "equal contribution", "corresponding author", "e-mail" or "affiliation". Affiliations a paper sets in its byline, as arXiv papers do, are text.
+- A **headnote** is the paragraph right under the page's first heading, in a size smaller than the body's, of two lines and 25 words or more, with body-size text after it, and no label as "Abstract". A summary under a title that is no headnote can look like one, and a headnote set in the body's size is text.
+- A **margin note** is a block of four words of three letters or more, no more than 0.3 of the page wide, set wholly beside the page's columns of text, in horizontal lines: PLOS's sidebar of the article's citation and funding is one. A chart's labels or a table's cells that no region holds, set outside the columns, can still read as one, as can a page of figures with a few paragraphs. Pages of vertical text have none.
+- A note's block that a read marks as doubtful or unsure, or sets aside as a running header, stays text where it stands.
 
 ## F15 — Citations and references ⬜
 

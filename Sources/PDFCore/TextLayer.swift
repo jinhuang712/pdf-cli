@@ -32,6 +32,8 @@ public struct Box: Codable, Equatable, Sendable {
 public struct TextLine: Codable, Equatable, Sendable {
     public var text: String
     public var box: Box
+    /// The font size most of its characters have, in points. Nil for a line read by OCR.
+    public var size: Double? = nil
 }
 
 /// A paragraph-like run of lines. Its text joins the lines, with line-end hyphens resolved.
@@ -142,6 +144,10 @@ public struct PageText: Codable, Equatable, Sendable {
     public var pictures: [Picture]? = nil
     /// The figures, tables and numbered equations the page shows (`Regions`).
     public var regions: [Region]? = nil
+    /// The footnotes, endnotes, headnote and margin notes the page holds (`Notes`).
+    public var notes: [PageNote]? = nil
+    /// The page has a heading that opens a list of endnotes.
+    public var noteHeading: Bool? = nil
 
     public var text: String { blocks.map(\.text).joined(separator: "\n\n") }
 }
@@ -295,6 +301,8 @@ enum TextLayer {
         /// The number at the line's end, as "5" of "(5)", set 1.5 em or more apart from the
         /// rest of the line, or alone on it, as an equation's (`Regions`).
         var tag: String? = nil
+        /// The font size most of its characters have, in points.
+        var size: Double? = nil
     }
 
     /// - Parameters:
@@ -326,6 +334,8 @@ enum TextLayer {
         let (order, breaks) = ReadingOrder.order(lines.map(\.rect), texts: lines.map(\.text))
         var starts = order.map { breaks.contains($0) }
         lines = order.map { lines[$0] }
+        // Notes come apart where each starts.
+        for (position, start) in Notes.starts(lines).enumerated() where start { starts[position] = true }
 
         // Figures, tables and numbered equations, from the page's lines, pictures and rules. A
         // caption and the text inside a region each make blocks of their own.
@@ -386,6 +396,9 @@ enum TextLayer {
                 }
             }
         }
+        let notes = Notes.find(layer.blocks, regions: layer.regions ?? [])
+        if !notes.notes.isEmpty { layer.notes = notes.notes }
+        if notes.heading { layer.noteHeading = true }
         if let offPage = visibility?.drawing.offPage.filter({ !$0.isEmpty }), !offPage.isEmpty { layer.offPage = offPage }
         if visibility?.drawing.incomplete == true { layer.hiddenCheckIncomplete = true }
         if !pictures.isEmpty {
@@ -721,10 +734,16 @@ enum TextLayer {
         var cleaned = TextCleanup.line(piece)
         if softBreak { cleaned += "-" }
         guard !cleaned.isEmpty, !bounds.isNull else { return nil }
-        let rect = CGRect(x: bounds.minX - crop.minX, y: crop.maxY - bounds.maxY,
-                          width: bounds.width, height: bounds.height)
-        return RawLine(text: cleaned, rect: rect, softBreak: softBreak,
-                       tag: tag(text, range, characters: characters.filter { !$0.isSpace }.map(\.index), glyphs: glyphs))
+        let rect = CGRect(
+            x: bounds.minX - crop.minX, y: crop.maxY - bounds.maxY,
+            width: bounds.width, height: bounds.height)
+        let sizes = characters.filter { !$0.isSpace }.compactMap {
+            glyphs.sizes.indices.contains($0.index) && glyphs.sizes[$0.index] > 0 ? glyphs.sizes[$0.index] : nil
+        }
+        return RawLine(
+            text: cleaned, rect: rect, softBreak: softBreak,
+            tag: tag(text, range, characters: characters.filter { !$0.isSpace }.map(\.index), glyphs: glyphs),
+            size: sizes.isEmpty ? nil : Double((median(sizes) * 100).rounded() / 100))
     }
 
     /// An equation's number, as "(5)" or "(A.2)", at the end of a line.
@@ -765,8 +784,9 @@ enum TextLayer {
                     width: Double(rect.width / pageWidth), height: Double(rect.height / pageHeight))
             }
             let (text, hidden) = hiddenRuns(join(current, dehyphenator))
-            var block = TextBlock(text: text, box: box(area),
-                                  lines: current.map { TextLine(text: withoutMarks($0.text), box: box($0.rect)) })
+            var block = TextBlock(
+                text: text, box: box(area),
+                lines: current.map { TextLine(text: withoutMarks($0.text), box: box($0.rect), size: $0.size) })
             if !hidden.isEmpty { block.hidden = hidden }
             blocks.append(block)
             current = []
