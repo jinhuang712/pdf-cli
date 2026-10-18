@@ -74,6 +74,7 @@ Under them: worker processes with time and memory limits and one pool of slots (
 
 **Traps:**
 
+- A new task wants a new session that starts from this file, with a short history. `calm fork` copies the whole conversation, so it is no new session; Calm has no command that opens a blank one. Where no tool starts one, hand off and let the user open it.
 - Claude Code refuses compound shell commands with variables inside a worktree: put them in a script file and run it with `bash`.
 - `git stash` is shared with every other session: never use it. To compare with the build before a change, add a scratch worktree of the old commit outside the repo, build it there, and remove it after.
 - A cache built at the same parser version hides a change to the parse: debug with a fresh `PDF_CLI_HOME` each run.
