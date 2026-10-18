@@ -414,18 +414,23 @@ check "pdf info lists figures and tables" "^  tbl 1    p.1    Results of the met
 check "a search hit in a table names it" "in table 1 (crop: pdf crop $regions --page 1 --table 1)" "$(run $pdf search $regions Ours)"
 check "a chart whose bars carry their values is a figure" "^¶22 \[figure 5\] Step-wise comparison" "$(run $pdf read testdata/smoke/arxiv-2608.22898.pdf --page 7 --budget all)"
 
-# An equation's LaTeX, as the agent read it from the crop, kept for later reads (M2.13): in one
-# home, as it lasts from one command to the next.
+# An equation's LaTeX and a table's Markdown, as the agent read them from their crops, kept for
+# later reads (M2.13): in one home, as they last from one command to the next.
 kept() { PDF_CLI_HOME=$work/home-kept PDF_CLI_PAGE_TIME_LIMIT=2 PDF_CLI_MEMORY_LIMIT_MB=300 "$@" 2>&1; }
 check "with no LaTeX given, nothing is kept" "no LaTeX on standard input" "$(kept $pdf transcribe $regions --page 2 --equation 1 </dev/null)"
 check "an equation's LaTeX is kept" "^kept the LaTeX of equation 1 on p.2" "$(printf '%s\n' '$$E = m c^{2}$$' | kept $pdf transcribe $regions --page 2 --equation 1)"
 read=$(kept $pdf read $regions --page 2 --budget all)
 check "later reads show it in place, labelled" "^¶7 \[equation 1, transcribed [0-9-]*\]$" "$read"
-check "as display maths, with the crop to check it by" "^  \$\$E = m c^{2}\$\$$" "$read"
+check "as display maths, four spaces in" "^    E = m c^{2}$" "$read"
 check "pdf crop shows the LaTeX kept" "LaTeX kept [0-9-]*, which pdf read shows" "$(kept $pdf crop $regions --page 2 --equation 1)"
 check "an equation that is not there takes none" "no equation 9 on p.2; equations found there: 1" "$(printf 'x\n' | kept $pdf transcribe $regions --page 2 --equation 9)"
 check "--clear removes it" "^removed the LaTeX kept for equation 1 on p.2$" "$(kept $pdf transcribe $regions --page 2 --equation 1 --clear)"
 check "and reads crop the equation again" "^¶7 \[equation 1\] crop: pdf crop $regions --page 2 --equation 1$" "$(kept $pdf read $regions --page 2 --budget all)"
+check "a table's Markdown is kept, its fence dropped" "^kept the Markdown of table 1 on p.2" "$(printf '%s\n' '```markdown' '| Method | Score |' '|---|---|' '| Ours | 0.91 |' '```' | kept $pdf transcribe $regions --page 2 --table 1)"
+read=$(kept $pdf read $regions --page 2 --budget all)
+check "later reads show it under the caption" "^¶3 \[table 1, transcribed [0-9-]*\] Results of the method\.$" "$read"
+check "its rows four spaces in" "^    | Ours | 0.91 |$" "$read"
+check "pdf crop --table shows it" "Markdown kept [0-9-]*, which pdf read shows" "$(kept $pdf crop $regions --page 2 --table 1)"
 
 # Pages nobody waits for parse slowly, at background priority, so runners get a minute to finish.
 for _ in $(seq 60); do

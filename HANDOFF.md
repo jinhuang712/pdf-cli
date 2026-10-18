@@ -4,17 +4,17 @@ For whoever picks up pdf-cli next, a person or a new Claude Code session. Read t
 
 ## Where things stand
 
-- **Built and on `main`** (pushed, nothing half-done, no open branch): milestone M0; every task of M1, M1.1–M1.15; and M2.5 and M2.6 of M2.
+- **Built and on `main`** (pushed, nothing half-done, no open branch): milestone M0; every task of M1, M1.1–M1.15; and M2.5, M2.6 and M2.13 of M2.
 - **Not met yet:** the exit criteria of M1 and M2. They need the goals measured, and every goal in GOALS.md is still unmeasured: the measuring waits for the final wrap-up (the user, 2026-10-17).
-- **Docs:** all seven core docs are approved. The user approved DESIGNS, FEATURES, ROADMAP, GOALS and README on 2026-10-18, with the direction below.
-- **Waiting on the user:** which task comes next, M2.13 or M2.7 (below).
+- **Docs:** the user approved all seven core docs on 2026-10-18, with the direction below; M2.13 then set DESIGNS, FEATURES, ROADMAP and README back to `drafted`, until the user approves its edits.
+- **Waiting on the user:** approval of M2.13's doc edits. Next in ROADMAP's order is M2.7.
 
 ## The user's direction
 
 Read this before designing anything. Each line points to where it is written down.
 
 - **The tool converts nothing it cannot read for certain.** A table, an equation, a figure or a page OCR reads badly goes to the agent as a crop, and the agent's own model reads it. Rules or OCR cannot promise a table or a LaTeX right, and a wrong one looks right. The tool's job is to cut the tokens, the cost and the time an agent spends on a PDF. DESIGNS.md → "Decision: the agent reads figures, tables and equations from their crops, and its LaTeX is kept".
-- **What the agent reads is kept, so it is read once.** An equation's LaTeX that the agent writes back is cached with the page, and later reads show it in place, with no crop. This is M2.13.
+- **What the agent reads is kept, so it is read once.** An equation's LaTeX, or a table's Markdown, that the agent writes back with `pdf transcribe` is kept beside its picks, and later reads show it in place, labelled as its reading, with the crop to check it by (M2.13).
 - **No local vision model.** PDFKit and Apple's OCR read; the agent looks. M3.3 is dropped, and GOALS.md measures two setups, Base and Layout; Layout adds what `pdf setup` downloads, which is nothing until a task brings a model, as M2.4's layout model, built only if rules fail a goal, or, for M3.1's search by meaning, an embedding model if Apple's built-in embeddings fall short (DESIGNS.md → Open questions). The user holds that PDFKit and OCR suffice; no goal has measured it yet. DESIGNS.md → "Decision: no local vision model; PDFKit and Apple's OCR read, the agent looks".
 - **Nothing a reader cannot see reaches normal output, and nothing is dropped without a trace.** Hidden text, a picture's alt text among it, is a marker, its words only with `--include-hidden` (goal G16). Whatever is set aside, as a running header or a table's flat text, is counted in the summary line with the flag that shows it.
 - **Tests stay light until the final wrap-up:** unit tests, end-to-end tests and one review per task. The detailed test sets, measurements and tuning wait for the end (ROADMAP.md → Final wrap-up).
@@ -32,17 +32,16 @@ Read this before designing anything. Each line points to where it is written dow
 | `pdf read --headers` | M2.5 | Shows the running headers, footers and page numbers set aside |
 | `pdf search` | M1.8 | Keyword search per paragraph (SQLite FTS5) and `--regex`, in one PDF or the library |
 | `pdf crop` | M1.9, M2.6 | A page, a region, or a figure, a table or an equation by its number, as a PNG sized to Claude's image limits |
-| `pdf pick` | M1.3 | The agent's choice between two readings of an unsure word, kept in the cache |
+| `pdf pick` | M1.3 | The agent's choice between two readings of an unsure word, kept beside the library |
+| `pdf transcribe` | M2.13 | The LaTeX of an equation, or the Markdown of a table, that the agent read from its crop, kept so later reads show it |
 | `pdf agent-guide` | M1.11 | The guide that teaches an agent the tool; `--install claude-code` writes it as a Claude Code skill |
 
-Under them: worker processes with time and memory limits and one pool of slots (M1.1, M1.15); the text layer with the space repair (M1.2); quality checks with failure and unsure blocks (M1.3); Apple OCR for scans (M1.4); the hidden-text check (M1.10); annotations (M1.13); images and drawings marked in place (M1.14); reading order across columns and running headers (M2.5); figures, tables and equations (M2.6). Parser version 15, page key 2, index checks 10, cache schema 8: raise the parser version when the parse's output changes, the page key's when what it hashes changes, and the index checks when the index's checks change.
+Under them: worker processes with time and memory limits and one pool of slots (M1.1, M1.15); the text layer with the space repair (M1.2); quality checks with failure and unsure blocks (M1.3); Apple OCR for scans (M1.4); the hidden-text check (M1.10); annotations (M1.13); images and drawings marked in place (M1.14); reading order across columns and running headers (M2.5); figures, tables and equations (M2.6). Parser version 16, page key 2, index checks 10, cache schema 8: raise the parser version when the parse's output changes, the page key's when what it hashes changes, and the index checks when the index's checks change.
 
 ## What comes next
 
-1. **M2.13 or M2.7,** as the user chooses. ROADMAP.md lists M2.13 right after M2.6.
-   - **M2.13, the agent's LaTeX for an equation, kept.** A command, as `pdf pick` saves a choice, takes the LaTeX the agent read from `pdf crop --equation N` and stores it with the page's key. `pdf read` then shows it in the equation's block, labelled as the agent's reading, in place of the crop command, and `pdf reparse`, once M2.10 builds it, clears it, as it will clear picks. The agent guide says when to write it back. The command's name and flags are the task's to design, close to `pdf pick`'s. Whether tables get the same, as Markdown, is the user's call: ask.
-   - **M2.7, notes:** footnotes, endnotes, headnotes, margin notes and author notes (FEATURES.md → F14).
-2. **The rest of M2,** in ROADMAP's order, which is the order of building; a task's ID is its name, not its place, so M2.13, added last, is listed before M2.7: M2.8 citations and references, M2.9 `pdf dump`, M2.10 `pdf reparse`, M2.11 `pdf setup` and `pdf doctor`. M2.4, a layout model, comes only if a goal fails with rules alone.
+1. **M2.7, notes:** footnotes, endnotes, headnotes, margin notes and author notes (FEATURES.md → F14).
+2. **The rest of M2,** in ROADMAP's order, which is the order of building; a task's ID is its name, not its place, so M2.13, added last, was listed and built before M2.7: M2.8 citations and references, M2.9 `pdf dump`, M2.10 `pdf reparse`, which clears the picks of the pages it parses again but should keep their transcripts, read from the image, which a parse leaves as it is, M2.11 `pdf setup` and `pdf doctor`. M2.4, a layout model, comes only if a goal fails with rules alone.
 3. **M3:** M3.1 search by meaning, M3.2 tables across pages, M3.5 the Homebrew release.
 4. **The final wrap-up:** the open test set, the question set and the scorer (M2.1–M2.3), the quality thresholds (M2.12), the question set run in Claude Code (M3.6), the workers' memory, and every goal measured.
 
@@ -100,4 +99,5 @@ Each report holds the measurements, the review's findings and the tests.
 | M1.13 Annotations | 2026-10-17 | They come from the file's facts, so a file that gains highlights shows them with no page parsed again. | `M1.13-annotations.md` |
 | M1.14 Pictures | 2026-10-17 | Images and drawings are markers with their crop commands. A stamp with no text of its own never shows its `/Name`, which a reader never sees and which could spell a planted line. | `M1.14-pictures.md` |
 | M2.5 Columns and running headers | 2026-10-17 | Only a band of two columns of running text moves; running headers are judged at read time against the pages within 4. A block with hidden text is never set aside. | `M2.5-columns-headers.md` |
+| M2.13 The agent's LaTeX and Markdown kept | 2026-10-18 | `pdf transcribe` keeps what the agent read from a crop, beside the picks, by page key and the number the page gives; each line goes out four spaces in, so none forges the output's structure. Its review found 9 problems, all fixed, and one in M2.6's equation numbers, as "(A.1)", fixed too: parser version 16. | `M2.13-transcribe.md` |
 | M2.6 Figures, tables and equations | 2026-10-18 | Found by rules from numbered captions, pictures and drawn shapes, rules, and an equation's number set apart. 64 figures, 77 tables and 84 equations on the smoke papers. A region never takes running text; a block with hidden text is never set aside. Its review found 12 problems: 9 fixed, 2 in part, 1 kept. | `M2.6-figures-tables-equations.md` |

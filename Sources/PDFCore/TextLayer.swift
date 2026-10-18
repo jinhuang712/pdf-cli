@@ -728,7 +728,7 @@ enum TextLayer {
     }
 
     /// An equation's number, as "(5)" or "(A.2)", at the end of a line.
-    static let tagPattern = try! NSRegularExpression(pattern: #"\(\s*([A-Z]?\d{1,3}(?:[.\-]\d{1,3})?[a-z]?)\s*\)\s*$"#)
+    static let tagPattern = try! NSRegularExpression(pattern: #"\(\s*((?:[A-Z]{1,2}[.\-]?)?\d{1,3}(?:[.\-]\d{1,3})?[a-z]?)\s*\)\s*$"#)
 
     /// The number at a line's end, when 1.5 em or more of space part it from the glyphs to its
     /// left, or nothing stands there: justified running text spaces its words far less, so

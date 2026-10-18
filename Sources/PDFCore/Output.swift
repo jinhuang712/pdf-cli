@@ -94,9 +94,10 @@ public enum Output {
         public var links: [Link]?
         /// A figure's, a table's or an equation's number, as its caption gives it.
         public var number: String?
-        /// An equation's LaTeX as the agent read it from the crop and kept it with `pdf transcribe`,
-        /// and the day it did (`Transcripts`).
+        /// An equation's LaTeX, or a table's Markdown, as the agent read it from the crop and kept
+        /// it with `pdf transcribe`, and the day it did (`Transcripts`).
         public var latex: String?
+        public var markdown: String?
         public var transcribed: String?
 
         init(kind: Kind, page: Int, block: Int? = nil, box: Box = Box(x: 0, y: 0, width: 1, height: 1), text: String? = nil,
@@ -271,10 +272,13 @@ public enum Output {
                 var block = Block(kind: kind, page: number, block: index + 1, box: region.box, text: text.isEmpty ? nil : Output.caption(text),
                                   commands: ["crop": "pdf crop \(path) --page \(number) --\(region.kind.rawValue) \(region.number)"])
                 block.number = region.number
-                // The LaTeX the agent kept for an equation, which goes out in place of its symbols.
-                let kept = (transcripts[page.key] ?? []).first { $0.kind == region.kind && $0.number == Region.normalized(region.number) }
+                // What the agent kept for an equation or a table, which goes out in place of its flat
+                // text: for the first region of its number on the page, which `pdf crop` crops.
+                let regionNumber = Region.normalized(region.number)
+                let first = regions.firstIndex { $0.kind == region.kind && Region.normalized($0.number) == regionNumber } == position
+                let kept = first ? (transcripts[page.key] ?? []).first { $0.kind == region.kind && $0.number == regionNumber } : nil
                 if let kept {
-                    block.latex = kept.text
+                    if region.kind == .table { block.markdown = kept.text } else { block.latex = kept.text }
                     block.transcribed = kept.day
                 }
                 var unit = Unit(blocks: [block], holdsText: !text.isEmpty || kept != nil)
@@ -969,16 +973,12 @@ public enum Output {
             }
             let label = "\(address(block)) [\(block.kind.rawValue) \(block.number ?? "")]"
             let crop = "crop: \(commands["crop"] ?? "")"
-            // The agent's LaTeX, labelled as its reading, indented so that no line of it reads as
-            // a page or a block of its own; the crop stays, to check it by.
-            if let latex = block.latex {
-                // A display environment of its own, as `align`, goes as written; anything else, an
-                // inner one as `aligned` included, between `$$`.
-                let display = latex.range(of: #"^\\begin\{(equation|align|gather|multline|flalign|eqnarray)\*?\}"#, options: .regularExpression)
-                let shown = display != nil ? latex : "$$\(latex)$$"
-                let lines = shown.split(separator: "\n", omittingEmptySubsequences: false).map { "  \($0)" }.joined(separator: "\n")
+            // The agent's LaTeX or Markdown, labelled as its reading, its lines indented four
+            // spaces, below the block's own command lines and inert in Markdown, so that none reads
+            // as a page, a block, a command or a fence of its own; the crop stays, to check it by.
+            if let kept = block.latex.map(Self.displayed) ?? block.markdown {
                 let head = "\(address(block)) [\(block.kind.rawValue) \(block.number ?? ""), transcribed \(block.transcribed ?? "")]"
-                return "\(head)" + (text.isEmpty ? "" : " \(text)") + "\n\(lines)\n  \(crop)"
+                return head + (text.isEmpty ? "" : " \(text)") + "\n" + Self.indented(kept) + "\n  \(crop)"
             }
             return text.isEmpty ? "\(label) \(crop)" : "\(label) \(text)\n  \(crop)"
         case .setAside:
@@ -1065,6 +1065,21 @@ public enum Output {
     /// 120th character of block 7.
     public static func address(page: Int, block: Int?, offset: Int?) -> String {
         "p\(page)" + (block.map { ".\($0)" } ?? "") + (offset.map { ":\($0)" } ?? "")
+    }
+
+    /// The agent's LaTeX as display maths: as written when it is a display of its own, as an
+    /// `align` environment, or holds its own signs, as `$a$ and $b$`; else between `$$` lines,
+    /// which a `%` comment on its last line leaves closed.
+    static func displayed(_ latex: String) -> String {
+        let environments = "equation|align|alignat|gather|multline|flalign|xalignat|eqnarray|subequations|math|displaymath"
+        let whole = latex.range(of: #"^\\begin\{("# + environments + #")\*?\}[\s\S]*\\end\{\1\*?\}$"#, options: .regularExpression) != nil
+        let signs = latex.replacingOccurrences(of: "\\$", with: "").contains("$") || latex.contains("\\(") || latex.contains("\\[")
+        return whole || signs ? latex : "$$\n\(latex)\n$$"
+    }
+
+    /// Text the agent gave, each line four spaces in.
+    public static func indented(_ text: String) -> String {
+        text.split(separator: "\n", omittingEmptySubsequences: false).map { "    \($0)" }.joined(separator: "\n")
     }
 
     /// The block's text with the picked reading in place of each unsure word, labelled.

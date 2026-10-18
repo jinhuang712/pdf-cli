@@ -118,6 +118,13 @@ import Testing
         let found = Regions.equations(lines, visible: lines.map(\.text), taken: [], size: size)
         #expect(found.map(\.number) == ["3"])
         #expect(found.first?.content == [1, 2, 3])
+        // Numbers with a letter before them, an appendix's or a supplement's (the M2.13 review).
+        func number(_ text: String) -> String? {
+            TextLayer.tagPattern.firstMatch(in: text, range: NSRange(location: 0, length: (text as NSString).length))
+                .map { (text as NSString).substring(with: $0.range(at: 1)) }
+        }
+        #expect(["x = y (A.1)", "x = y (B-1)", "x = y (S1)", "x = y (2a)", "x = y (1.2)"].map(number) == ["A.1", "B-1", "S1", "2a", "1.2"])
+        #expect(number("as in (see above)") == nil)
         // A regression table's header of column numbers is no equation.
         let header = [line("Specification (1) (2) (3) (4) (5)", 72, 400, width: 400, tag: "5")]
         #expect(Regions.equations(header, visible: header.map(\.text), taken: [], size: size).isEmpty)

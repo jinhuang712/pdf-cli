@@ -67,21 +67,24 @@ struct CropCommand: ParsableCommand {
         var number = page ?? 1
         var region = bbox.flatMap(Box.parse)?.outward
         var caption: String?
-        // An equation's LaTeX that the agent kept, to check against the image, and the number to
-        // keep one by.
+        // An equation's LaTeX or a table's Markdown that the agent kept, to check against the
+        // image, and the number to keep one by.
         var kept: Transcript?
-        var equationNumber: String?
+        var keepable: (kind: Region.Kind, number: String)?
+        var twins = 1
         if let wanted {
             let found = try Self.locate(wanted, page: page, path: path, password: password, docID: docID, store: store, reader: reader)
             number = found.page + 1
             region = found.region.box.outward
             caption = found.caption
-            if wanted.kind == .equation {
-                equationNumber = found.region.number
+            twins = found.twins
+            if wanted.kind != .figure {
+                let regionNumber = Region.normalized(found.region.number)
+                keepable = (wanted.kind, regionNumber)
                 let keys = try store.pageKeys(docID: docID)
                 if keys.indices.contains(found.page) {
                     kept = try Transcripts().transcripts(keys: [keys[found.page]])[keys[found.page]]?
-                        .first { $0.kind == .equation && $0.number == Region.normalized(found.region.number) }
+                        .first { $0.kind == wanted.kind && $0.number == regionNumber }
                 }
             }
         }
@@ -111,28 +114,35 @@ struct CropCommand: ParsableCommand {
                 var tokens: Int
                 var caption: String?
                 var latex: String?
+                var markdown: String?
                 var transcribed: String?
             }
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.withoutEscapingSlashes, .sortedKeys]
             print(String(decoding: try encoder.encode(Body(file: path, page: number, bbox: region.map(Output.format), image: made.url.path,
                                                            width: made.width, height: made.height, tokens: tokens, caption: caption,
-                                                           latex: kept?.text, transcribed: kept?.day)),
+                                                           latex: kept?.kind == .equation ? kept?.text : nil,
+                                                           markdown: kept?.kind == .table ? kept?.text : nil, transcribed: kept?.day)),
                          as: UTF8.self))
         } else {
             print("\(made.url.path)  (~\(Info.thousands(tokens)) image tokens, \(made.width)×\(made.height) px)")
-            if let equationNumber {
-                let keep = "pdf transcribe \(Output.quoted(path)) --page \(number) --equation \(equationNumber) <<'EOF'"
-                if let kept {
-                    print("p.\(number) · LaTeX kept \(kept.day), which pdf read shows; check it against the image, and replace it with: \(keep)")
-                    print(kept.text.split(separator: "\n", omittingEmptySubsequences: false).map { "  \($0)" }.joined(separator: "\n"))
-                } else {
-                    print("p.\(number) · once read, keep its LaTeX for later reads: \(keep), then the LaTeX, then EOF")
-                }
-            } else if let caption, !caption.isEmpty {
+            if let caption, !caption.isEmpty {
                 print("p.\(number) · caption: \(caption)")
-            } else if wanted != nil {
+            } else if wanted != nil, keepable == nil {
                 print("p.\(number)")
+            }
+            if let wanted, twins > 1 {
+                print("p.\(number) numbers \(twins) \(wanted.kind.rawValue)s \(wanted.number): this is the first of them")
+            }
+            if let keepable {
+                let language = Transcript.language(of: keepable.kind)
+                let keep = "pdf transcribe \(Output.quoted(path)) --page \(number) --\(keepable.kind.rawValue) \(keepable.number) <<'EOF'"
+                if let kept {
+                    print("p.\(number) · \(language) kept \(kept.day), which pdf read shows; check it against the image, and replace it with: \(keep)")
+                    print(Output.indented(kept.text))
+                } else {
+                    print("p.\(number) · once read, keep its \(language) for later reads: \(keep), then the \(language), then EOF")
+                }
             }
         }
     }
@@ -146,7 +156,7 @@ struct CropCommand: ParsableCommand {
     /// The figure, table or equation asked for: on the page given, or else in the pages parsed so
     /// far, or else, when none of those holds it, in the whole file once it is parsed.
     static func locate(_ wanted: (kind: Region.Kind, number: String), page: Int?, path: String, password: String?, docID: String,
-                       store: Store, reader: Reader) throws -> (page: Int, region: Region, caption: String) {
+                       store: Store, reader: Reader) throws -> (page: Int, region: Region, caption: String, twins: Int) {
         func layers() throws -> [(index: Int, layer: PDFCore.PageText)] {
             try InfoCommand.cachedPages(docID: docID, store: store).compactMap { page -> (index: Int, layer: PDFCore.PageText)? in
                 page.result.pageText.map { (page.index, $0) }
@@ -179,6 +189,6 @@ struct CropCommand: ParsableCommand {
             throw NotFound(description: "\(name) is on " + found.map { "p.\($0.page + 1)" }.joined(separator: " and ") + "; add --page")
         }
         let layer = pages.first { $0.index == first.page }!.layer
-        return (first.page, first.region, first.region.captionText(in: layer))
+        return (first.page, first.region, first.region.captionText(in: layer), found.filter { $0.page == first.page }.count)
     }
 }

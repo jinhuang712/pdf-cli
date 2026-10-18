@@ -308,17 +308,17 @@ The user asked for equations in three steps: find where each is, recognize it, a
 
 ## Decision: the agent reads figures, tables and equations from their crops, and its LaTeX is kept — 2026-10-18
 
-The user, on 2026-10-18: what the tool cannot read for certain, the agent's own model reads from the image. Rules or OCR that turn a table or an equation into text cannot promise it right, and a wrong LaTeX looks right. The tool's job is to cut the tokens, the cost and the time an agent spends on a PDF, which GOALS.md measures, and a crop costs little: about 500 image tokens for an equation, 1,600 for a table. What the agent reads once should not be read again: with M2.13 it writes an equation's LaTeX back, the cache keeps it with the page, as it keeps a pick, and later reads show the LaTeX in place, labelled as the agent's reading, with no crop. This replaces the decision of 2026-10-17 to rebuild LaTeX by rules.
+The user, on 2026-10-18: what the tool cannot read for certain, the agent's own model reads from the image. Rules or OCR that turn a table or an equation into text cannot promise it right, and a wrong LaTeX looks right. The tool's job is to cut the tokens, the cost and the time an agent spends on a PDF, which GOALS.md measures, and a crop costs little: about 500 image tokens for an equation, 1,600 for a table. What the agent reads once should not be read again: with M2.13 it writes an equation's LaTeX, or a table's Markdown, back with `pdf transcribe`, which keeps it beside its picks, and later reads show it in place, labelled as the agent's reading, with the crop still there to check it by. This replaces the decision of 2026-10-17 to rebuild LaTeX by rules.
 
 | Option | For | Against |
 |---|---|---|
-| **The agent reads the crop, and writes its LaTeX back** | As right as the agent's reading of the image, and paid once a file: later reads, by any agent, take it from the cache. | Each equation costs a crop the first time, and a page of 28 is better cropped whole. A wrong reading stays until `pdf reparse` clears it, as a pick does. |
+| **The agent reads the crop, and writes its LaTeX back** | As right as the agent's reading of the image, and paid once a file: later reads, by any agent, take it from the cache. | Each equation costs a crop the first time, and a page of 28 is better cropped whole. A wrong reading stays until another transcribe replaces it or `--clear` removes it. |
 | LaTeX rebuilt by rules from the glyphs, checked by drawing it back | No image tokens at all. | Not right for certain: a fraction or a matrix rebuilt wrong reads as right, and drawing it back needs a TeX engine. |
 | A local vision model | Reads formulas without the agent. | A download, and its readings are not right for certain either: dropped with M3.3. |
 
 ## Decision: `pdf transcribe` takes the LaTeX on standard input and keeps it beside the picks — 2026-10-18
 
-M2.13's command, `pdf transcribe paper.pdf --page 4 --equation 5`, reads the LaTeX from standard input, as a quoted heredoc gives it, and keeps it by the page's key and the equation's number in the agent's own folder, beside the picks. `pdf read` shows it in the equation's block, labelled `[equation 5, transcribed <day>]`, each line indented, with the crop still there to check it by, and `pdf crop --equation 5` prints it beside the image.
+M2.13's command, `pdf transcribe paper.pdf --page 4 --equation 5`, or `--table 2` for a table's Markdown, which the user asked for too, reads the text from standard input, as a quoted heredoc gives it, and keeps it by the page's key and the region's number as the page gives it, in the agent's own folder, beside the picks. `pdf read` shows it in the region's block, labelled `[equation 5, transcribed <day>]`, with the crop still there to check it by, and `pdf crop --equation 5` prints it beside the image. Each line of it goes out four spaces in: deeper than the block's own `crop:` line, which it could otherwise pass for, and inert in Markdown, where three spaces still make a heading or a fence.
 
 | Option | For | Against |
 |---|---|---|

@@ -1,9 +1,9 @@
 import Foundation
 import GRDB
 
-/// What the agent read from an equation's crop, kept so that later reads show it in place and
-/// need no crop (FEATURES.md → F3, ROADMAP.md → M2.13): its LaTeX. The tool rebuilds no LaTeX
-/// itself, as rules cannot promise it right (DESIGNS.md → Decision: the agent reads figures,
+/// What the agent read from a crop, kept so that later reads show it in place (FEATURES.md → F3,
+/// ROADMAP.md → M2.13): an equation's LaTeX, or a table's Markdown. The tool rebuilds neither
+/// itself, as rules cannot promise them right (DESIGNS.md → Decision: the agent reads figures,
 /// tables and equations from their crops, and its LaTeX is kept). It is the agent's reading, and
 /// the output says so.
 public struct Transcript: Equatable, Sendable {
@@ -24,6 +24,9 @@ public struct Transcript: Equatable, Sendable {
 
     /// The day it was made, as the output labels it: "2026-10-18".
     public var day: String { ISO8601DateFormatter.string(from: madeAt, timeZone: .current, formatOptions: [.withFullDate]) }
+
+    /// What it is written in: "LaTeX" for an equation, "Markdown" for a table.
+    public static func language(of kind: Region.Kind) -> String { kind == .table ? "Markdown" : "LaTeX" }
 }
 
 /// Transcripts live beside the picks, in the agent's own folder (DESIGNS.md → Principles →
@@ -31,8 +34,9 @@ public struct Transcript: Equatable, Sendable {
 /// page's key, so it holds while the page draws the same, in any file, and leaves a page that
 /// changed.
 public final class Transcripts: Sendable {
-    /// At most this many characters of one transcript.
-    public static let limit = 4_000
+    /// At most this many Unicode scalars of one transcript, so that combining marks stacked on a
+    /// letter count each: an equation's, and a table's, which holds more.
+    public static func limit(_ kind: Region.Kind) -> Int { kind == .table ? 12_000 : 4_000 }
     let queue: DatabaseQueue
 
     public init(directory: URL = Env.supportDirectory) throws {
@@ -55,27 +59,51 @@ public final class Transcripts: Sendable {
         }
     }
 
-    /// The text as it is kept: its lines as written, with no control characters, which could
-    /// reorder or hide what the output shows, no blank lines at either end, and no `$$`, `$` or
-    /// `\[ \]` around it, which the output adds. Nil when nothing is left.
-    public static func cleaned(_ text: String) -> String? {
-        let lines = text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
-            .replacingOccurrences(of: "\t", with: " ")
-        let scalars = lines.unicodeScalars.filter { $0 == "\n" || !CharacterSet.controlCharacters.contains($0) }
-        var kept = String(String.UnicodeScalarView(scalars))
-            .split(separator: "\n", omittingEmptySubsequences: false)
-            .map { line in String(line.reversed().drop { $0 == " " }.reversed()) }
-            .joined(separator: "\n")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        // Only a pair around the whole: "$a$ and $b$" keeps its signs.
-        for (open, close) in [("$$", "$$"), ("\\[", "\\]"), ("$", "$")]
-        where kept.count > open.count + close.count && kept.hasPrefix(open) && kept.hasSuffix(close) {
-            let inner = String(kept.dropFirst(open.count).dropLast(close.count))
-            guard !inner.contains(close) else { break }
-            kept = inner.trimmingCharacters(in: .whitespacesAndNewlines)
-            break
+    /// The text as it is kept: its lines as written, with no character that could reorder, hide
+    /// or break what the output shows (control and format characters, those a renderer ignores,
+    /// blank braille, and line and paragraph separators, which become newlines), no blank lines at
+    /// either end and no spaces at a line's end. An equation's LaTeX loses the `$$`, `$`, `\[ \]`
+    /// or `\( \)` around the whole, and a table's Markdown the code fence around it, which the
+    /// output does without. Nil when nothing is left.
+    public static func cleaned(_ text: String, kind: Region.Kind = .equation) -> String? {
+        let scalars = text.replacingOccurrences(of: "\r\n", with: "\n").unicodeScalars.compactMap { scalar -> Unicode.Scalar? in
+            switch scalar {
+            case "\r", "\u{2028}", "\u{2029}", "\u{85}": return "\n"
+            case "\t": return " "
+            case "\n": return scalar
+            case "\u{2800}": return nil
+            default:
+                let ignored = scalar.properties.isDefaultIgnorableCodePoint || CharacterSet.controlCharacters.contains(scalar)
+                return ignored ? nil : scalar
+            }
         }
-        return kept.isEmpty ? nil : kept
+        var lines = String(String.UnicodeScalarView(scalars)).split(separator: "\n", omittingEmptySubsequences: false)
+            .map { line in String(line.reversed().drop { $0 == " " }.reversed()) }
+        while lines.first?.isEmpty == true { lines.removeFirst() }
+        while lines.last?.isEmpty == true { lines.removeLast() }
+        if kind == .table, lines.count >= 2, lines[0].trimmingCharacters(in: .whitespaces).hasPrefix("```"),
+           lines[lines.count - 1].trimmingCharacters(in: .whitespaces) == "```" {
+            lines = Array(lines.dropFirst().dropLast())
+        }
+        var kept = lines.joined(separator: "\n")
+        if kind == .equation { kept = unwrapped(kept) }
+        let left = kept.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Signs alone, as "$$$$", hold nothing.
+        return left.isEmpty || left.allSatisfy({ "$ ".contains($0) }) ? nil : kept
+    }
+
+    /// LaTeX without one pair of delimiters around the whole, when nothing inside closes them
+    /// first: "$a$ and $b$" keeps its signs, and an escaped `\$` is no sign.
+    static func unwrapped(_ latex: String) -> String {
+        let text = latex.trimmingCharacters(in: .whitespacesAndNewlines)
+        for (open, close) in [("$$", "$$"), ("\\[", "\\]"), ("\\(", "\\)"), ("$", "$")]
+        where text.count > open.count + close.count && text.hasPrefix(open) && text.hasSuffix(close) && !text.hasSuffix("\\" + close) {
+            let inner = String(text.dropFirst(open.count).dropLast(close.count))
+            let unescaped = inner.replacingOccurrences(of: "\\$", with: "")
+            guard !unescaped.contains(close), !(open == "$" && unescaped.contains("$")) else { return latex }
+            return inner.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return latex
     }
 
     public func save(_ transcript: Transcript) throws {
@@ -87,10 +115,11 @@ public final class Transcripts: Sendable {
         }
     }
 
-    /// Removes one, and says whether there was one.
+    /// Removes one, its number matched without regard to case, as `pdf crop` matches it, and says
+    /// whether there was one.
     public func remove(pageKey: String, kind: Region.Kind, number: String) throws -> Bool {
         try queue.write { db in
-            try db.execute(sql: "DELETE FROM transcript WHERE page_key = ? AND kind = ? AND number = ?",
+            try db.execute(sql: "DELETE FROM transcript WHERE page_key = ? AND kind = ? AND number = ? COLLATE NOCASE",
                            arguments: [pageKey, kind.rawValue, Region.normalized(number)])
             return db.changesCount > 0
         }
