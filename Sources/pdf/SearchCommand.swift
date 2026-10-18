@@ -214,6 +214,9 @@ struct SearchCommand: ParsableCommand {
             var block: Int
             var section: String?
             var flagged: String?
+            /// The figure, table or equation the hit lies in, as "table 3", and the command that crops it.
+            var inside: String?
+            var crop: String?
             var snippet: String
         }
 
@@ -236,9 +239,11 @@ struct SearchCommand: ParsableCommand {
         }
 
         /// The status of each page with a hit that is not ok, such as "low-quality", keyed by
-        /// document and page, read in one pass per document.
-        func flags(_ hits: [SearchHit]) -> [String: String] {
+        /// document and page, and the figure, table or equation each hit lies in, keyed by
+        /// document, page and block, read in one pass per document.
+        func flags(_ hits: [SearchHit]) -> (flags: [String: String], regions: [String: Region]) {
             var flags: [String: String] = [:]
+            var regions: [String: Region] = [:]
             for (docID, docHits) in Dictionary(grouping: hits, by: \.docID) {
                 guard let keys = try? store.pageKeys(docID: docID) else { continue }
                 let pages = Set(docHits.map(\.page)).filter { keys.indices.contains($0) }
@@ -250,9 +255,13 @@ struct SearchCommand: ParsableCommand {
                     let status = Output.judge(Output.Page(index: page, result: result, key: keys[page]), picks: picked)
                         .quality.status
                     if status != .ok { flags["\(docID) \(page)"] = status.rawValue }
+                    guard let layer = result.pageText else { continue }
+                    for hit in docHits where hit.page == page {
+                        if let region = Region.holding(hit.block - 1, in: layer) { regions["\(docID) \(page) \(hit.block)"] = region }
+                    }
                 }
             }
-            return flags
+            return (flags, regions)
         }
 
         /// The hits that fit the budget, as lines. The first always goes out. The budget keeps
@@ -261,14 +270,17 @@ struct SearchCommand: ParsableCommand {
             var known: [String: [Section]] = [:]
             var lines: [Line] = []
             var used = Output.tokens(header()) + 60
-            let flagged = flags(hits)
+            let (flagged, regions) = flags(hits)
             for hit in hits {
                 guard let target = targets.first(where: { $0.docID == hit.docID }) else { continue }
                 let found = known[hit.docID] ?? sections(target)
                 known[hit.docID] = found
+                let region = regions["\(hit.docID) \(hit.page) \(hit.block)"]
                 let line = Line(file: target.path, page: hit.page + 1, block: hit.block,
                                 section: Info.section(at: hit.page + 1, block: hit.block, in: found)?.title,
-                                flagged: flagged["\(hit.docID) \(hit.page)"], snippet: hit.snippet)
+                                flagged: flagged["\(hit.docID) \(hit.page)"], inside: region?.name,
+                                crop: region.map { "pdf crop \(Output.quoted(target.path)) --page \(hit.page + 1) --\($0.kind.rawValue) \($0.number)" },
+                                snippet: hit.snippet)
                 let cost = Output.tokens(text(line))
                 if let budget, !lines.isEmpty, used + cost > budget { break }
                 used += cost
@@ -312,6 +324,7 @@ struct SearchCommand: ParsableCommand {
         func text(_ line: Line) -> String {
             (single ? "" : Output.quoted(name(line.file)) + " ") + "p.\(line.page) ¶\(line.block)"
                 + (line.section.map { " · " + $0 } ?? "") + (line.flagged.map { " · \($0) page" } ?? "")
+                + (line.inside.map { " · in \($0)" + (line.crop.map { " (crop: \($0))" } ?? "") } ?? "")
                 + " · " + line.snippet.replacingOccurrences(of: "\n", with: " ")
         }
 

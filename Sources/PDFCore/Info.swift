@@ -56,6 +56,18 @@ public struct Info: Encodable, Sendable {
     /// The running headers, footers, page numbers and publisher stamps that `pdf read` sets
     /// aside, each once, with the pages it stands on, in the pages parsed so far.
     public var runningHeaders: [RunningHeader]
+    /// Every figure and table found in the pages parsed so far, in page order.
+    public var figures: [Figure]
+
+    public struct Figure: Encodable, Equatable, Sendable {
+        /// "figure" or "table".
+        public var kind: String
+        public var number: String
+        /// Counted from 1.
+        public var page: Int
+        /// Its caption, without its label.
+        public var caption: String
+    }
 
     public struct RunningHeader: Encodable, Equatable, Sendable {
         /// "header", "footer" or "publisher-stamp".
@@ -99,6 +111,12 @@ public struct Info: Encodable, Sendable {
             pages: pages.map(\.index),
             in: Dictionary(layers.compactMap { index, layer in layer.map { (index, $0) } }) { first, _ in first })
         self.runningHeaders = Info.runningHeaders(pages, furniture: furniture)
+        self.figures = layers.flatMap { index, layer -> [Figure] in
+            guard let layer else { return [] }
+            return (layer.regions ?? []).filter { $0.kind != .equation }.map { region in
+                Figure(kind: region.kind.rawValue, number: region.number, page: index + 1, caption: region.captionText(in: layer))
+            }
+        }
         if !facts.outline.isEmpty {
             sectionsFrom = "bookmarks"
             sections = Info.sections(outline: facts.outline, pages: pages, pageCount: pageCount, complete: complete)
@@ -506,6 +524,21 @@ public struct Info: Encodable, Sendable {
             if sections.count > shown.count {
                 let left = sections.count - shown.count
                 table.append("  and \(left) \(cut ? "more" : "deeper") section\(left == 1 ? "" : "s"); pdf info --json lists them")
+            }
+            lines.append("")
+            lines.append(table.joined(separator: "\n"))
+        }
+        if !figures.isEmpty {
+            // As many rows as the sections may take, each caption cut to its first 70 characters.
+            var table = ["Figures and tables" + (pagesParsed < pageCount ? " (in the pages parsed so far)" : "")]
+            for figure in figures.prefix(Info.maxSectionRows) {
+                let name = (figure.kind == "table" ? "tbl " : "fig ") + figure.number
+                let caption = figure.caption.count > 70 ? String(figure.caption.prefix(69)) + "…" : figure.caption
+                table.append("  " + name.padding(toLength: max(name.count + 1, 9), withPad: " ", startingAt: 0)
+                             + "p.\(figure.page)".padding(toLength: 7, withPad: " ", startingAt: 0) + caption)
+            }
+            if figures.count > Info.maxSectionRows {
+                table.append("  and \(figures.count - Info.maxSectionRows) more; pdf info --json lists them")
             }
             lines.append("")
             lines.append(table.joined(separator: "\n"))

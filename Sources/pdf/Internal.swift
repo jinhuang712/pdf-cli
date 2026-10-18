@@ -122,6 +122,7 @@ struct DebugPages: ParsableCommand {
     @Option(name: .customLong("page"), help: "A page number, counted from 1. Repeat for more.")
     var pageNumbers: [Int] = []
     @Flag(help: "Print each page's text.") var text = false
+    @Flag(help: "Print each page's figures, tables and equations.") var regions = false
 
     func run() throws {
         let started = Date()
@@ -146,6 +147,15 @@ struct DebugPages: ParsableCommand {
                 if result.status == .ok && judged != .ok { detail += " · judged \(judged.rawValue)" }
                 print("p.\(page + 1) \(result.status.rawValue): \(detail)")
                 if text && result.status == .ok { print(result.text) }
+                if regions, let layer {
+                    for picture in layer.pictures ?? [] { print("  picture \(picture.kind) [\(Output.format(picture.box))]") }
+                    for region in layer.regions ?? [] {
+                        let caption = region.caption.map { layer.blocks[$0].text }.joined(separator: " ")
+                        let inside = region.blocks.map { layer.blocks[$0].text }.joined(separator: " | ")
+                        print("  \(region.name) [\(Output.format(region.box))] caption: \(caption.prefix(70))")
+                        print("    \(region.blocks.count) blocks inside: \(inside.prefix(150))")
+                    }
+                }
             }
             if results.contains(where: { $0.result.status == .failed }) { throw ExitCode(2) }
         }

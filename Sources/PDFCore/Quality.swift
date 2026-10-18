@@ -119,7 +119,11 @@ public struct PageMeasures: Codable, Equatable, Sendable {
         agreement = layer.agreement
         let blocks = layer.blocks.map(\.agreement)
         blockAgreements = blocks.contains { $0 != nil } ? blocks : nil
-        unsure = layer.unsure?.isEmpty == false ? layer.unsure : nil
+        // Words inside a figure, a table or an equation go aside with its text, which the agent
+        // reads from the image: their doubt flags no page.
+        let inside = Set((layer.regions ?? []).flatMap { region in region.blocks.filter { !region.caption.contains($0) } })
+        let spans = (layer.unsure ?? []).filter { !inside.contains($0.block) }
+        unsure = spans.isEmpty ? nil : spans
         unread = layer.unread.map(\.count)
         damaged = layer.damaged
     }

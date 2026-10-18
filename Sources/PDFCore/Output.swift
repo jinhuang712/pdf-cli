@@ -54,6 +54,12 @@ public enum Output {
             /// What an annotation shows beside the text: a comment, a note, a mark on words, a
             /// filled-in field or a link, after the block it sits on. `status` names which.
             case annotation
+            /// A figure, a table or a numbered equation, in place of the text inside it: its
+            /// number, its caption and the command that crops it (`Region`).
+            case figure, table, equation
+            /// The text inside a figure, a table or an equation, shown with `--raw`, labelled with
+            /// what it lost.
+            case setAside = "set-aside-text"
         }
 
         /// A link inside a block's text: the words a reader clicks, and where they lead.
@@ -86,6 +92,8 @@ public enum Output {
         public var name: String?
         /// The links inside a text block's words.
         public var links: [Link]?
+        /// A figure's, a table's or an equation's number, as its caption gives it.
+        public var number: String?
 
         init(kind: Kind, page: Int, block: Int? = nil, box: Box = Box(x: 0, y: 0, width: 1, height: 1), text: String? = nil,
              printed: String? = nil, status: String? = nil, reason: String? = nil, score: Double? = nil,
@@ -124,6 +132,11 @@ public enum Output {
         /// The block a unit of no blocks stands for, as a running header set aside: a read cut
         /// there, a section's end and `--from` place it as they would the block.
         var number: Int? = nil
+        /// How many blocks of text inside figures, tables and equations the unit sets aside.
+        var inside = 0
+        /// For a figure, a table or an equation, the number of its last block: a read that goes
+        /// on from a block inside it, as a search hit's, shows it.
+        var last: Int? = nil
     }
 
     /// What one page contributes to the output.
@@ -218,7 +231,71 @@ public enum Output {
             result.units.append(unit)
             rest(notes)
         } else if let layer {
+            // Figures, tables and equations: each goes out once, as one block where the first of
+            // its blocks stands, with its caption's text. The text inside it is set aside, shown
+            // with `--raw`, unless it holds text a reader cannot see, whose markers go out as they
+            // would anywhere.
+            let regions = layer.regions ?? []
+            var captionOf: [Int: Int] = [:], insideOf: [Int: Int] = [:], anchors: [Int: [Int]] = [:]
+            for (position, region) in regions.enumerated() {
+                let caption = region.caption.filter(layer.blocks.indices.contains)
+                let inside = region.blocks.filter { layer.blocks.indices.contains($0) && !caption.contains($0) }
+                for block in caption { captionOf[block] = position }
+                for block in inside where layer.blocks[block].hidden?.isEmpty ?? true { insideOf[block] = position }
+                if let first = (caption + inside).min() { anchors[first, default: []].append(position) }
+            }
+            func inDoubt(_ index: Int) -> Bool { quality.doubts.contains { $0.blocks?.contains(index) == true } }
+            func regionUnit(_ position: Int, at index: Int) -> Unit {
+                let region = regions[position]
+                // Its caption's blocks, but those in doubt or set aside as running headers, which go
+                // out as they would anywhere.
+                let captions = region.caption.filter { layer.blocks.indices.contains($0) && !inDoubt($0) && page.furniture[$0] == nil }
+                var hidden = 0
+                var spans: [(index: Int, choices: [Unsure], looks: [Unsure])] = []
+                let text = captions.map { caption -> String in
+                    let block = layer.blocks[caption]
+                    let runs = block.hidden ?? []
+                    hidden += runs.count
+                    let found = (unsureByBlock[caption] ?? []).filter { span in
+                        !runs.contains { $0.offset < span.offset + span.readings[0].utf16.count && span.offset < $0.offset + $0.length }
+                    }
+                    spans.append((caption, found.filter(\.pickable), found.filter { !$0.pickable }))
+                    return shown(block.text, pick: picked[caption], choices: found.filter(\.pickable), hidden: runs,
+                                 includeHidden: includeHidden, path: path, page: number)
+                }.joined(separator: " ")
+                let kind = Block.Kind(rawValue: region.kind.rawValue) ?? .figure
+                var block = Block(kind: kind, page: number, block: index + 1, box: region.box, text: text.isEmpty ? nil : Output.caption(text),
+                                  commands: ["crop": "pdf crop \(path) --page \(number) --\(region.kind.rawValue) \(region.number)"])
+                block.number = region.number
+                var unit = Unit(blocks: [block], holdsText: !text.isEmpty)
+                unit.last = (region.caption + region.blocks).max().map { $0 + 1 }
+                unit.hidden = hidden
+                if let alt = region.alt, !alt.isEmpty {
+                    unit.blocks.append(Block(kind: .hidden, page: number, block: index + 1, box: region.box,
+                                             text: marker(alt, reason: .altText, includeHidden: includeHidden, path: path, page: number)))
+                    unit.hidden += 1
+                }
+                var links: [Block.Link] = [], others: [Note] = []
+                for note in notes where note.anchor.map(captions.contains) == true {
+                    if let link = note.link, Self.shows(text, link.text) { links.append(link) } else { others.append(note) }
+                }
+                if !links.isEmpty { unit.blocks[0].links = links }
+                attach(others, to: &unit, number: index + 1)
+                for span in spans {
+                    let block = layer.blocks[span.index]
+                    if !span.choices.isEmpty && picked[span.index] == nil {
+                        unit.blocks.append(unsureBlock(span.choices, block: block, page: number, index: span.index, path: path))
+                        unit.flag = .unsure
+                    }
+                    if !span.looks.isEmpty {
+                        unit.blocks.append(lookBlock(span.looks, block: block, page: number, index: span.index, path: path))
+                        unit.flag = .unsure
+                    }
+                }
+                return unit
+            }
             for (index, block) in layer.blocks.enumerated() {
+                for position in anchors[index] ?? [] { result.units.append(regionUnit(position, at: index)) }
                 if let doubt = quality.doubts.first(where: { $0.blocks?.contains(index) == true }) {
                     var unit = Unit(blocks: [failureBlock(doubt, page: number, block: index + 1,
                                                           region: expanded(block.box, lines: block.lines), path: path, raw: raw)],
@@ -243,6 +320,25 @@ public enum Output {
                 let furniture = page.furniture[index]
                 if furniture != nil && !headers {
                     var unit = Unit(blocks: [], furniture: 1, number: index + 1)
+                    attach(notes.filter { $0.anchor == index }, to: &unit, number: index + 1)
+                    result.units.append(unit)
+                    continue
+                }
+                // A caption's text went out with its region's block.
+                if furniture == nil, captionOf[index] != nil { continue }
+                // Text inside a figure, a table or an equation: a unit of its own, as a running
+                // header's, that counts it, or shows it with `--raw`.
+                if furniture == nil, let position = insideOf[index] {
+                    let label = Output.insideLabel(regions[position].kind)
+                    var unit = Unit(blocks: [], number: index + 1)
+                    if raw {
+                        unit.blocks = [Block(kind: .setAside, page: number, block: index + 1, box: block.box,
+                                             text: shown(block.text, pick: nil, choices: [], hidden: [], includeHidden: includeHidden,
+                                                         path: path, page: number),
+                                             status: label)]
+                    } else {
+                        unit.inside = 1
+                    }
                     attach(notes.filter { $0.anchor == index }, to: &unit, number: index + 1)
                     result.units.append(unit)
                     continue
@@ -382,11 +478,20 @@ public enum Output {
             }
             return best.length == 0 ? nil : picked[best.start..<best.start + best.length].joined(separator: " ")
         }
-        // Each image and drawing the page shows, with the command that crops it.
-        let pictures = (layer?.pictures ?? []).map { picture -> Note in
+        // Each image and drawing the page shows, with the command that crops it, but those inside
+        // a figure or a table, whose block crops them.
+        let covered = (layer?.regions ?? []).filter { $0.kind != .equation }.map(\.box)
+        let outside = (layer?.pictures ?? []).filter { picture in !covered.contains { Output.share(of: picture.box, inside: $0) >= 0.5 } }
+        let pictures = outside.map { picture -> Note in
             let box = Box(x: max(0, picture.box.x), y: max(0, picture.box.y), width: min(1, picture.box.width), height: min(1, picture.box.height))
             var block = Block(kind: .annotation, page: number, box: box, status: picture.kind)
             block.commands = ["crop": "pdf crop \(path) --page \(number) --bbox \(format(box))"]
+            // Its alternate text, which a reader of the page never sees: a marker, or its words
+            // with `includeHidden`, labelled.
+            if let alt = picture.alt, !alt.isEmpty {
+                block.text = marker(alt, reason: .altText, includeHidden: includeHidden, path: path, page: number)
+                return Note(block: block, anchor: anchor(box, in: blocks), hidden: true)
+            }
             return Note(block: block, anchor: anchor(box, in: blocks))
         }
         let ordered = page.annotations.filter { $0.page == page.index }.sorted { ($0.box.y, $0.box.x) < ($1.box.y, $1.box.x) }
@@ -491,6 +596,8 @@ public enum Output {
         var doubtful = 0, oldLayers = 0
         /// Running headers, footers and publisher stamps set aside, or shown with `headers`.
         var furniture = 0
+        /// Blocks of text inside figures, tables and equations set aside.
+        var inside = 0
         var holdsText = false
         /// Runs of text a reader cannot see, by page, among the units that went out.
         var hidden: [(page: Int, count: Int)] = []
@@ -535,7 +642,7 @@ public enum Output {
             let number = page.index + 1
             for (position, var unit) in content.units.enumerated() {
                 let at = unit.blocks.first?.block ?? unit.number
-                if position > 0, let block, (at ?? Int.max) < block { continue }
+                if position > 0, let block, (unit.last ?? at ?? Int.max) < block { continue }
                 if position > 0, let until, until.page == number, (at ?? Int.max) >= until.block { break }
                 // A unit that shows nothing, as a running header set aside, costs nothing.
                 guard let first = unit.blocks.first else {
@@ -594,6 +701,7 @@ public enum Output {
             }
             doubtful += unit.doubtful
             furniture += unit.furniture
+            inside += unit.inside
             holdsText = holdsText || unit.holdsText
             if unit.hidden > 0 {
                 if let last = hidden.last, last.page == page {
@@ -620,6 +728,7 @@ public enum Output {
             var aside: [String] = []
             if doubtful > 0 { aside.append("\(doubtful) doubtful block\(doubtful == 1 ? "" : "s")") }
             if oldLayers > 0 { aside.append("\(oldLayers) old OCR layer\(oldLayers == 1 ? "" : "s")") }
+            if inside > 0 { aside.append("\(inside) block\(inside == 1 ? "" : "s") of text inside figures, tables and equations") }
             if raw {
                 summary.append("showing the text set aside as doubtful")
             } else if !aside.isEmpty {
@@ -660,6 +769,7 @@ public enum Output {
                 var doubtfulBlocks: Int
                 var oldOCRLayers: Int
                 var runningHeaders: Int
+                var textInsideFigures: Int
             }
             struct HiddenText: Encodable {
                 var page: Int
@@ -684,7 +794,8 @@ public enum Output {
                 Body(
                     file: file, pageCount: pageCount, pagesRead: pagesRead,
                     flagged: flagged.map { Flag(page: $0.page, status: $0.status.rawValue) },
-                    setAside: Aside(doubtfulBlocks: doubtful, oldOCRLayers: oldLayers, runningHeaders: headers ? 0 : furniture),
+                    setAside: Aside(doubtfulBlocks: doubtful, oldOCRLayers: oldLayers, runningHeaders: headers ? 0 : furniture,
+                                    textInsideFigures: inside),
                     hidden: hidden.map { HiddenText(page: $0.page, places: $0.count) },
                     provisional: parsed.map { $0 < pageCount } ?? false, savedByPDFKit: savedByPDFKit, blocks: blocks,
                     stopped: stopped, next: next.map { $0 + " --json" }))
@@ -831,12 +942,22 @@ public enum Output {
             case "more":
                 return "[\(block.text ?? "")]"
             case "image", "drawing":
-                return "[\(kind)] crop: \(block.commands?["crop"] ?? "")"
+                return "[\(kind)] crop: \(block.commands?["crop"] ?? "")" + (block.text.map { " · \($0)" } ?? "")
             case "stamp", "ink", "shape":
                 return "[\(kind)\(by)]" + (block.text.map { " \($0)" } ?? "") + (block.commands?["crop"].map { " · crop: \($0)" } ?? "")
             default:
                 return "[\(kind)\(by)]" + (block.text.map { " \($0)" } ?? "") + (block.note.map { " · comment: \($0)" } ?? "")
             }
+        case .figure, .table, .equation:
+            var text = block.text ?? ""
+            for link in block.links ?? [] {
+                if let range = text.range(of: link.text) { text.replaceSubrange(range, with: linked(link.text, to: link.target, style: style)) }
+            }
+            let label = "\(address(block)) [\(block.kind.rawValue) \(block.number ?? "")]"
+            let crop = "crop: \(commands["crop"] ?? "")"
+            return text.isEmpty ? "\(label) \(crop)" : "\(label) \(text)\n  \(crop)"
+        case .setAside:
+            return "\(address(block)) [\(block.status ?? "")] \(block.text ?? "")"
         case .doubtful:
             return "\(address(block)) [\(block.status ?? "low-quality")] \(block.text ?? "")"
         case .oldOCR:
@@ -871,6 +992,31 @@ public enum Output {
 
     /// About how many tokens one paragraph's annotations may take.
     static let annotationTokens = 1_000
+
+    /// What `--raw` labels the text inside a region with: what it lost.
+    static func insideLabel(_ kind: Region.Kind) -> String {
+        switch kind {
+        case .table: return "table text: rows and columns lost"
+        case .figure: return "figure text"
+        case .equation: return "equation text: its layout lost"
+        }
+    }
+
+    /// A caption's text without its label, as "Table 3:", which the block's own label gives.
+    static func caption(_ text: String) -> String {
+        let range = NSRange(location: 0, length: (text as NSString).length)
+        guard let match = Regions.captionPattern.firstMatch(in: text, range: range) else { return text }
+        let rest = (text as NSString).substring(from: match.range.upperBound).trimmingCharacters(in: .whitespaces)
+        return rest.isEmpty ? text : rest
+    }
+
+    /// How much of a box lies inside another, from 0 to 1.
+    static func share(of box: Box, inside other: Box) -> Double {
+        let width = min(box.x + box.width, other.x + other.width) - max(box.x, other.x)
+        let height = min(box.y + box.height, other.y + other.height) - max(box.y, other.y)
+        guard width > 0, height > 0, box.width * box.height > 0 else { return 0 }
+        return width * height / (box.width * box.height)
+    }
 
     /// Words that lead somewhere: `[words](https://…)` in Markdown, `words <https://…>` in plain
     /// text. A page of the file is "p.12", as `--from` writes it.

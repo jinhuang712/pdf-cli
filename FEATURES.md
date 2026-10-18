@@ -36,8 +36,8 @@ Section          pages    tokens
   References     p.23–28  4.1k
 
 Figures and tables
-  fig 4  p.15  Accuracy vs. dropout rate (chart)
-  tbl 1  p.12  Results on ImageNet
+  tbl 1    p.12   Results on ImageNet
+  fig 4    p.15   Accuracy vs. dropout rate
 ```
 
 `pdf info` shows:
@@ -57,8 +57,9 @@ The outline comes from the file's bookmarks, or, in a file with none, from the h
 
 When a file's comments, form fields, attachments and scripts cannot be read, as when a hostile file makes the reading run out of time, `pdf info` says they are unknown and why, and the pages read all the same.
 
+The figures and tables are those `pdf read` finds (F3), in page order, each with its caption cut to 70 characters, at most 40 rows; `--json` gives them all, with their whole captions.
+
 Gap:
-- The figures and tables come with M2.6.
 - The counts of headnotes, footnotes and references, and two-page spreads, come later.
 
 Settings: none.
@@ -90,35 +91,47 @@ next: pdf read paper.pdf --from p4.27
 | `--format md\|text\|html` | The output format. The default is `md`. |
 | `--styles` | Marks bold, italic and heading levels in the text |
 | `--headers` | Shows the running headers, footers, page numbers and publisher stamps in place, labelled `[header]`, `[footer]` or `[publisher stamp]` |
-| `--raw` | Shows the text that normal output set aside as doubtful, in place, each part labelled with its reason: `[low-quality]`, `[unsure]`, `[table text: rows and columns lost]`, `[figure text]` or `[old OCR]` |
+| `--raw` | Shows the text that normal output set aside, in place, each part labelled with its reason: `[low-quality]`, `[unsure]`, `[table text: rows and columns lost]`, `[figure text]`, `[equation text: its layout lost]` or `[old OCR]` |
 
 Without a page or section flag, `pdf read` starts at the first page and stops at the default budget (see F7). A page asked for is parsed first, and a read that the budget stops early waits only for the pages it shows.
 
 Gap:
 - `--section` takes one section per read so far. `--styles` and `--format html` come later.
-- Tables, figures and equations read as plain text until M2.6. Until then an image or a drawing is a marker of its own, after the block it sits on: `[image] crop: pdf crop paper.pdf --page 3 --bbox …`, or `[drawing]` for shapes the page draws, as a chart. A drawing is a group of shapes that holds a curve or a slanted line, or two bars, 1% of the page or more; rules alone, as a table's borders, are none, nor a box with rounded corners, a bar with text on it, as a shaded cell, or a bar at the page's edge. Its crop takes in the text within 12 pt, its labels. A figure's panels side by side join, and so do two figures in two columns closer than 30 pt; panels stacked, or far apart, are a marker each. A scan's page has no image marker: its image is the page. Stamps, ink and shapes a reader drew are `[stamp]`, `[ink]` and `[shape]`, with their crop; a stamp's name shows only when it is one of the PDF standard's 14.
+- An image or a drawing outside every figure and table is a marker of its own, after the block it sits on: `[image] crop: pdf crop paper.pdf --page 3 --bbox …`, or `[drawing]` for shapes the page draws, as a chart. A drawing is a group of shapes that holds a curve or a slanted line, or two bars, 1% of the page or more; rules alone, as a table's borders, are none, nor a box with rounded corners, a bar with text on it, as a shaded cell, or a bar at the page's edge. Its crop takes in the text within 12 pt, its labels. A figure's panels side by side join, and so do two figures in two columns closer than 30 pt; panels stacked, or far apart, are a marker each. A scan's page has no image marker: its image is the page. Stamps, ink and shapes a reader drew are `[stamp]`, `[ink]` and `[shape]`, with their crop; a stamp's name shows only when it is one of the PDF standard's 14.
 - An annotation goes after the block its center lies in, or the nearest block on its line, or the last block above it: a comment on a word in a paragraph comes after the whole paragraph.
 - The words under a mark or a link are the longest run of PDFKit's selection there that the blocks under it show in the same order: a mark over text a reader cannot see shows no words, and a link over it is hidden. A link goes inline where its block's text holds its words as one run; else it stands after the block.
 - A password field shows "a password, not shown", a choice the text its list shows, and a checked box "checked". An annotation the file hides by its flags, by a layer switched off, by no opacity, by no size, by lying mostly off the page, or as a reply to a hidden comment, is a hidden-text marker.
 - A paragraph's annotations take about 1,000 tokens at most; a line counts the rest. An author's name or a comment may hold text shaped like the tool's own markers, on the comment's own line.
 - Columns are found on pages read from their text layer: the gap that the fewest lines cross in the middle half of the text, and lines across both columns, as a title or a caption, part the page into bands. Only a band whose two sides each hold two lines or more that fill their column moves, and a page of three columns keeps PDFKit's order; each column keeps PDFKit's order, and lines that are no running text, as a table's cells, a grid of authors or a figure's labels, keep their place. A caption across the page keeps PDFKit's place too, which on one smoke page is after the columns below it. A page read by OCR keeps the recognizer's order.
 - A running header, footer or stamp sits in the page's top or bottom 12%, as its outermost text there, or its outer 10% at a side, holds three lines at most and no hidden text, and repeats at the same edge of a page within 4: its letters and digits the same once a page number at either end is dropped, or, for OCR's misreadings, nine in ten alike; a short one, on two pages. A page number alone, as "12" or "Page 12 of 30", needs no repeat but must agree with the page's own number or a page number nearby, and arXiv's stamp in the margin counts alone. Only pages parsed so far count, so while a file parses a header can show until its neighbours are parsed; the summary line says the read is provisional. A table's header row repeated at the top of each page of a long table counts as a running header.
+- A table drawn without horizontal rules, as one of shaded rows, is not found, and its cells read as text; a table of sentences set in the body's size, as some prompts, may end at its first such rows, the rest reading as text. A figure with no numbered caption, or one whose picture is another figure's, as a single image holding two figures, keeps its pictures' markers. A table's notes read as text after its block. Pages read by OCR have no figures, tables or equations: OCR's lines carry no drawing commands. An equation's number at its left, as `leqno` sets it, or one PDFKit joins to the next column's text, is not found, and a display of several rows crops the rows next to its number.
 - At most 1,000 links a file are read, and 1,000 other annotations, the words under them for at most 3 s; `pdf info` counts the rest. TeX Live's PGF manual holds 44,700 links. Other annotations, as a sound or a file's icon, show nothing; a link that starts a program is a script, which `pdf info` lists.
 
 Apple OCR reads a scanned page, a page whose text layer is stray marks or broken characters, and every page of a file whose text layer disagrees with its own image. Its blocks carry addresses like any other, and the text layer it replaced shows with `--raw`, labelled `[old OCR]`.
 
-A table appears as a table block in place of its cells: its number, its caption, its notes and the command that crops it. The agent reads the cells from the image, and `--raw` shows the table's flat text.
+A table appears as a table block in place of its cells, where its caption or its first cell stands: its number, its caption and the command that crops it. The agent reads the cells from the image, and `--raw` shows the table's flat text, labelled. The first line counts the blocks set aside so.
 
 ```text
-[table 3] p.6 · Forecasting results on multivariate benchmarks
-  read it as an image: pdf crop paper.pdf --table 3
+¶12 [table 3] Forecasting results on multivariate benchmarks. Bold: best.
+  crop: pdf crop paper.pdf --page 6 --table 3
 ```
 
-A figure appears the same way, as a figure block with its caption, its alt text when the file has one, and the command that crops it. An image or a drawing outside every figure, such as a logo, a signature or a chart without a caption, gets a marker in place:
+A figure appears the same way, as a figure block with its caption and the command that crops it; its labels, as a chart's ticks, go aside as `[figure text]`. A numbered equation is a block with its number and its crop, its symbols aside as `[equation text: its layout lost]`, since PDFKit gives a display's lines out of place; LaTeX for it comes with M2.13. A figure's alt text, which a tagged file gives for readers who cannot see it, is text a reader of the page never sees: a hidden-text marker after the figure, `alt text, the file's words for a picture`, and its words only with `--include-hidden` (F9). An image or a drawing outside every figure and table, such as a logo, a signature or a chart without a caption, gets a marker in place, its alt text marked the same way:
 
 ```text
+¶7 [equation 2] crop: pdf crop paper.pdf --page 4 --equation 2
+
 [image] crop: pdf crop paper.pdf --page 3 --bbox 0.62,0.08,0.30,0.12
 ```
+
+Figures, tables and equations are found by rules on the page's lines and drawing commands, with no model:
+
+- A caption is a line that starts "Figure 4", "Fig. 4", "Fig 4", "Table 2", "TABLE IV", "图 3" or "表 1", with the lines below it that go on with it, until a rule, a picture or a change of size. A line that only goes on from a line of running text above it, as "… as shown in" over "Figure 1. We …", is none. Every caption is a block of its own, found its figure or not.
+- A figure is the pictures nearest its caption in its column, above it or else below, within 15% of the page, with the pictures stacked within 24 pt and the short lines around them. With no picture there, as a chart whose bars carry their values or a heatmap's cells, it is the shapes the page draws there, joined within 6 pt, 1% of the page or more, with no running text inside.
+- A table is the horizontal rules that chain from its caption, the first within 30 pt, until a gap of 30% of the page, another caption, or two lines of running text across it, five words or more each, in another size than its rows, or, before its first rows, in the size of the page's running text outside it and its captions: two rules at least, with text between.
+- An equation is a line that ends in its number, as "(5)", set 1.5 em or more apart from the rest, or a number alone on its line beside maths, with the lines of maths above and below it: in its column on a page of two, none that reads as a sentence, as "where ε is …", and those below it no further than those above.
+- A block that holds hidden text stays in the text with its markers, inside a region or not. The words of a running header are never a region's, and a table's header row repeated on each page of a long table is the table's, not a running header. Unsure words inside a region go aside with its text and flag no page.
+- A read that goes on from a block inside a region, as a search hit's, shows the region's block.
 
 The rest of the page reaches the text too, at its position:
 
@@ -167,7 +180,7 @@ A keyword finds its other forms, as "dropouts" finds "dropout", and ignores acce
 Gap:
 - Search by meaning, and so queries in another language, come with M3.1.
 - `--in` comes with notes and references in M2.7 and M2.8, and memos when `pdf memo` is built, later; search covers all the text until then.
-- Hits name tables with M2.6 and hidden text with M1.10.
+- A hit inside a figure, a table or an equation names it, with its crop command, as `in table 3 (crop: pdf crop paper.pdf --page 6 --table 3)`, and a hit inside hidden text shows as a marker.
 - Running headers, footers and page numbers stay in the index, so a word of one is a hit on each of its pages (TODO.md).
 
 Settings: none.
@@ -178,8 +191,8 @@ Turns one part of a page into an image, so the agent can look at it with its own
 
 | Flag | What it crops |
 |---|---|
-| `--figure 4` or `--figure 4b` | A figure or a sub-figure, with its caption |
-| `--table 1` | A table, with its notes |
+| `--figure 4` | A figure, with its caption, by the number its caption gives |
+| `--table 1` | A table, with its caption |
 | `--equation 5` | A numbered equation |
 | `--page 7` | A whole page |
 | `--page 7 --bbox 0.1,0.4,0.8,0.3` | A region, given as x, y, width and height in fractions of the page |
@@ -187,9 +200,11 @@ Turns one part of a page into an image, so the agent can look at it with its own
 
 ```sh
 $ pdf crop paper.pdf --figure 4
-~/Library/Caches/pdf-cli/3f9a…/fig4.png  (~1.2k image tokens)
-caption: Accuracy vs. dropout rate · mentioned on p.15, p.20
+/Users/me/Library/Caches/pdf-cli/crops/b430b72936d6cf8b/p15-0.51,0.34,0.38,0.25.png  (~1.6k image tokens, 1137×1058 px)
+p.15 · caption: Accuracy vs. dropout rate
 ```
+
+`--figure`, `--table` and `--equation` look in the pages parsed so far, and in the whole file once it is parsed when those do not hold it; `--page` narrows them to one page, and is needed where two pages hold the same number, as an appendix that numbers its tables again. An unknown number fails with the numbers found.
 
 The image is in color, and it is sized so small text in a chart stays readable. `pdf crop` prints the absolute path of the image file. The file stays for 7 days, and the same command makes it again after that.
 
@@ -201,7 +216,7 @@ $ pdf crop paper.pdf --page 2 --bbox 0.08,0.07,0.85,0.3
 A region uses the same fractions as the positions in `pdf read --json` and the crop commands in failure blocks, taken on the page as stored, before any rotation; the image comes out upright. A region is rounded outward to hundredths of the page, so it always holds all of what was asked for. An image fits Claude's standard limits, 1,568 px on its long edge and about 1,568 image tokens, so a whole page costs about 1,500 tokens and a small region comes out enlarged, up to 6 times. It shows comments and highlights as a reader sees them. The same crop asked again within 7 days comes from the cache folder at once, and `pdf gc` removes older ones. `--password-stdin` opens a locked PDF, and `--json` gives the image's path, size and tokens.
 
 Gap:
-- `--figure`, `--table` and `--equation` come with figure, table and equation detection in M2.6.
+- `--figure 4b` crops a sub-figure only where a caption numbers it so; a figure's panels are not found one by one. A table's notes below it are not part of its crop. Where a figure is mentioned in the text, as "mentioned on p.15", comes with cross-references in M2.8.
 
 Settings: none.
 
@@ -314,6 +329,8 @@ White text on a dark box stays in, because a reader can see it. The summary line
 
 Very faint text, under a contrast of 1.3 to 1 with what lies behind it, as #EEEEEE on white, counts as hidden; pale grey such as #D9D9D9 reads as text. A page where the check stopped at a limit says so in place.
 
+A picture's alt text, the words a tagged file gives for readers who cannot see the picture, is hidden text too: a reader of the page never sees it, so a hostile file can plant a line there. A figure, or a picture outside every figure, whose drawing the file's structure tree gives alt text, carries a marker, `[hidden: 12 words, alt text, the file's words for a picture, which the page does not show · show: …]`, counted with the page's hidden places, and its words only with `--include-hidden`. It is found through the marked content the page draws the picture in, so alt text on a structure element that marks no drawing on the page, or only text, is not read; at most 1,000 characters a picture.
+
 Gap:
 - A word set at an angle, as a chart's slanted label, is checked for its size, but not for ink, since PDFKit's boxes for it miss its ink.
 - On a page whose images, filling their bounds and drawn to show, cover most of it, as a scan's or a slide's background, text in the invisible mode, or drawn with no opacity, reads as text, as a scan's own text layer does; so does text drawn under opaque such images, as a scan's text layer under its image. That holds only where ink lies along the word's line, within three times the word's width, and no string drawn to show, of about the word's size, lies there. The ink need not be the image's: such text reads as text whatever it says over a scan's inked lines, beside a visible heading of another size, an underline, a form field's border or fill, a dotted leader or a picture on a blank background. On a scan lightened to a fifth of its ink, the layer's words in its palest lines count as hidden. Text drawn to show there gets every check.
@@ -379,9 +396,6 @@ Teaches an agent the tool in one read.
 | `pdf agent-guide --install claude-code` | Installs the guide as a Claude Code skill, at `~/.claude/skills/pdf-cli/SKILL.md`, or under the folder `CLAUDE_CONFIG_DIR` names when it is set. Running it again replaces an earlier version. It warns when no `pdf` is on the PATH, or another one is, since the skill's commands run the one a shell finds. |
 
 The guide is about 1,700 tokens. It names only commands and flags that are built. A test checks, against the CLI itself, that every command and flag the guide names exists, with the command named before it on its line; that every command it writes out parses, its values included; and that it names every command `pdf --help` lists and every flag of each, but for two it leaves out on purpose, `read --full` and `add --password`. The skill's description leads with when to use the tool, as Claude Code's skill listing shows it before the skill loads.
-
-Gap:
-- Table blocks join the guide with M2.6.
 
 Settings: none.
 

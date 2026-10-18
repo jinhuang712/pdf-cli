@@ -397,6 +397,23 @@ check "page numbers are set aside and counted" "running headers and footers: 4 s
 check "and leave no block of their own" "^0$" "$(grep -c '^¶[0-9]* [2-5]$' <<<"$headers")"
 check "--headers shows them in place" "^¶9 \[footer\] 2$" "$(run $pdf read testdata/smoke/arxiv-2608.16011.pdf --page 2 --headers --budget all)"
 
+# Figures, tables and equations (M2.6), on the safety set's page without alt text, and a bar
+# chart whose bars carry their values, which is no picture, on a smoke paper.
+regions=testdata/safety/hidden-figure-alt.pdf
+read=$(run $pdf read $regions --page 2 --budget all)
+check "a table is one block with its caption" "^¶3 \[table 1\] Results of the method\.$" "$read"
+check "with the command that crops it" "^  crop: pdf crop $regions --page 2 --table 1$" "$read"
+check "its cells are set aside and counted" "set aside: 4 blocks of text inside figures, tables and equations (show: --raw)" "$read"
+check "--raw shows them, labelled" "\[table text: rows and columns lost\] Ours 0.91" "$(run $pdf read $regions --page 2 --raw)"
+check "a numbered equation is a block" "^¶7 \[equation 1\] crop: pdf crop $regions --page 2 --equation 1$" "$read"
+crop=$(run $pdf crop $regions --figure 1 --page 1)
+check "pdf crop --figure crops it, with its caption" "^p.1 · caption: Two bars of a chart\.$" "$crop"
+check "an unknown number fails, naming those found" "no figure 9 on p.2; figures found: 1" "$(run $pdf crop $regions --figure 9 --page 2 2>&1)"
+check "a number on two pages needs --page" "figure 1 is on p.1 and p.2; add --page" "$(run $pdf crop $regions --figure 1 2>&1)"
+check "pdf info lists figures and tables" "^  tbl 1    p.1    Results of the method\.$" "$(run $pdf info $regions)"
+check "a search hit in a table names it" "in table 1 (crop: pdf crop $regions --page 1 --table 1)" "$(run $pdf search $regions Ours)"
+check "a chart whose bars carry their values is a figure" "^¶22 \[figure 5\] Step-wise comparison" "$(run $pdf read testdata/smoke/arxiv-2608.22898.pdf --page 7 --budget all)"
+
 # Pages nobody waits for parse slowly, at background priority, so runners get a minute to finish.
 for _ in $(seq 60); do
     pgrep -f "$own" >/dev/null || break

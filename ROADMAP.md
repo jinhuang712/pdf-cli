@@ -74,7 +74,8 @@ The spike shipped no features. It answered the riskiest questions.
   - [ ] M2.4 The layout model running on Core ML, only if a goal fails with rules alone. See DESIGNS.md → the decision on rules over a default layout model.
   - [x] M2.5 Reading order across columns, with running headers, footers and publisher stamps set aside, counted in the summary line and shown with `--headers`
 - **Crop** (F5) and **Info** (F2): figures, tables and equations
-  - [ ] M2.6 Figures, tables and equations detected, listed by `pdf info` and cropped with `pdf crop`. Each table's and figure's text gives way to its block and stays behind `--raw`, and alt text shows with its figure.
+  - [x] M2.6 Figures, tables and equations detected, listed by `pdf info` and cropped with `pdf crop`. Each table's and figure's text gives way to its block and stays behind `--raw`, and alt text shows with its figure. Found from numbered captions, M1.14's pictures and drawn shapes, and horizontal rules; an equation from its number set apart. Alt text is hidden text, shown only with `--include-hidden` (the user, 2026-10-17).
+  - [ ] M2.13 Equations as LaTeX, rebuilt by rules from the glyphs' fonts and positions, and checked by drawing the LaTeX back to an image and comparing it with the page's crop (the user's third step, 2026-10-17). See DESIGNS.md → "Decision: equations as blocks now, LaTeX rebuilt from the page next".
   - Later: tables that continue across pages (M3.2)
 - **Notes** (F14)
   - [ ] M2.7 Footnotes, endnotes, headnotes, margin notes and author notes

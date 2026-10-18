@@ -8,6 +8,8 @@ public enum HiddenReason: Int, Codable, Sendable, CaseIterable {
     case background, invisible, tiny, covered, offPage
     /// An annotation the file hides, or sets off the page.
     case annotation
+    /// A picture's alternate text, which the file gives for readers who cannot see it.
+    case altText
 
     /// How the marker names it.
     public var words: String {
@@ -18,6 +20,7 @@ public enum HiddenReason: Int, Codable, Sendable, CaseIterable {
         case .covered: return "covered by an image"
         case .offPage: return "off the page"
         case .annotation: return "an annotation the file hides"
+        case .altText: return "alt text, the file's words for a picture, which the page does not show"
         }
     }
 }
@@ -1079,6 +1082,13 @@ final class Drawing {
     var textSeen = false
     /// Marked content open on the page, each level switched off or not, and how many are off.
     var marked: [Bool] = []
+    /// The marked content's IDs, beside `marked`, on the page's own level: a form's are its own.
+    var markedIDs: [Int?] = []
+    /// What the page draws inside marked content with an ID, an image or a shape, by the ID,
+    /// which the file's structure gives alternate text for (`AltText`). At most 5,000.
+    var contentMarks: [(id: Int, rect: CGRect)] = []
+    /// The innermost ID of the marked content open now.
+    var markedID: Int? { markedIDs.reversed().first { $0 != nil } ?? nil }
     var offDepth = 0
     var depth = 0
     var operations = 0
@@ -1459,7 +1469,10 @@ final class Drawing {
         // every label's mask as it is drawn took 0.4 s on a page of 60.
         let clear = mask != nil && rect.width * rect.height >= 0.02 * crop.width * crop.height
             && (alpha(of: placed, over: rect)?.high ?? 1) < 0.5
-        if fills, current.opacity >= 0.5, !clear { images.append(rect) }
+        if fills, current.opacity >= 0.5, !clear {
+            images.append(rect)
+            if let id = markedID, contentMarks.count < 5_000 { contentMarks.append((id, rect)) }
+        }
         guard textSeen else { return }
         coverings.append(placed)
     }
@@ -1565,6 +1578,7 @@ final class Drawing {
         let slanted = rectangle == nil && (curved || slantedLine)
         let kind: Shape = slanted ? .curve : filled && min(area.width, area.height) > 3 ? .bar : .rule
         shapes.append((area, kind))
+        if let id = markedID, contentMarks.count < 5_000 { contentMarks.append((id, area)) }
     }
 
     /// The images and drawings a page shows a reader, each as a region in page space, largest
@@ -1574,17 +1588,24 @@ final class Drawing {
     /// rules alone, as a table's borders or an underline, are no drawing, nor a box with rounded
     /// corners, nor a bar with text on it, as a table's shaded cells, nor a bar at the page's
     /// edge, as a band down its margin, nor a shape that fills most of the page, as a background.
-    /// A drawing takes in the text within 12 pt of it, as a chart's labels and title. Found once.
-    func pictures() -> [(kind: String, rect: CGRect)] {
+    /// A drawing takes in the text within 12 pt of it, as a chart's labels and title; `core` is
+    /// its shapes alone. Found once.
+    func pictures() -> [(kind: String, rect: CGRect, core: CGRect)] {
         if let picturesFound { return picturesFound }
         let found = findPictures()
         picturesFound = found
         return found
     }
 
-    var picturesFound: [(kind: String, rect: CGRect)]?
+    var picturesFound: [(kind: String, rect: CGRect, core: CGRect)]?
 
-    func findPictures() -> [(kind: String, rect: CGRect)] {
+    /// The page's horizontal rules, in page space: lines and thin rectangles along its width, 20
+    /// pt long or more, as a table's (`Regions`).
+    func rules() -> [CGRect] {
+        Array(shapes.lazy.filter { $0.kind == .rule && $0.rect.width >= 20 && $0.rect.height <= 3.5 }.map(\.rect).prefix(2_000))
+    }
+
+    func findPictures() -> [(kind: String, rect: CGRect, core: CGRect)] {
         let page = crop.width * crop.height
         guard page > 0 else { return [] }
         let texts = Array(runs.lazy.filter { $0.kind == .shown && !$0.bounds.isNull }.map(\.bounds).prefix(5_000))
@@ -1658,11 +1679,11 @@ final class Drawing {
         // the text within 12 pt, once, so that a paragraph next to it does not pull in the next.
         let top = joined.sorted { $0.rect.width * $0.rect.height > $1.rect.width * $1.rect.height }.prefix(30)
         return top.map { item in
-            guard item.kind == "drawing" else { return (item.kind, item.rect) }
+            guard item.kind == "drawing" else { return (item.kind, item.rect, item.rect) }
             let near = item.rect.insetBy(dx: -12, dy: -12)
             var rect = item.rect
             for text in texts where text.width * text.height < 0.05 * page && text.intersects(near) { rect = rect.union(text) }
-            return (item.kind, rect.intersection(crop))
+            return (item.kind, rect.intersection(crop), item.rect)
         }
     }
 
@@ -1872,7 +1893,10 @@ final class Drawing {
             drawing.fill(drawing.state.clip.isInfinite ? drawing.crop : drawing.state.clip)
         }
         // Marked content, which a layer switched off hides.
-        on("BMC") { _, drawing in drawing.marked.append(false) }
+        on("BMC") { _, drawing in
+            drawing.marked.append(false)
+            drawing.markedIDs.append(nil)
+        }
         on("BDC") { scanner, drawing in
             // Each counts, so a flood of them ends the check as incomplete, not the page by time.
             drawing.operations += 1
@@ -1893,10 +1917,14 @@ final class Drawing {
             let layered = CGPDFScannerPopName(scanner, &tag) && tag.map { String(cString: $0) } == "OC"
             let off = layered && properties.map { drawing.off($0, inline: inline) } == true
             drawing.marked.append(off)
+            var id: CGPDFInteger = 0
+            let marked = drawing.depth == 0 && properties.map { CGPDFDictionaryGetInteger($0, "MCID", &id) } == true
+            drawing.markedIDs.append(marked ? Int(id) : nil)
             if off { drawing.offDepth += 1 }
         }
         on("EMC") { _, drawing in
             if let off = drawing.marked.popLast(), off { drawing.offDepth -= 1 }
+            _ = drawing.markedIDs.popLast()
         }
         on("BT") { _, drawing in
             drawing.textMatrix = .identity
@@ -2073,6 +2101,7 @@ final class Drawing {
                 while drawing.marked.count > text.7 {
                     if drawing.marked.removeLast() { drawing.offDepth -= 1 }
                 }
+                if drawing.markedIDs.count > text.7 { drawing.markedIDs.removeLast(drawing.markedIDs.count - text.7) }
                 drawing.floors.removeLast()
                 drawing.states.removeLast(max(0, drawing.states.count - saved))
                 (drawing.textMatrix, drawing.lineMatrix, drawing.spelling, drawing.path, drawing.rectangles,

@@ -88,6 +88,9 @@ public struct Picture: Codable, Equatable, Sendable {
     /// "image", or "drawing" for shapes the page draws, as a chart's.
     public var kind: String
     public var box: Box
+    /// The file's alternate text for it: text a reader cannot see, so it goes out only with
+    /// `--include-hidden` (`AltText`).
+    public var alt: String? = nil
 }
 
 /// A page's text layer, as the parse stores it.
@@ -137,6 +140,8 @@ public struct PageText: Codable, Equatable, Sendable {
     public var damaged: Bool? = nil
     /// The images and drawings the page shows, largest first.
     public var pictures: [Picture]? = nil
+    /// The figures, tables and numbered equations the page shows (`Regions`).
+    public var regions: [Region]? = nil
 
     public var text: String { blocks.map(\.text).joined(separator: "\n\n") }
 }
@@ -287,6 +292,9 @@ enum TextLayer {
         var rect: CGRect
         /// The line ended with a soft hyphen: the word goes on in the next line.
         var softBreak: Bool
+        /// The number at the line's end, as "5" of "(5)", set 1.5 em or more apart from the
+        /// rest of the line, or alone on it, as an equation's (`Regions`).
+        var tag: String? = nil
     }
 
     /// - Parameters:
@@ -316,25 +324,73 @@ enum TextLayer {
         }
         // The lines of a column go together, on a page of columns (`ReadingOrder`).
         let (order, breaks) = ReadingOrder.order(lines.map(\.rect), texts: lines.map(\.text))
-        let starts = order.map { breaks.contains($0) }
+        var starts = order.map { breaks.contains($0) }
         lines = order.map { lines[$0] }
+
+        // Figures, tables and numbered equations, from the page's lines, pictures and rules. A
+        // caption and the text inside a region each make blocks of their own.
+        let width = max(crop.width, 1), height = max(crop.height, 1)
+        func fromTop(_ rect: CGRect) -> CGRect { CGRect(x: rect.minX - crop.minX, y: crop.maxY - rect.maxY, width: rect.width, height: rect.height) }
+        func fraction(_ rect: CGRect) -> Box {
+            Box(x: Double(rect.minX / width), y: Double(rect.minY / height), width: Double(rect.width / width), height: Double(rect.height / height))
+        }
+        let pictures = visibility?.drawing.pictures() ?? []
+        let pageArea = crop.width * crop.height
+        let shapes = (visibility?.drawing.shapes ?? []).lazy.map(\.rect).filter { $0.width * $0.height < 0.8 * pageArea }.map(fromTop)
+        let found = Regions.find(lines, pictures: pictures.map { fromTop($0.core) }, rules: (visibility?.drawing.rules() ?? []).map(fromTop),
+                                 shapes: Array(shapes), size: crop.size)
+        var role = [Int?](repeating: nil, count: lines.count)
+        for (number, caption) in found.captions.enumerated() {
+            for line in caption { role[line] = -1 - number }
+        }
+        for (number, region) in found.regions.enumerated() {
+            for line in region.caption { role[line] = 2 * number }
+            for line in region.content { role[line] = 2 * number + 1 }
+        }
+        for position in lines.indices.dropFirst() where role[position] != role[position - 1] { starts[position] = true }
 
         let blocks = group(lines, starts: starts, crop: crop, dehyphenator: Dehyphenator(pageText: raw))
         let joined = blocks.map(\.text).joined(separator: "\n")
         var layer = PageText(blocks: blocks, words: TextCleanup.wordCount(joined),
                              runTogether: TextCleanup.runTogetherWords(joined))
+        // The alternate text the file's structure gives each picture, by the marked content it
+        // draws: each text once, in the order drawn.
+        var alts = [String?](repeating: nil, count: pictures.count)
+        if let drawing = visibility?.drawing, !drawing.contentMarks.isEmpty, let reference = page.pageRef {
+            let texts = AltText.lookup(reference, ids: Set(drawing.contentMarks.map(\.id)))
+            if !texts.isEmpty {
+                for (index, picture) in pictures.enumerated() {
+                    var seen: [String] = []
+                    for mark in drawing.contentMarks where Regions.share(of: mark.rect, inside: picture.rect.insetBy(dx: -1, dy: -1)) >= 0.5 {
+                        if let text = texts[mark.id], !seen.contains(text) { seen.append(text) }
+                    }
+                    if !seen.isEmpty { alts[index] = seen.joined(separator: " · ") }
+                }
+            }
+        }
+        if !found.regions.isEmpty {
+            // Each block holds a run of the lines in order, so its first line tells its role.
+            var blockOf: [Int] = []
+            for (index, block) in blocks.enumerated() { blockOf += Array(repeating: index, count: block.lines.count) }
+            if blockOf.count == lines.count {
+                layer.regions = found.regions.map { region -> Region in
+                    let caption: [Int] = Set(region.caption.map { blockOf[$0] }).sorted()
+                    let inside: [Int] = Set(region.content.map { blockOf[$0] }).sorted()
+                    var made = Region(kind: region.kind, number: region.number, box: fraction(region.box), caption: caption, blocks: inside)
+                    // A figure's or a table's pictures' alternate text is its own.
+                    let texts = pictures.indices.filter { alts[$0] != nil && Regions.share(of: fromTop(pictures[$0].core), inside: region.box) >= 0.5 }
+                        .compactMap { alts[$0] }
+                    if region.kind != .equation, !texts.isEmpty { made.alt = texts.joined(separator: " · ") }
+                    return made
+                }
+            }
+        }
         if let offPage = visibility?.drawing.offPage.filter({ !$0.isEmpty }), !offPage.isEmpty { layer.offPage = offPage }
         if visibility?.drawing.incomplete == true { layer.hiddenCheckIncomplete = true }
-        if let drawing = visibility?.drawing {
-            let width = max(crop.width, 1), height = max(crop.height, 1)
-            let pictures = drawing.pictures().map { found in
-                Picture(kind: found.kind, box: Box(x: Double((found.rect.minX - crop.minX) / width), y: Double((crop.maxY - found.rect.maxY) / height),
-                                                   width: Double(found.rect.width / width), height: Double(found.rect.height / height)))
-            }
-            if !pictures.isEmpty { layer.pictures = pictures }
+        if !pictures.isEmpty {
+            layer.pictures = pictures.indices.map { Picture(kind: pictures[$0].kind, box: fraction(fromTop(pictures[$0].rect)), alt: alts[$0]) }
         }
         if let visibility {
-            let width = max(crop.width, 1), height = max(crop.height, 1)
             // A box the size of a glyph, no taller than 3.5 times its character's font size and no
             // wider than 1.5 times: PDFKit gave one a box a line long, whose center lay on the next
             // line's empty place, and one beside a word it left out a box over the word. Integrals
@@ -666,7 +722,27 @@ enum TextLayer {
         guard !cleaned.isEmpty, !bounds.isNull else { return nil }
         let rect = CGRect(x: bounds.minX - crop.minX, y: crop.maxY - bounds.maxY,
                           width: bounds.width, height: bounds.height)
-        return RawLine(text: cleaned, rect: rect, softBreak: softBreak)
+        return RawLine(text: cleaned, rect: rect, softBreak: softBreak,
+                       tag: tag(text, range, characters: characters.filter { !$0.isSpace }.map(\.index), glyphs: glyphs))
+    }
+
+    /// An equation's number, as "(5)" or "(A.2)", at the end of a line.
+    static let tagPattern = try! NSRegularExpression(pattern: #"\(\s*([A-Z]?\d{1,3}(?:[.\-]\d{1,3})?[a-z]?)\s*\)\s*$"#)
+
+    /// The number at a line's end, when 1.5 em or more of space part it from the glyphs to its
+    /// left, or nothing stands there: justified running text spaces its words far less, so
+    /// "… as Eq. (3)" at a line's end is no equation's number.
+    static func tag(_ text: NSString, _ range: Range<Int>, characters: [Int], glyphs: Glyphs) -> String? {
+        let line = text.substring(with: NSRange(location: range.lowerBound, length: range.count)) as NSString
+        guard let match = tagPattern.firstMatch(in: line as String, range: NSRange(location: 0, length: line.length)) else { return nil }
+        let open = range.lowerBound + match.range.location
+        guard let paren = glyphs.boxes.indices.contains(open) ? glyphs.boxes[open] : nil, paren.width > 0 || paren.height > 0 else { return nil }
+        let before = characters.filter { $0 < open }.compactMap { glyphs.boxes[$0] }.filter { $0.width > 0 || $0.height > 0 }
+        let size = glyphs.sizes.indices.contains(open) && glyphs.sizes[open] > 0 ? glyphs.sizes[open] : paren.height
+        if !before.isEmpty {
+            guard let left = before.filter({ $0.maxX <= paren.minX + 1 }).map(\.maxX).max(), paren.minX - left >= 1.5 * size else { return nil }
+        }
+        return line.substring(with: match.range(at: 1))
     }
 
     /// Groups lines into blocks. A new block starts where the next line moves up or sideways

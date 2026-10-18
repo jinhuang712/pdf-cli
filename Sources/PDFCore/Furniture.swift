@@ -100,13 +100,17 @@ public enum Furniture {
     ///   number with words planted after it hid them from the count of hidden text.
     /// - At most 4 an edge, so a page of a thousand blocks in its margins costs no more than a
     ///   page of four.
+    /// - No block of a figure, a table or an equation: a table's header row repeats at the top of
+    ///   each page of a long table.
     static func edges(_ page: PageText) -> [Edge] {
         let blocks = page.blocks
         guard let highest = blocks.map(\.box.y).min(), let lowest = blocks.map({ $0.box.y + $0.box.height }).max() else { return [] }
         var found: [Kind: [(edge: Edge, distance: Double)]] = [:]
         var left: [(edge: Edge, distance: Double)] = []
         var right: [(edge: Edge, distance: Double)] = []
-        for (index, block) in blocks.enumerated() {
+        // A table's header row, repeated at the top of each page of a long table, is the table's.
+        let inside = Set((page.regions ?? []).flatMap { $0.caption + $0.blocks })
+        for (index, block) in blocks.enumerated() where !inside.contains(index) {
             let text = block.visibleText.trimmingCharacters(in: .whitespaces)
             guard !text.isEmpty, text.count <= 200, block.lines.count <= 3, block.hidden?.isEmpty ?? true else { continue }
             let box = block.box

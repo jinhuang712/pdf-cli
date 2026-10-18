@@ -277,6 +277,43 @@ A table reaches the agent as a crop, and the agent reads the cells with its own 
 
 The table's text stays in the keyword index, so a search still finds the page that holds a table, and `--raw` shows it, labelled as flat text that lost its rows and columns.
 
+## Decision: figures, tables and equations from captions, pictures and rules — 2026-10-17
+
+A figure is found from its caption, "Figure 4" or "Table 2", and the pictures M1.14 marks nearest it in its column; a table from its caption and the horizontal rules that chain from it; a numbered equation from its number set apart at the end of its line. Each becomes one block in `pdf read`, in place of the text inside it, which goes behind `--raw`, and `pdf crop --figure 4` crops it with its caption. It follows the M0 spike's finder, which found 54 of 54 figures on 116 pages of papers; the parse stores each page's regions, so `pdf info` lists them and `pdf crop` finds them by number without a page parsed again.
+
+On the smoke set's ten papers it found 64 figures, 77 tables and 84 equations, all 22 of one paper's tables of prompts among them; on the 15 PMC papers 001 to 015, 63 figures, 22 tables and 7 equations, at least one on each, though none on a PLOS paper until "Fig 1." without a period counted, which then gave its 11. Essays, the Chinese law, the FOMC minutes and a textbook chapter gave none, as they number no figure; two NIST reports and a Census report gave 13 figures and 13 tables. A sweep of the long blocks set aside on these 38 files found one table that ran over a paragraph to a rule under the footnotes, now stopped by the running text between, and no paragraph of running text set aside since.
+
+- A chart whose bars carry their values, and a heatmap's cells, are no picture to M1.14: a figure with no picture near its caption takes the shapes drawn there, joined within 6 pt, with no running text inside.
+- An equation's lines are only those of maths, close to its number's row, in its column, and no further below it than above: on the first pass a display took in the left column's line on its row and the "where …" after it.
+- A table's rows that hold sentences in the body's size, as prompts, can end it early: those rows read as text, the safe side. Running text is a line of five words or more, most of its own, so rows as "Global batch size 512" or a dataset's name with its numbers are none, and the body's size is read from the running text outside the table and every caption, so a page of tables and figures alone has none to take their rows for.
+
+| Option | For | Against |
+|---|---|---|
+| **Captions, pictures and rules** | No model, run in the parse that reads the page's text and drawings already, and every region is named by its caption's number, which the agent cites and crops by. | A figure or a table without a numbered caption, a table drawn without rules, and an equation numbered at its left are not found. |
+| Every picture a figure, as M1.14 marks them | Finds figures with no caption. | No number to cite or crop by, and a table's text, which rules alone draw, would stay as flat numbers. |
+| A layout model on Core ML | Labels figures, tables and formulas with no caption needed. | A download, and its accuracy on our pages is unmeasured: M2.4 waits for a goal that rules fail. |
+| Apple's document recognizer | Returns tables with cells. | Only on macOS 26, it costs about 670 ms a page, and a wrong cell looks right. |
+
+## Decision: equations as blocks now, LaTeX rebuilt from the page next — 2026-10-17
+
+The user asked for equations in three steps: find where each is, recognize it, and turn it into LaTeX, from which the formula can be drawn again, so the agent reads LaTeX, which models read well, and the tool checks its own LaTeX by drawing it back and comparing it with the page. M2.6 takes the first two steps: a numbered equation is a block with its number and its crop, its text behind `--raw`, since PDFKit gives a display's lines out of place, as "_{r}. (3)" on a line of its own. The third, LaTeX rebuilt by rules from the glyphs' fonts and positions, is M2.13.
+
+| Option | For | Against |
+|---|---|---|
+| **A block with its crop now, LaTeX next** | M2.6 stays its size, and the LaTeX step starts from the equations M2.6 finds. | Until M2.13 an agent crops each equation it needs. |
+| The text in place, with a marker | Costs no crop where the text reads well, as "∆W = W_{down}W_{up}". | Most displays read as scraps, a fraction's parts as blocks of their own. |
+| LaTeX from a model, in M3 | Reads scans too. | A download, and M3. |
+
+## Decision: alt text as hidden text, shown only with `--include-hidden` — 2026-10-17
+
+A tagged file's alt text for a picture is text a reader of the page never sees, as a stamp's name, which M1.14's review found could carry a planted line into the output. So it is a hidden-text marker after the figure or picture, counted with the page's hidden places, and its words, labelled, only with `--include-hidden`. The user chose this over showing it by default with a label: it keeps goal G16, every planted hidden text kept out of normal output, and leaves the agent to decide whether to read it. The safety set's `hidden-figure-alt.pdf` plants a line there; G16 holds at 72 of 72.
+
+| Option | For | Against |
+|---|---|---|
+| **A marker; its words with `--include-hidden`** | G16 holds, and the agent asks for the words when a picture matters. | A file's honest description of a chart costs the agent a second read. |
+| Its words by default, labelled as hidden | No second read. | Planted words reach the agent's context on every read; G16 would need to change. |
+| Not read | Nothing to plant. | Loses what accessible files say about their pictures. |
+
 ## Decision: SQLite over qmd and Tantivy — 2026-10-14
 
 One SQLite file holds the cache and both kinds of search.
