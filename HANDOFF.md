@@ -6,9 +6,8 @@ For whoever picks up pdf-cli next, a person or a new Claude Code session. Read t
 
 - **Built and on `main`** (pushed, nothing half-done, no open branch): milestone M0; every task of M1, M1.1–M1.15; and M2.5 and M2.6 of M2.
 - **Not met yet:** the exit criteria of M1 and M2. They need the goals measured, and every goal in GOALS.md is still unmeasured: the measuring waits for the final wrap-up (the user, 2026-10-17).
-- **Waiting on the user:**
-  1. Approval of the doc edits of 2026-10-18. The user approved DESIGNS, FEATURES and ROADMAP that day, then changed the direction (below); those edits set DESIGNS, FEATURES, ROADMAP, GOALS and README back to `drafted`.
-  2. Which task comes next: M2.13 or M2.7 (below).
+- **Docs:** all seven core docs are approved. The user approved DESIGNS, FEATURES, ROADMAP, GOALS and README on 2026-10-18, with the direction below.
+- **Waiting on the user:** which task comes next, M2.13 or M2.7 (below).
 
 ## The user's direction
 
@@ -40,13 +39,12 @@ Under them: worker processes with time and memory limits and one pool of slots (
 
 ## What comes next
 
-1. **The user approves** the doc edits of 2026-10-18, or asks for changes.
-2. **M2.13 or M2.7,** as the user chooses. ROADMAP.md lists M2.13 right after M2.6.
+1. **M2.13 or M2.7,** as the user chooses. ROADMAP.md lists M2.13 right after M2.6.
    - **M2.13, the agent's LaTeX for an equation, kept.** A command, as `pdf pick` saves a choice, takes the LaTeX the agent read from `pdf crop --equation N` and stores it with the page's key. `pdf read` then shows it in the equation's block, labelled as the agent's reading, in place of the crop command, and `pdf reparse`, once M2.10 builds it, clears it, as it will clear picks. The agent guide says when to write it back. The command's name and flags are the task's to design, close to `pdf pick`'s. Whether tables get the same, as Markdown, is the user's call: ask.
    - **M2.7, notes:** footnotes, endnotes, headnotes, margin notes and author notes (FEATURES.md → F14).
-3. **The rest of M2,** in ROADMAP's order, which is the order of building; a task's ID is its name, not its place, so M2.13, added last, is listed before M2.7: M2.8 citations and references, M2.9 `pdf dump`, M2.10 `pdf reparse`, M2.11 `pdf setup` and `pdf doctor`. M2.4, a layout model, comes only if a goal fails with rules alone.
-4. **M3:** M3.1 search by meaning, M3.2 tables across pages, M3.5 the Homebrew release.
-5. **The final wrap-up:** the open test set, the question set and the scorer (M2.1–M2.3), the quality thresholds (M2.12), the question set run in Claude Code (M3.6), the workers' memory, and every goal measured.
+2. **The rest of M2,** in ROADMAP's order, which is the order of building; a task's ID is its name, not its place, so M2.13, added last, is listed before M2.7: M2.8 citations and references, M2.9 `pdf dump`, M2.10 `pdf reparse`, M2.11 `pdf setup` and `pdf doctor`. M2.4, a layout model, comes only if a goal fails with rules alone.
+3. **M3:** M3.1 search by meaning, M3.2 tables across pages, M3.5 the Homebrew release.
+4. **The final wrap-up:** the open test set, the question set and the scorer (M2.1–M2.3), the quality thresholds (M2.12), the question set run in Claude Code (M3.6), the workers' memory, and every goal measured.
 
 `TODO.md` holds five follow-ups with no milestone: a content stream that inflates to 600 MB, links past the first 1,000 of a file, the cost of joining shapes into drawings, running headers that `pdf search` still finds, and `pdf crop --figure N` parsing a whole long file before it says the number is not there.
 
