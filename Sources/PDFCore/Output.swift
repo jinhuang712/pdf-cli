@@ -17,10 +17,13 @@ public enum Output {
         public var furniture: [Int: Furniture.Kind]
         /// The page's notes and the references to them, judged against the document (`Notes`).
         public var notes: PageNotes
+        /// The page's citations of the list of references and its cross-references, judged
+        /// against the document (`References`).
+        public var citations: PageCitations
 
         public init(
             index: Int, result: PageResult, key: String, annotations: [FileFacts.Annotation] = [],
-            furniture: [Int: Furniture.Kind] = [:], notes: PageNotes = PageNotes()
+            furniture: [Int: Furniture.Kind] = [:], notes: PageNotes = PageNotes(), citations: PageCitations = PageCitations()
         ) {
             self.index = index
             self.result = result
@@ -28,7 +31,14 @@ public enum Output {
             self.annotations = annotations
             self.furniture = furniture
             self.notes = notes
+            self.citations = citations
         }
+    }
+
+    /// Whether a read lists, after its text, the entries of the list of references that the text
+    /// it shows cites.
+    public enum RefsMode: String, Sendable {
+        case end, off
     }
 
     /// Where a read shows footnotes and endnotes: after the text it read, beside the paragraph
@@ -69,6 +79,9 @@ public enum Output {
             /// A footnote or an endnote's text, with its id: after the text, or by the block that
             /// refers to it.
             case note
+            /// An entry of the list of references that the text cites, with its id, after the
+            /// text with `--refs end`.
+            case reference
             /// The text inside a figure, a table or an equation, shown with `--raw`, labelled with
             /// what it lost.
             case setAside = "set-aside-text"
@@ -78,6 +91,13 @@ public enum Output {
         public struct Link: Encodable, Equatable, Sendable {
             public var text: String
             public var target: String
+            /// About where in the block's text the words stand, in UTF-16 units, from the link's
+            /// place on the page, so that of several "1"s the link goes on its own.
+            var at: Int? = nil
+
+            enum CodingKeys: String, CodingKey {
+                case text, target
+            }
         }
 
         public var kind: Kind
@@ -160,6 +180,8 @@ public enum Output {
         /// For a figure, a table or an equation, the number of its last block: a read that goes
         /// on from a block inside it, as a search hit's, shows it.
         var last: Int? = nil
+        /// The ids of the entries of the list of references that the unit's text cites.
+        var cites: [String] = []
     }
 
     /// What one page contributes to the output.
@@ -527,11 +549,13 @@ public enum Output {
                 }
                 let choices = spans.filter(\.pickable)
                 let looks = spans.filter { !$0.pickable }
-                let text = Notes.linked(
+                // Notes cited as `[^7]`, and the list of references, raised, as `[12]`.
+                let text = References.linked(
                     shown(
                         block.text, pick: picked[index], choices: choices, hidden: runs, includeHidden: includeHidden,
                         path: path, page: number),
-                    (page.notes.references[index] ?? []).filter { !$0.ids.contains(where: keptAsText.contains) })
+                    notes: (page.notes.references[index] ?? []).filter { !$0.ids.contains(where: keptAsText.contains) },
+                    raised: page.citations.raised[index] ?? [])
                 var unit = Unit(
                     blocks: [
                         Block(
@@ -546,7 +570,18 @@ public enum Output {
                 for note in notes where note.anchor == index {
                     if let link = note.link, Self.shows(text, link.text) { links.append(link) } else { others.append(note) }
                 }
+                // "Fig. 4" or "Section 3.2" leads to the page that holds it, as a link of the file
+                // to a page does, unless the file links its words already.
+                for pointer in page.citations.pointers[index] ?? [] where Self.shows(text, pointer.words) {
+                    let linkedAlready = links.contains { link in
+                        guard link.target.hasPrefix("p."), pointer.words.contains(link.text) else { return false }
+                        guard let at = link.at else { return true }
+                        return abs(at - pointer.offset) <= (pointer.words as NSString).length + 4
+                    }
+                    if !linkedAlready { links.append(Block.Link(text: pointer.words, target: "p.\(pointer.page)", at: pointer.offset)) }
+                }
                 if !links.isEmpty { unit.blocks[0].links = links }
+                unit.cites = page.citations.cites[index] ?? []
                 attach(others, to: &unit, number: index + 1)
                 unit.blocks += marginsAfter[index] ?? []
                 if let attached = inlineAt[index] {
@@ -704,42 +739,46 @@ public enum Output {
             return Note(block: block, anchor: anchor(box, in: blocks))
         }
         let ordered = page.annotations.filter { $0.page == page.index }.sorted { ($0.box.y, $0.box.x) < ($1.box.y, $1.box.x) }
-        let notes = (pictures + ordered.map { annotation in
-            let anchor = anchor(annotation.box, in: blocks)
-            var block = Block(kind: .annotation, page: number, box: annotation.box,
-                              status: annotation.reply == true ? "reply" : annotation.kind.rawValue)
-            block.author = annotation.author
-            switch annotation.kind {
-            case .comment, .note:
-                block.text = annotation.text
-            case .highlight, .underline, .squiggly, .strikeout:
-                block.text = seen(annotation.words, under: annotation.box, anchor: anchor)
-                block.note = annotation.text
-            case .field:
-                block.name = annotation.name
-                block.text = annotation.value
-            case .stamp, .ink, .shape:
-                block.text = annotation.text
-            case .link:
-                block.text = seen(annotation.words, under: annotation.box, anchor: anchor)
-                block.target = annotation.target
-            }
-            var note = Note(block: block, anchor: anchor)
-            // A link whose words a reader cannot see is no link a reader sees.
-            let unseenLink = annotation.kind == .link && annotation.words != nil && block.text == nil && !heldBack
-            if annotation.hidden == true || unseenLink {
-                // The marker counts the annotation's own words; shown, they come with its label.
-                let words = includeHidden ? render(block, style: .text, raw: false) : block.text ?? annotation.words ?? block.target ?? ""
-                note.block = Block(kind: .hidden, page: number, box: annotation.box,
-                                   text: marker(words, reason: .annotation, includeHidden: includeHidden, path: path, page: number))
-                note.hidden = true
-            } else if annotation.kind == .link, let words = block.text, let target = block.target {
-                note.link = Block.Link(text: words, target: target)
-            } else if [.stamp, .ink, .shape].contains(annotation.kind) {
-                note.block.commands = ["crop": "pdf crop \(path) --page \(number) --bbox \(format(annotation.box))"]
-            }
-            return note
-        }).sorted { ($0.block.box.y, $0.block.box.x) < ($1.block.box.y, $1.block.box.x) }
+        let notes =
+            (pictures
+            + ordered.map { annotation in
+                let anchor = anchor(annotation.box, in: blocks)
+                var block = Block(
+                    kind: .annotation, page: number, box: annotation.box,
+                    status: annotation.reply == true ? "reply" : annotation.kind.rawValue)
+                block.author = annotation.author
+                switch annotation.kind {
+                case .comment, .note:
+                    block.text = annotation.text
+                case .highlight, .underline, .squiggly, .strikeout:
+                    block.text = seen(annotation.words, under: annotation.box, anchor: anchor)
+                    block.note = annotation.text
+                case .field:
+                    block.name = annotation.name
+                    block.text = annotation.value
+                case .stamp, .ink, .shape:
+                    block.text = annotation.text
+                case .link:
+                    block.text = seen(annotation.words, under: annotation.box, anchor: anchor)
+                    block.target = annotation.target
+                }
+                var note = Note(block: block, anchor: anchor)
+                // A link whose words a reader cannot see is no link a reader sees.
+                let unseenLink = annotation.kind == .link && annotation.words != nil && block.text == nil && !heldBack
+                if annotation.hidden == true || unseenLink {
+                    // The marker counts the annotation's own words; shown, they come with its label.
+                    let words = includeHidden ? render(block, style: .text, raw: false) : block.text ?? annotation.words ?? block.target ?? ""
+                    note.block = Block(
+                        kind: .hidden, page: number, box: annotation.box,
+                        text: marker(words, reason: .annotation, includeHidden: includeHidden, path: path, page: number))
+                    note.hidden = true
+                } else if annotation.kind == .link, let words = block.text, let target = block.target {
+                    note.link = Block.Link(text: words, target: target, at: anchor.map { offset(of: annotation.box, in: blocks[$0]) } ?? nil)
+                } else if [.stamp, .ink, .shape].contains(annotation.kind) {
+                    note.block.commands = ["crop": "pdf crop \(path) --page \(number) --bbox \(format(annotation.box))"]
+                }
+                return note
+            }).sorted { ($0.block.box.y, $0.block.box.x) < ($1.block.box.y, $1.block.box.x) }
         // Top to bottom, and left to right along a row: those whose tops lie within a hundredth of
         // the page of the row's first. A drawing's box is half a point taller than its shapes, so
         // a chart beside an image came first.
@@ -770,6 +809,73 @@ public enum Output {
         if let nearest = row.min(by: { gap(blocks[$0]) < gap(blocks[$1]) }) { return nearest }
         let column = blocks.indices.filter { gap(blocks[$0]) == 0 }
         return (column.isEmpty ? Array(blocks.indices) : column).last { blocks[$0].box.y <= y } ?? column.first ?? 0
+    }
+
+    /// About where in a block's text a box on the page starts, in UTF-16 units: the line it lies
+    /// on, and how far along that line it starts.
+    static func offset(of box: Box, in block: TextBlock) -> Int? {
+        guard !block.lines.isEmpty else { return nil }
+        let y = box.y + box.height / 2
+        func middle(_ line: TextLine) -> Double { line.box.y + line.box.height / 2 }
+        let line =
+            block.lines.firstIndex { $0.box.y <= y && y <= $0.box.y + $0.box.height }
+            ?? block.lines.indices.min { abs(middle(block.lines[$0]) - y) < abs(middle(block.lines[$1]) - y) }!
+        let before = block.lines[..<line].reduce(0) { $0 + $1.text.utf16.count + 1 }
+        let own = block.lines[line]
+        let along = own.box.width > 0 ? min(max((box.x - own.box.x) / own.box.width, 0), 1) : 0
+        return before + Int(along * Double(own.text.utf16.count))
+    }
+
+    /// A block's text with its links in their words. Each goes on the place of its words nearest
+    /// where the link stands, a whole word where one is, never inside a note's mark, a hidden-text
+    /// label or another link: a list of references whose entries each link a "1" back to page 1
+    /// gave `[[[1](#p.1)](#p.1)]`.
+    static func placed(_ text: String, links: [Block.Link], style: Style) -> String {
+        guard !links.isEmpty else { return text }
+        let ns = text as NSString
+        var blocked = References.hiddenSpans(ns)
+        var from = 0
+        while from < ns.length {
+            let open = ns.range(of: "[^", range: NSRange(location: from, length: ns.length - from))
+            guard open.location != NSNotFound else { break }
+            let close = ns.range(of: "]", range: NSRange(location: open.upperBound, length: ns.length - open.upperBound))
+            let end = close.location == NSNotFound ? ns.length : close.upperBound
+            blocked.append(NSRange(location: open.location, length: end - open.location))
+            from = end
+        }
+        func whole(_ range: NSRange) -> Bool {
+            func word(_ at: Int) -> Bool {
+                guard at >= 0, at < ns.length, let scalar = Unicode.Scalar(ns.character(at: at)) else { return false }
+                return CharacterSet.alphanumerics.contains(scalar)
+            }
+            return !word(range.location - 1) && !word(range.upperBound)
+        }
+        var chosen: [(range: NSRange, link: Block.Link)] = []
+        for link in links where !link.text.isEmpty {
+            var candidates: [NSRange] = []
+            var start = 0
+            while start < ns.length {
+                let found = ns.range(of: link.text, range: NSRange(location: start, length: ns.length - start))
+                guard found.location != NSNotFound else { break }
+                start = found.location + 1
+                guard !blocked.contains(where: { NSIntersectionRange($0, found).length > 0 }),
+                    !chosen.contains(where: { NSIntersectionRange($0.range, found).length > 0 })
+                else { continue }
+                candidates.append(found)
+            }
+            let wholes = candidates.filter(whole)
+            let pool = wholes.isEmpty ? candidates : wholes
+            guard let first = pool.first else { continue }
+            let pick =
+                link.at.map { at in pool.min { abs($0.location - at) < abs($1.location - at) }! }
+                ?? pool.first { range in chosen.allSatisfy { $0.range.location < range.location } } ?? first
+            chosen.append((pick, link))
+        }
+        var result = ns
+        for item in chosen.sorted(by: { $0.range.location > $1.range.location }) {
+            result = result.replacingCharacters(in: item.range, with: linked(item.link.text, to: item.link.target, style: style)) as NSString
+        }
+        return result as String
     }
 
     /// Where a block's text shows a link's words, outside a note's mark: in `Prolific[^3]`, a
@@ -808,6 +914,8 @@ public enum Output {
         let headers: Bool
         /// Where footnotes and endnotes show.
         let notesMode: NotesMode
+        /// Whether the entries of the list of references that the text cites follow it.
+        let refsMode: RefsMode
         let picks: [String: [Pick]]
         let transcripts: [String: [Transcript]]
         /// About how many tokens the output may take. Nil means no limit.
@@ -831,6 +939,10 @@ public enum Output {
         /// or as far as the references the read reached. They count against the budget, which a
         /// page's notes may pass: the read does not stop to cut a note off.
         public private(set) var endNotes: [Block] = []
+        /// With `refs`, the entries of the list of references that the text shown cites, each once,
+        /// after the notes. Each counts against the budget at the block that first cites it.
+        public private(set) var endRefs: [Block] = []
+        var refsShown = Set<String>()
         var holdsText = false
         /// Runs of text a reader cannot see, by page, among the units that went out.
         var hidden: [(page: Int, count: Int)] = []
@@ -846,7 +958,7 @@ public enum Output {
         ///   character in the block's text, such as `pdf read paper.pdf --page 4-9 --from p4.7`.
         public init(
             file: String, pageCount: Int, style: Style = .md, raw: Bool = false, includeHidden: Bool = false,
-            headers: Bool = false, notes: NotesMode = .end, picks: [String: [Pick]] = [:],
+            headers: Bool = false, notes: NotesMode = .end, refs: RefsMode = .off, picks: [String: [Pick]] = [:],
             transcripts: [String: [Transcript]] = [:], budget: Int? = nil,
             continuation: (@Sendable (Int, Int?, Int?) -> String)? = nil
         ) {
@@ -859,6 +971,7 @@ public enum Output {
             self.includeHidden = includeHidden
             self.headers = headers
             self.notesMode = notes
+            self.refsMode = refs
             self.picks = picks
             self.transcripts = transcripts
             self.budget = budget
@@ -913,7 +1026,9 @@ public enum Output {
                 }
                 let resumed = position > 0 && offset != nil && first.block == block && first.kind == .text
                 if resumed, let offset, let text = first.text { unit.blocks[0].text = "…" + String(text.dropFirst(offset)) }
+                let refs = references(unit, of: page)
                 let cost = unit.blocks.reduce(0) { $0 + tokens(render($1, style: style, raw: raw)) } + notes
+                    + refs.reduce(0) { $0 + tokens(render($1, style: style, raw: raw)) }
                 if let budget, used + pending + cost > budget, !(position == 0 && rendered.isEmpty) {
                     guard alone else {
                         next = continuation(number, position == 0 ? nil : first.block, nil)
@@ -938,6 +1053,11 @@ public enum Output {
                     }
                 }
                 emit(unit, page: number)
+                for entry in refs {
+                    endRefs.append(entry)
+                    if let id = entry.id { refsShown.insert(id) }
+                    used += tokens(render(entry, style: style, raw: raw))
+                }
                 pending += notes
             }
             // The page is done: it counts as read even if it holds no block, and its old OCR
@@ -946,6 +1066,40 @@ public enum Output {
             oldLayers += content.oldLayers
             collect(content, page: number, before: reached, from: block)
             return true
+        }
+
+        /// With `refs`, the entries a unit cites that the read has not listed yet, each held to
+        /// about 800 tokens, a unit's to about 1,000, and a line for the rest, as notes and
+        /// annotations are: a review's paragraph that cites forty papers must not pass the budget.
+        func references(_ unit: Unit, of page: Page) -> [Block] {
+            guard refsMode == .end, !unit.cites.isEmpty else { return [] }
+            var blocks: [Block] = []
+            var spent = 0
+            var left: [String] = []
+            for id in unit.cites where !refsShown.contains(id) && !left.contains(id) {
+                guard let entry = page.citations.entries[id] else { continue }
+                var text = entry.text
+                if tokens(text) > Output.noteTokens { text = prefix(text, tokens: Output.noteTokens) + "… (whole: pdf read \(path) --ref \(id))" }
+                var block = Block(kind: .reference, page: entry.page + 1, block: (entry.blocks.first ?? 0) + 1, text: text)
+                block.id = id
+                block.place = "p.\(entry.page + 1)"
+                let cost = tokens(render(block, style: style, raw: raw))
+                guard left.isEmpty, spent + cost <= Output.annotationTokens || spent == 0 else {
+                    left.append(id)
+                    continue
+                }
+                spent += cost
+                blocks.append(block)
+            }
+            if let first = left.first {
+                let count = left.count
+                blocks.append(
+                    Block(
+                        kind: .annotation, page: page.index + 1, block: unit.blocks.first?.block,
+                        text: "\(count) more entr\(count == 1 ? "y" : "ies") cited here, not listed: pdf read \(path) --ref \(first)",
+                        status: "more"))
+            }
+            return blocks
         }
 
         /// Adds the page's notes that go after the output: those whose place, the block that refers
@@ -1041,6 +1195,10 @@ public enum Output {
                 parts.append(style == .md ? "## Notes" : "=== Notes ===")
                 parts += endNotes.map { render($0, style: style, raw: raw) }
             }
+            if !endRefs.isEmpty {
+                parts.append(style == .md ? "## References" : "=== References ===")
+                parts += endRefs.map { render($0, style: style, raw: raw) }
+            }
             if let stopped { parts.append("⚠ stopped: \(stopped)") }
             if let next { parts.append("next: \(next)") }
             let exitCode: Int32 = flagged.isEmpty ? 0 : holdsText || pagesRead.isEmpty ? 2 : 3
@@ -1087,7 +1245,7 @@ public enum Output {
                         doubtfulBlocks: doubtful, oldOCRLayers: oldLayers, runningHeaders: headers ? 0 : furniture,
                         textInsideFigures: inside, notes: notesMode == .off ? notesAside : 0),
                     hidden: hidden.map { HiddenText(page: $0.page, places: $0.count) },
-                    provisional: parsed.map { $0 < pageCount } ?? false, savedByPDFKit: savedByPDFKit, blocks: blocks + endNotes,
+                    provisional: parsed.map { $0 < pageCount } ?? false, savedByPDFKit: savedByPDFKit, blocks: blocks + endNotes + endRefs,
                     stopped: stopped, next: next.map { $0 + " --json" }))
         }
     }
@@ -1212,10 +1370,7 @@ public enum Output {
             let heading = "p.\(block.page)" + (block.printed.map { " (printed \($0))" } ?? "")
             return style == .md ? "## \(heading)" : "=== \(heading) ==="
         case .text:
-            var text = block.text ?? ""
-            for link in block.links ?? [] {
-                if let range = place(link.text, in: text) { text.replaceSubrange(range, with: linked(link.text, to: link.target, style: style)) }
-            }
+            let text = placed(block.text ?? "", links: block.links ?? [], style: style)
             // A running header, footer or publisher stamp, shown with `--headers`.
             let label =
                 block.status.flatMap(Furniture.Kind.init(rawValue:)).map { "[\($0.label)] " }
@@ -1223,6 +1378,8 @@ public enum Output {
             return "\(address(block)) \(label)\(text)"
         case .note:
             return "[^\(block.id ?? "")]" + (block.place.map { " (\($0))" } ?? "") + " " + (block.text ?? "")
+        case .reference:
+            return "[\(block.id ?? "")]" + (block.place.map { " (\($0))" } ?? "") + " " + (block.text ?? "")
         case .annotation:
             let kind = block.status ?? "comment"
             let by = block.author.map { " · \($0)" } ?? ""
@@ -1243,10 +1400,7 @@ public enum Output {
                 return "[\(kind)\(by)]" + (block.text.map { " \($0)" } ?? "") + (block.note.map { " · comment: \($0)" } ?? "")
             }
         case .figure, .table, .equation:
-            var text = block.text ?? ""
-            for link in block.links ?? [] {
-                if let range = place(link.text, in: text) { text.replaceSubrange(range, with: linked(link.text, to: link.target, style: style)) }
-            }
+            let text = placed(block.text ?? "", links: block.links ?? [], style: style)
             let label = "\(address(block)) [\(block.kind.rawValue) \(block.number ?? "")]"
             let crop = "crop: \(commands["crop"] ?? "")"
             // The agent's LaTeX or Markdown, labelled as its reading, its lines indented four

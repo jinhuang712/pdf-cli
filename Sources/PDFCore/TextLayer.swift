@@ -770,8 +770,9 @@ enum TextLayer {
 
     /// Groups lines into blocks. A new block starts where the next line moves up or sideways
     /// into another column, leaves a gap wider than about two thirds of a line, changes size
-    /// by more than 30%, starts an indented paragraph after a short line, or is one of `starts`,
-    /// where the reading order starts a column.
+    /// by more than 30%, starts an indented paragraph after a short line, comes back to the
+    /// block's left edge after lines set in from it, as the next entry of a list of references set
+    /// with a hanging indent does, or is one of `starts`, where the reading order starts a column.
     static func group(_ lines: [RawLine], starts: [Bool] = [], crop: CGRect, dehyphenator: Dehyphenator) -> [TextBlock] {
         var blocks: [TextBlock] = []
         var current: [RawLine] = []
@@ -805,8 +806,24 @@ enum TextLayer {
                 let sideBySide = next.minX >= previous.maxX || next.maxX <= previous.minX
                 let resized = abs(next.height - height) > 0.3 * height
                 let indented = next.minX - area.minX > 0.8 * height && previous.maxX < area.maxX - 2 * height
+                // A hanging indent: the lines before are set in by one to four of the line's heights,
+                // right after the block's first line, and this one starts again at that line's edge,
+                // to a sixth of a height, which a block of centred lines rarely keeps. The first line
+                // fills its line, as one that goes on in the next does. A paragraph's first line set
+                // in after the lines of the one before, or after its short last line, is no hanging
+                // indent.
+                let left = current[0].rect.minX
+                let inset = previous.minX - left
+                var outdented = false
+                if current.count >= 2, inset > 0.8 * height, inset < 4 * height, abs(next.minX - left) <= 0.15 * height,
+                    current[0].rect.maxX >= area.maxX - 2 * height
+                {
+                    var run = current.count - 1
+                    while run > 0, abs(current[run - 1].rect.minX - previous.minX) <= 0.15 * height { run -= 1 }
+                    outdented = run == 1
+                }
                 let starting = starts.indices.contains(position) && starts[position]
-                if movedUp || sideBySide || gap > 0.7 * height || resized || indented || starting { flush() }
+                if movedUp || sideBySide || gap > 0.7 * height || resized || indented || outdented || starting { flush() }
             }
             current.append(line)
             area = area.union(line.rect)

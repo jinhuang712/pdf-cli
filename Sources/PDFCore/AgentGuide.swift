@@ -12,13 +12,13 @@ public enum AgentGuide {
     public static let text = #"""
         # pdf: reading PDFs
 
-        `pdf` reads a PDF's text page by page, from a cache, and flags every page and passage whose text it could not read well. Read PDFs with it instead of opening them as images: its text costs a fraction of the tokens, and its flags say where to look instead. Pictures are markers with the command that crops them: look at one when the text points to it, or at an empty page.
+        `pdf` reads a PDF's text page by page, from a cache, and flags every page and passage whose text it could not read well. Read PDFs with it, not as images: its text costs a fraction of the tokens, and its flags say where to look. Pictures are markers with the command that crops them: look at one when the text points to it, or at an empty page.
 
         ## Start here
 
-        1. `pdf info paper.pdf`: the title, authors, sections with their pages and sizes in tokens, flagged pages, figures and tables, comments, attachments and scripts, cheaply.
+        1. `pdf info paper.pdf`: the title, authors, sections with their pages and sizes in tokens, flagged pages, figures, tables and references, comments, attachments and scripts, cheaply.
         2. `pdf read paper.pdf --section Method` or `pdf read paper.pdf --page 4-6`: the part you need.
-        3. `pdf search paper.pdf dropout ablation`: the paragraphs that hold the words, best first. Without a PDF, `pdf search dropout ablation` searches every PDF read before, in the pages parsed so far.
+        3. `pdf search paper.pdf dropout ablation`: the paragraphs that hold the words, best first. Without a PDF, `pdf search dropout ablation` searches every PDF read before.
         4. `pdf crop paper.pdf --page 4 --bbox 0.1,0.4,0.8,0.3`: an image of a region, for charts, tables, formulas and anything flagged. Read the printed path as an image.
 
         ## Commands
@@ -26,12 +26,12 @@ public enum AgentGuide {
         | Command | What it does |
         |---|---|
         | `pdf info <pdf>` | A first look. `--json` lists every section, at every level. |
-        | `pdf read <pdf>` | Text from page 1, or from `--page 3`, `--page 3-5,8`, `--section 2.1`, `--section Method`, `--printed-page iv` or `--from p4.7`. Also `--budget N` or `--budget all`, `--raw`, `--include-hidden`, `--headers`, `--notes inline` or `--notes off`, `--footnote 7`, `--json`, and `--format text` for plain text with `=== p.4 ===` page headings. |
+        | `pdf read <pdf>` | Text from page 1, or from `--page 3-5,8`, `--section 2.1`, `--section Method`, `--printed-page iv` or `--from p4.7`. Also `--budget N` or `--budget all`, `--raw`, `--include-hidden`, `--headers`, `--notes inline` or `--notes off`, `--footnote 7`, `--ref 12`, `--refs end`, `--json`, `--format text`. |
         | `pdf search [<pdf>] <words>` | The paragraphs that hold every word, best first; else those that hold some, as it says. `--regex <pattern>` matches across lines, columns and pages. `--top N`, `--from N`, `--budget N`, `--json`. |
-        | `pdf crop <pdf> --page N` | A PNG of the page, or of a region with `--bbox x,y,width,height` in fractions of the page from its top left, or of `--figure 4`, `--table 2` or `--equation 5`. `--grid` draws lines labelled with those fractions. It prints the image's path and its cost, about 1,600 image tokens at most. `--json`. |
+        | `pdf crop <pdf> --page N` | A PNG of the page, or of a region with `--bbox x,y,width,height` in fractions of the page from its top left, or of `--figure 4`, `--table 2` or `--equation 5`. `--grid` draws lines labelled with those fractions. It prints the image's path and cost, at most about 1,600 image tokens. `--json`. |
         | `pdf pick <pdf> p2.5 a` | Keeps reading `a` or `b` of an unsure block's words. |
         | `pdf transcribe <pdf> --page N --equation 5` | Keeps an equation's LaTeX or a table's Markdown, from standard input; `--clear` removes it. |
-        | `pdf add <pdfs or folders>` | Parses PDFs ahead of time, `-j N` at once. Any command adds a new PDF on first use anyway. |
+        | `pdf add <pdfs or folders>` | Parses PDFs ahead of time, `-j N` at once. Any command adds a new PDF anyway. |
         | `pdf ls`, `pdf rm <pdf or ID>`, `pdf gc` | Lists the PDFs read; forgets one; cleans the cache. |
         | `pdf agent-guide` | Prints this guide. `--install claude-code` installs it as a Claude Code skill. |
 
@@ -39,12 +39,12 @@ public enum AgentGuide {
 
         ## Reading the output
 
-        - `## p.4` starts a page and `¶7` its seventh block, most often a paragraph. Cite "p.4 ¶7"; `pdf read paper.pdf --from p4.7` reads on from there. Pages count from the file's first page; `## p.12 (printed 237)` gives the number printed on it. `--json` gives each block's position on its page, in the fractions that `pdf crop` takes with `--bbox`.
-        - The first line sums up the read: the pages read and flagged, what was set aside or hidden with the flag that shows it, and `provisional` while the file still parses.
-        - Columns read one after the other. Running headers, footers, page numbers and publisher stamps are left out and counted in the first line; `--headers` shows them in place, as `[header] …`.
+        - `## p.4` starts a page and `¶7` its seventh block, most often a paragraph. Cite "p.4 ¶7"; `pdf read paper.pdf --from p4.7` reads on from there. Pages count from the file's first page; `## p.12 (printed 237)` gives the number printed on it. `--json` gives each block's position, in the fractions `pdf crop` takes with `--bbox`.
+        - The first line sums up the read: the pages read and flagged, what was set aside or hidden with the flag that shows it, and `provisional` while the file parses.
+        - Columns read one after the other. Running headers, footers and page numbers are left out and counted in the first line; `--headers` shows them, as `[header] …`.
         - Output stops at about 5,000 tokens with a `next:` line, the exact command that goes on: run it as given.
         - `^{...}` and `_{...}` mark raised and lowered characters, as in `10^{-5}` and `x_{2}`.
-        - `pdf read` exits 0 when every page asked for read well. 2: some pages are flagged; the rest is valid. 3: no page asked for holds text, or the file failed. 1: the command could not run. 64: it was used wrongly. `pdf info` and `pdf search` exit 0 on a flagged file, saying so, and 3 when the file fails; `pdf add` exits 2 on a flagged page.
+        - `pdf read` exits 0 when every page asked for read well. 2: some pages are flagged; the rest is valid. 3: no page asked for holds text, or the file failed. 1: the command could not run. 64: it was used wrongly. `pdf info` and `pdf search` exit 0 on a flagged file and 3 on a failed one; `pdf add` 2 on a flagged page.
 
         ## Beside the text
 
@@ -52,18 +52,20 @@ public enum AgentGuide {
 
         A footnote or endnote is `[^7]` in the text, its words under `## Notes`; `--notes inline` puts each by its paragraph, `--notes off` drops them. `--footnote 7` shows one and its citations (`3.7` where numbering restarts). `[margin]`, `[headnote]`: a margin note, a chapter's summary.
 
+        A citation reads as printed, `[12]` or `(Smith, 2020)`, a raised one as `[12]`. `--ref 12` or `--ref Smith2020` shows its entry, DOI and citations; `--refs end` lists the cited entries under `## References`. `Fig. 4` or `Section 3.2` links to its page: `[Fig. 4](#p.7)`.
+
         Other pictures, after the block each sits on: `[image] crop: pdf crop …` and `[drawing] crop: …`; `[stamp] Approved`, `[ink]` and `[shape]`, drawn by a reader.
 
-        After the block each sits on too: `[comment · Reviewer 2] …`, `[reply · …]` and `[note] …`; `[highlight · Reviewer 1] words · comment: …`, and `[underline]`, `[squiggly]` or `[strikeout]`, with the words under it; `[field: Name = Jane Doe]`, a filled-in form field. A link sits in its words, `[words](https://…)`, or `[words](#p.12)` for a page of the file; else after the block as `[link] …`. `--format text` writes `words <https://…>`.
+        After the block each sits on too: `[comment · Reviewer 2] …`, `[reply · …]` and `[note] …`; `[highlight · Reviewer 1] words · comment: …`, and `[underline]`, `[squiggly]` or `[strikeout]` alike; `[field: Name = Jane Doe]`, a filled-in form field. A link sits in its words, `[words](https://…)`, or `[words](#p.12)` for a page of the file; else after the block as `[link] …`. `--format text` writes `words <https://…>`.
 
         ## When something is in doubt
 
-        - `⚠ p.4 failed: …` or `⚠ p.4 low-quality: …`, for a page or for one block, as `⚠ p.4 ¶3 low-quality: …`: the text there is missing or unreliable. Run its `read it as an image:` command and read the image. One with no command, a page whose drawing commands are damaged, has nothing more to show: tell the user part of the page is missing.
-        - `⚠ p.2 ¶5 unsure: two readings differ`, with readings `[a]` and `[b]`: where the words break is in doubt. Look at its `look:` crop if it matters, then run `pdf pick paper.pdf p2.5 a` or `b`. Later reads show the pick in place, as `[picked 2026-10-15]`.
+        - `⚠ p.4 failed: …` or `⚠ p.4 low-quality: …`, for a page or for one block, as `⚠ p.4 ¶3 low-quality: …`: the text there is missing or unreliable. Run its `read it as an image:` command and read the image. One with no command, a page whose drawing is damaged, has nothing more to show: tell the user part of the page is missing.
+        - `⚠ p.2 ¶5 unsure: two readings differ`, with readings `[a]` and `[b]`: where the words break is in doubt. Look at its `look:` crop if it matters, then run `pdf pick paper.pdf p2.5 a` or `b`. Later reads show the pick, as `[picked 2026-10-15]`.
         - `⚠ p.2 ¶5 unsure: words run together, and no reading splits them`: read those words with care, or look at the crop.
-        - `set aside: … (show: --raw)` in the first line: `--raw` shows the text set aside, labelled with its reason, as `[low-quality]` or `[table text: rows and columns lost]` in place, or a scan's replaced text layer as `[old OCR]` at the end of its page. Trust it less than normal output.
+        - `set aside: … (show: --raw)` in the first line: `--raw` shows the text set aside, labelled with its reason, as `[low-quality]` or `[table text: rows and columns lost]` in place, or a scan's replaced text layer as `[old OCR]`. Trust it less than normal output.
         - `⚠ made or last saved by macOS PDFKit` in the first line: such a save can damage the text; an earlier copy may read better.
-        - A file that fails as a whole says why: not a PDF, damaged, locked by a password, or slow to open. For a locked one, ask the user to run the command its failure line gives, `pdf add <pdf> --password-stdin`, which asks for the password. Reads then come from the cache; `pdf crop` needs `--password-stdin` every time.
+        - A file that fails as a whole says why: not a PDF, damaged, locked by a password, or slow to open. For a locked one, ask the user to run `pdf add <pdf> --password-stdin`, as its failure line says; reads then come from the cache, but `pdf crop` needs `--password-stdin` each time.
 
         ## Hidden text
 

@@ -61,6 +61,14 @@ public struct Info: Encodable, Sendable {
     /// How many footnotes, endnotes, author notes, margin notes and headnotes `pdf read` finds in
     /// the pages parsed so far, by kind; none that is zero.
     public var noteCounts: [String: Int]
+    /// The lists of references found in the pages parsed so far, each with how many entries it holds.
+    public var referenceLists: [ReferenceList]
+
+    public struct ReferenceList: Encodable, Equatable, Sendable {
+        public var entries: Int
+        /// The page its heading stands on, counted from 1.
+        public var page: Int
+    }
 
     public struct Figure: Encodable, Equatable, Sendable {
         /// "figure" or "table".
@@ -119,6 +127,9 @@ public struct Info: Encodable, Sendable {
         }
         self.noteCounts = counts
         self.notes = authors.isEmpty ? Info.notes(first) : authors
+        var references = ReferenceIndex(outline: facts.outline)
+        for (index, layer) in layers { if let layer { references.add(index, layer) } }
+        self.referenceLists = references.lists(notes: judged).map { ReferenceList(entries: $0.entries, page: $0.page) }
         self.pageCount = pageCount
         self.pagesParsed = pages.count
         self.columns = Info.columns(layers.compactMap { $0.1 })
@@ -482,6 +493,14 @@ public struct Info: Encodable, Sendable {
             lines.append(
                 "notes read apart from the text: " + found.joined(separator: ", ")
                     + " (pdf read: `--notes end|inline|off`, `--footnote ID`)")
+        }
+        if !referenceLists.isEmpty {
+            let entries = referenceLists.reduce(0) { $0 + $1.entries }
+            let lists =
+                referenceLists.count == 1
+                ? "the list on p.\(referenceLists[0].page)"
+                : "\(referenceLists.count) lists, on " + referenceLists.map { "p.\($0.page)" }.joined(separator: ", ")
+            lines.append("references: \(entries) entr\(entries == 1 ? "y" : "ies"), \(lists) (pdf read: `--ref ID`, `--refs end`)")
         }
         if !runningHeaders.isEmpty {
             let shown = runningHeaders.prefix(6).map { header -> String in

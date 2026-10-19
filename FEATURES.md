@@ -1,4 +1,4 @@
-<!-- what-we-build: approved 2026-10-19 -->
+<!-- what-we-build: drafted 2026-10-19 -->
 # Features
 
 ✅ built · 🚧 built with a gap · ⬜ planned
@@ -99,7 +99,7 @@ Gap:
 - `--section` takes one section per read so far. `--styles` and `--format html` come later.
 - An image or a drawing outside every figure and table is a marker of its own, after the block it sits on: `[image] crop: pdf crop paper.pdf --page 3 --bbox …`, or `[drawing]` for shapes the page draws, as a chart. A drawing is a group of shapes that holds a curve or a slanted line, or two bars, 1% of the page or more; rules alone, as a table's borders, are none, nor a box with rounded corners, a bar with text on it, as a shaded cell, or a bar at the page's edge. Its crop takes in the text within 12 pt, its labels. A figure's panels side by side join, and so do two figures in two columns closer than 30 pt; panels stacked, or far apart, are a marker each. A scan's page has no image marker: its image is the page. Stamps, ink and shapes a reader drew are `[stamp]`, `[ink]` and `[shape]`, with their crop; a stamp's name shows only when it is one of the PDF standard's 14.
 - An annotation goes after the block its center lies in, or the nearest block on its line, or the last block above it: a comment on a word in a paragraph comes after the whole paragraph.
-- The words under a mark or a link are the longest run of PDFKit's selection there that the blocks under it show in the same order: a mark over text a reader cannot see shows no words, and a link over it is hidden. A link goes inline where its block's text holds its words as one run; else it stands after the block.
+- The words under a mark or a link are the longest run of PDFKit's selection there that the blocks under it show in the same order: a mark over text a reader cannot see shows no words, and a link over it is hidden. A link goes inline where its block's text holds its words as one run, on the run nearest the link's place on the page, a whole word where one is, never inside another link or a note's mark: the back-references of a list of references, each a link on a "1", each take their own. Else it stands after the block.
 - A password field shows "a password, not shown", a choice the text its list shows, and a checked box "checked". An annotation the file hides by its flags, by a layer switched off, by no opacity, by no size, by lying mostly off the page, or as a reply to a hidden comment, is a hidden-text marker.
 - A paragraph's annotations take about 1,000 tokens at most; a line counts the rest. An author's name or a comment may hold text shaped like the tool's own markers, on the comment's own line.
 - Columns are found on pages read from their text layer: the gap that the fewest lines cross in the middle half of the text, and lines across both columns, as a title or a caption, part the page into bands. Only a band whose two sides each hold two lines or more that fill their column moves, and a page of three columns keeps PDFKit's order; each column keeps PDFKit's order, and lines that are no running text, as a table's cells, a grid of authors or a figure's labels, keep their place. A caption across the page keeps PDFKit's place too, which on one smoke page is after the columns below it. A page read by OCR keeps the recognizer's order.
@@ -236,6 +236,7 @@ Turns one part of a page into an image, so the agent can look at it with its own
 $ pdf crop paper.pdf --figure 4
 /Users/me/Library/Caches/pdf-cli/crops/b430b72936d6cf8b/p15-0.51,0.34,0.38,0.25.png  (~1.6k image tokens, 1137×1058 px)
 p.15 · caption: Accuracy vs. dropout rate
+mentioned on p.12, p.15
 ```
 
 `--figure`, `--table` and `--equation` look in the pages parsed so far, and in the whole file once it is parsed when those do not hold it; `--page` narrows them to one page, and is needed where two pages hold the same number, as an appendix that numbers its tables again. An unknown number fails with the numbers found, once the whole file is parsed: on a long file that is not yet, that takes as long as its parse, 2 minutes for a 517-page textbook. `--equation` and `--table` also print the LaTeX or Markdown the agent kept, to check against the image, or else the `pdf transcribe` command that keeps it.
@@ -250,7 +251,7 @@ $ pdf crop paper.pdf --page 2 --bbox 0.08,0.07,0.85,0.3
 A region uses the same fractions as the positions in `pdf read --json` and the crop commands in failure blocks, taken on the page as stored, before any rotation; the image comes out upright. A region is rounded outward to hundredths of the page, so it always holds all of what was asked for. An image fits Claude's standard limits, 1,568 px on its long edge and about 1,568 image tokens, so a whole page costs about 1,500 tokens and a small region comes out enlarged, up to 6 times. It shows comments and highlights as a reader sees them. The same crop asked again within 7 days comes from the cache folder at once, and `pdf gc` removes older ones. `--password-stdin` opens a locked PDF, and `--json` gives the image's path, size and tokens, and the LaTeX or Markdown kept.
 
 Gap:
-- `--figure 4b` crops a sub-figure only where a caption numbers it so; a figure's panels are not found one by one. A table's notes below it are not part of its crop. Where a figure is mentioned in the text, as "mentioned on p.15", comes with cross-references in M2.8.
+- `--figure 4b` crops a sub-figure only where a caption numbers it so; a figure's panels are not found one by one. A table's notes below it are not part of its crop. `mentioned on` names the pages whose text names it, as "Fig. 4" or "Table 2" does (F15), in the pages parsed so far.
 
 Settings: none.
 
@@ -485,18 +486,45 @@ Gap:
 - A **margin note** is a block of four words of three letters or more, no more than 0.3 of the page wide, set wholly beside the page's columns of text, in horizontal lines: PLOS's sidebar of the article's citation and funding is one. The columns are the blocks in the body's size, or in the size most of the wide blocks' words have, where a lead paragraph in large type would be the body's. A chart's labels, a subfigure's caption or a table's cells that no region holds, set outside the columns, can still read as one, as can a page of figures with a few paragraphs. Pages of vertical text have none. A paragraph's margin notes take about 1,000 tokens, as its annotations do; the rest read as text in their place, within the budget.
 - A note's block that a read marks as doubtful or unsure, or sets aside as a running header, stays text where it stands.
 
-## F15 — Citations and references ⬜
+## F15 — Citations and references 🚧
 
 Leads every citation to its entry, and every entry back to where it is cited.
 
 | What | What the user sees |
 |---|---|
-| Inline citations | Kept as printed, such as `[12]` or `(Smith, 2020)`. A superscript number that points to the reference list shows as `[12]`, so it never looks like a footnote. |
-| One reference | `pdf read <path> --ref 12` prints the entry, with its DOI when the entry has one, and every page that cites it. |
-| Cited entries with the text | `--refs end` lists the entries cited in the output at its end. It is off by default, to save tokens. |
-| Cross-references | "see Fig. 4", "Eq. (5)" and "Section 3.2" each show the page they point to. |
+| Inline citations | Kept as printed, such as `[12]` or `(Smith, 2020)`. A raised number that cites the list of references shows as `[12]`, so it never looks like a footnote. |
+| One reference | `pdf read <path> --ref 12` prints the entry, with its DOI when its words or a link over them give one, and every place that cites it. An entry of a list by author and year is named by its first author's surname and its year, as `--ref Smith2020a` or `--ref "Smith 2020"`; one with a printed key by the key, as `--ref BK06`; one of a list after the first with the list's number, as `--ref 2.12`. |
+| Cited entries with the text | `--refs end` lists the entries the output cites after it, under `## References`, each once. It is off by default, to save tokens. |
+| Cross-references | "see Fig. 4", "Eq. (5)" and "Section 3.2" lead to the page that holds what they name, as a link of the file to a page does: `[Fig. 4](#p.7)`. `pdf crop --figure 4` says on which pages the text mentions it. |
+
+```text
+¶3 Five-year survival after surgery is only 50%[2,3], as before [12] and (Smith, 2020); see [Fig. 4](#p.7).
+
+## References
+
+[2] (p.11) Bernier, J. et al. Postoperative irradiation with or without concomitant chemotherapy for locally advanced head and neck cancer. N. Engl. J. Med. 350, 1945–1952 (2004).
+```
+
+```sh
+$ pdf read paper.pdf --ref 15
+paper.pdf · reference 15 · p.9
+
+[15] Xuehai He, Yichen Zhang, Luntian Mou, Eric Xing, and Pengtao Xie. Pathvqa: 30000+ questions for medical visual question answering. arXiv preprint arXiv:2003.10286, 2020. 2, 6, 7
+
+cited:
+  p.6 ¶7: … public medical VQA benchmarks: SLAKE [27], VQA-RAD [23], and PathVQA [15]. Following the evaluation protocol…
+```
+
+`pdf info` counts them: `references: 46 entries, the list on p.9 (pdf read: --ref ID, --refs end)`. `--json` gives an entry that `--refs end` lists as a block of kind `reference` with its `id` and `place`, and `--ref` as the entry, its DOI and the places that cite it; `pdf crop --json` gives `mentionedOn`.
 
 Settings: none.
+
+Gap:
+- Lists, entries and citations are found by rules, with no model, and judged when a page is read, against the pages parsed so far, as notes are (F14). On a first read of a file whose list is on a page not parsed yet, raised citations stay raised and `--refs end` lists nothing; the summary line says the read is provisional, and `--ref` parses the whole file first.
+- A **list** starts after a heading of one or two lines, "References", "Bibliography", "Literature Cited", "Works Cited", "References and Notes" and the like, and goes on over the pages after it, while each is parsed, until a heading of another part, as "Appendix", "Supplementary", "Acknowledgements" or "Chapter 2", or a numbered or lettered heading set larger than its entries; a list by author and year ends where four blocks of words in a row hold no year. A list with no heading is not found. Running headers and page numbers at a page's edge stay out of it.
+- An **entry** of a numbered list, `[12]` or `12.`, starts where its number, the one after the last, stands: at a block's start, where a number up to three past it is taken too, so a lost entry costs only itself; or inside a block that holds several. Where a list sets its numbers in a column of their own, as PLOS and JMIR do, PDFKit gives the numbers in one run, and the entries after them are matched to them by the authors' names that start each, only when the names count as many as the numbers: on the test set, 016's list comes out in part, and 019's and 095's not at all. An entry with a printed key, `[BK06]`, starts at its key. In a list by author and year, a block that starts at its column's left edge with a capital starts an entry, and the parse, since parser version 18, parts the entries a hanging indent sets; inside a block, an entry starts where a surname and initials follow the end of the one before. Such an entry is named by its first author's surname, as "Smith, J." or "Smith J" or "John Smith" give it, and its year; one with no year is left out. An entry's words are PDFKit's, with LaTeX's back-references, as "2, 6, 7", at its end.
+- A **citation** in brackets names entries by number, range or key, as `[3, 5–7]` or `[BK06, Thm. 2]`, and counts only where every one it names is in the list. A raised number cites the list only in a document that cites so more often than in brackets, and not where M2.7 leads it to a note; it may follow a word, a punctuation mark, a per cent sign or a closing bracket. A citation by author and year, `(Smith, 2020; Lee and Kim, 2019a)` or `Smith et al. (2020)`, leads to the entries of that first author and year, a year without its letter to all of them, a second author narrowing them; a surname with a particle set in capitals, as "Le Bris", can miss. A citation leads to the nearest list after it of its kind, or else the last before it, so chapters that each end in their own list cite their own. Citations in captions, notes and tables read as printed and count for no `--refs end`.
+- A **cross-reference** is "Fig. 4" or "Figure 4", "Table 2", "Eq. (5)" or "Equation 5", "Section 3.2", "Sec. 3.2" or "§3.2", and "Appendix A", in any case. It leads to the one page whose figure, table or equation M2.6 found with that number, or whose section the bookmarks or a numbered heading number so: a number that pages far apart hold, as an appendix that numbers its tables again, leads nowhere, and a table on pages that follow one another to its first. "Table 1 of [12]", another paper's table, leads to this one's. A lettered heading counts only after the list of references or as "Appendix A", so a title "A Survey of …" names no appendix. Where the file links the words already, its link stays.
 
 ## F16 — Memos ⬜
 

@@ -22,6 +22,10 @@ struct ReadCommand: ParsableCommand {
         case end, inline, off
     }
 
+    enum RefsOption: String, ExpressibleByArgument {
+        case end, off
+    }
+
     @Argument(help: "Path to a PDF file.") var path: String
     @Option(name: .customLong("page"),
             help: ArgumentHelp("Pages by their position in the file, such as 3, 3-5 or 3,7-9. The flag can repeat.",
@@ -50,6 +54,16 @@ struct ReadCommand: ParsableCommand {
             "Show one footnote or endnote, as 7 or 3.7 where numbering restarts, with the places that refer to it.",
             valueName: "id"))
     var footnote: String?
+    @Option(
+        help: ArgumentHelp(
+            "List the entries of the reference list that the text shown cites, after it, or not (the default).",
+            valueName: "end|off"))
+    var refs: RefsOption = .off
+    @Option(
+        help: ArgumentHelp(
+            "Show one entry of the reference list, as 12, BK06 or Smith2020, with its DOI and the places that cite it.",
+            valueName: "id"))
+    var ref: String?
     @Flag(help: "Print JSON.") var json = false
 
     func validate() throws {
@@ -71,12 +85,24 @@ struct ReadCommand: ParsableCommand {
         if let footnote, footnote.trimmingCharacters(in: .whitespaces).isEmpty {
             throw ValidationError("--footnote takes a note's id, such as 7, 3.7 or *")
         }
+        if ref != nil, footnote != nil { throw ValidationError("choose one of --footnote and --ref") }
+        if ref != nil, scopes > 0 || from != nil {
+            throw ValidationError("--ref reads the whole document for the entry: it takes no --page, --printed-page, --section, --full or --from")
+        }
+        if ref != nil, notes != .end || refs != .off || budget != "5000" || raw || headers || includeHidden || format != .md {
+            throw ValidationError("--ref shows one entry whole: it takes only --json")
+        }
+        if footnote != nil, refs != .off { throw ValidationError("--footnote shows one note whole: it takes only --json") }
+        if let ref, ref.trimmingCharacters(in: CharacterSet(charactersIn: " []")).isEmpty {
+            throw ValidationError("--ref takes an entry's id, such as 12, BK06 or Smith2020")
+        }
     }
 
     func run() throws {
         let store = try Store()
         let reader = Reader(store: store, library: try Library())
         if let footnote { return try self.footnote(footnote) }
+        if let ref { return try self.reference(ref) }
         let resume = from.flatMap(Self.place)
         var wanted: [Int] = []
         for number in pageSpecs.flatMap({ Self.pages($0)! }) where !wanted.contains(number) { wanted.append(number) }
@@ -131,6 +157,7 @@ struct ReadCommand: ParsableCommand {
         let flags =
             (raw ? " --raw" : "") + (includeHidden ? " --include-hidden" : "") + (headers ? " --headers" : "")
             + (notes == .end ? "" : " --notes \(notes.rawValue)")
+            + (refs == .off ? "" : " --refs \(refs.rawValue)")
             + (format == .text ? " --format text" : "")
             + (budget == "5000" ? "" : " --budget \(budget)")
         let quotedPath = Output.quoted(path)
@@ -138,7 +165,8 @@ struct ReadCommand: ParsableCommand {
         let named = scope
         var document = Output.Document(
             file: path, pageCount: pageCount, style: format == .md ? .md : .text, raw: raw, includeHidden: includeHidden,
-            headers: headers, notes: Output.NotesMode(rawValue: notes.rawValue) ?? .end, picks: picks,
+            headers: headers, notes: Output.NotesMode(rawValue: notes.rawValue) ?? .end,
+            refs: Output.RefsMode(rawValue: refs.rawValue) ?? .off, picks: picks,
             transcripts: transcripts, budget: limit,
             continuation: { page, block, offset in
                 let rest = named == "pages" ? " --page " + Self.spec(Array(order.drop { $0 != page })) : named
@@ -151,6 +179,8 @@ struct ReadCommand: ParsableCommand {
         let batch = max(1, min(8, (limit ?? 40_000) / 1_000))
         var index = 0
         var noteIndex = NoteIndex()
+        var referenceIndex = ReferenceIndex(outline: facts?.outline ?? [])
+        let everyPage = Array(0..<pageCount)
         reading: while index < numbers.count {
             let chunk = Array(numbers[index..<min(index + batch, numbers.count)])
             // The file can change or go away between chunks. Pages of another version must not
@@ -162,14 +192,17 @@ struct ReadCommand: ParsableCommand {
             }
             // Running headers and footers, judged against the pages around these that are parsed.
             let furniture = (try? Furniture.find(pages: results.map(\.page), keys: keys, store: store)) ?? [:]
-            // Footnotes, endnotes and the rest, judged against the pages parsed so far.
-            let judged = (try? noteIndex.resolve(pages: results.map(\.page), keys: keys, store: store)) ?? [:]
+            // Footnotes, endnotes and the rest, judged against the pages parsed so far, and the
+            // citations of the list of references, whose raised markers lead to no note.
+            let judged = (try? noteIndex.resolve(pages: everyPage, keys: keys, store: store)) ?? [:]
+            try? referenceIndex.refresh(keys: keys, store: store)
+            let cited = referenceIndex.resolve(pages: results.map(\.page), notes: judged)
             for (page, result) in results {
                 let resume = index == 0 && page + 1 == start?.page
                 let added = document.add(
                     Output.Page(
                         index: page, result: result, key: keys[page], annotations: annotations[page] ?? [],
-                        furniture: furniture[page] ?? [:], notes: judged[page] ?? PageNotes()),
+                        furniture: furniture[page] ?? [:], notes: judged[page] ?? PageNotes(), citations: cited[page] ?? PageCitations()),
                     from: resume ? start?.block : nil, offset: resume ? start?.offset : nil)
                 if !added { break reading }
                 index += 1
@@ -237,6 +270,61 @@ struct ReadCommand: ParsableCommand {
                         : "; it has " + ids.prefix(12).joined(separator: ", ") + (ids.count > 12 ? ", and \(ids.count - 12) more" : "")))
         case .ambiguous(let ids):
             throw ValidationError("\(id) names notes in several series of numbering; use one of " + ids.joined(separator: ", "))
+        }
+    }
+
+    /// One entry of the list of references by its id, with its DOI and the places that cite it,
+    /// from the whole document: every page is parsed first, as for a note.
+    func reference(_ id: String) throws {
+        let store = try Store()
+        let reader = Reader(store: store, library: try Library())
+        let docID: String
+        let pageCount: Int
+        switch try reader.read(path: path, pages: [0]) {
+        case .fileFailed(let reason):
+            print(json ? Self.failureJSON(path, reason) : "\(path): failed: \(Output.failure(reason, file: path))")
+            throw ExitCode(3)
+        case .pages(let id, let count, _):
+            docID = id
+            pageCount = count
+        }
+        _ = try reader.read(path: path, pages: nil)
+        let keys = try store.pageKeys(docID: docID)
+        let cached = try store.cachedKeys(keys)
+        let parsed = keys.filter { cached.contains($0) }.count
+        let resolved = Reader.resolve(path)
+        let facts = try FileStat(path: resolved).flatMap { try store.facts(path: resolved, stat: $0) }
+        var notes = NoteIndex()
+        let judged = try notes.resolve(pages: Array(0..<pageCount), keys: keys, store: store)
+        var index = ReferenceIndex(outline: facts?.outline ?? [])
+        try index.refresh(keys: keys, store: store)
+        let outcome = try index.lookup(id, notes: judged, keys: keys, store: store, links: facts?.annotations ?? [])
+        let provisional = parsed < pageCount ? " · provisional: \(parsed) of \(pageCount) pages parsed" : ""
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.withoutEscapingSlashes, .sortedKeys]
+        switch outcome {
+        case .found(var entry):
+            if json {
+                if parsed < pageCount { entry.provisional = true }
+                print(String(decoding: try encoder.encode(entry), as: UTF8.self))
+                return
+            }
+            var lines = ["\(path) · reference \(entry.id) · p.\(entry.page)\(provisional)", "[\(entry.id)] \(entry.text)"]
+            if let doi = entry.doi { lines.append("doi: \(doi)") }
+            if entry.citations.isEmpty {
+                lines.append("cited: no citation of it was found in the text")
+            } else {
+                lines.append("cited:\n" + entry.citations.map { "  p.\($0.page) ¶\($0.block): \($0.excerpt)" }.joined(separator: "\n"))
+            }
+            print(lines.joined(separator: "\n\n"))
+        case .missing(let ids):
+            throw ValidationError(
+                "no entry of the reference list is \(id)"
+                    + (ids.isEmpty
+                        ? "; the file has no list of references found so far"
+                        : "; it has " + ids.prefix(12).joined(separator: ", ") + (ids.count > 12 ? ", and \(ids.count - 12) more" : "")))
+        case .ambiguous(let ids):
+            throw ValidationError("\(id) names several entries; use one of " + ids.prefix(20).joined(separator: ", "))
         }
     }
 

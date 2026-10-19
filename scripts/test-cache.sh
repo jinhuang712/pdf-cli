@@ -241,7 +241,7 @@ check "an unknown section names the known ones" "no section matches nothing; sec
 
 # pdf search: one PDF, a pattern across a line break, the library, the budget and JSON.
 output=$(reading search $paper influence matching)
-check "a search names its words, its hits and how much it searched" '^"influence matching" in .* · 16 hits · all 11 pages searched' "$output"
+check "a search names its words, its hits and how much it searched" '^"influence matching" in .* · 14 hits · all 11 pages searched' "$output"
 check "each hit gives its page, paragraph, section and the words around it" "^p.3 ¶19 · Method · .*\*\*Influence\*\* \*\*Matching\*\*" "$output"
 check "a search says how to read a hit" "^read a hit: pdf read $paper --from p" "$output"
 check "a pattern matches across a break" "^p.1 ¶8 · .*\*\*dataset distillation\*\*" "$(reading search $paper --regex 'dataset\s+distillation' --top 3)"
@@ -395,7 +395,7 @@ check "two columns read one after the other" "^¶6 proportion of instances that 
 headers=$(run $pdf read testdata/smoke/arxiv-2608.16011.pdf --page 2-5 --budget all)
 check "page numbers are set aside and counted" "running headers and footers: 4 set aside (show: --headers)" "$headers"
 check "and leave no block of their own" "^0$" "$(grep -c '^¶[0-9]* [2-5]$' <<<"$headers")"
-check "--headers shows them in place" "^¶9 \[footer\] 2$" "$(run $pdf read testdata/smoke/arxiv-2608.16011.pdf --page 2 --headers --budget all)"
+check "--headers shows them in place" "^¶13 \[footer\] 2$" "$(run $pdf read testdata/smoke/arxiv-2608.16011.pdf --page 2 --headers --budget all)"
 
 # Figures, tables and equations (M2.6), on the safety set's page without alt text, and a bar
 # chart whose bars carry their values, which is no picture, on a smoke paper.
@@ -468,6 +468,30 @@ fi
 check "--footnote shows a note and the places that cite it" "p.2 ¶[0-9]*: .*Track\[\^3\]" "$(run $pdf read $notes --footnote 3)"
 check "an unknown footnote fails, naming those found" "no footnote or endnote is 99; it has \*, 1, 2" "$(run $pdf read $notes --footnote 99)"
 check "pdf info lists the author notes" "^author notes: \[\^\*\] " "$(run $pdf info $notes)"
+
+# Citations and references (M2.8): an entry by its number or by its author and year, with the
+# places that cite it, the entries a read cites under References, and a figure's mention linked
+# to its page.
+refs=testdata/smoke/arxiv-2608.26848.pdf
+read=$(run $pdf read $refs --ref 15)
+check "--ref shows an entry" "^\[15\] Xuehai He, Yichen Zhang" "$read"
+check "with the places that cite it" "^  p.6 ¶[0-9]*: .*PathVQA \[15\]" "$read"
+check "an author-year entry by its author and year" "^  p.1 ¶[0-9]*: .*Chen et al., 2024b" "$(run $pdf read testdata/smoke/arxiv-2608.16011.pdf --ref Chen2024b)"
+check "an unknown entry fails, naming those found" "no entry of the reference list is 999; it has 1, 2, 3" "$(run $pdf read $refs --ref 999)"
+check "--ref takes no flag of a read's output" "--ref shows one entry whole: it takes only --json" "$(run $pdf read $refs --ref 15 --budget 100)"
+# Citations are judged against the pages parsed so far, as notes are: the whole file first.
+kept $pdf read $refs --budget all > /dev/null
+read=$(kept $pdf read $refs --page 2 --refs end --budget all)
+check "--refs end lists the entries a read cites" "^## References$" "$read"
+check "each with its page" "^\[15\] (p.9) Xuehai He" "$read"
+check "a figure's mention links to its page" "\[Figure 5\](#p.8)" "$(kept $pdf read $refs --budget all)"
+check "pdf info counts the entries" "^references: 46 entries, the list on p.9" "$(kept $pdf info $refs)"
+check "pdf crop --figure says where the text mentions it" "^mentioned on p.8$" "$(kept $pdf crop $refs --figure 5)"
+# A link the file carries on a citation takes no second link around it.
+if grep -q "\](#p\.[0-9]*)\](#p" <<<"$(run $pdf read $notes --budget all)"; then
+    echo "FAIL  a link inside a link"
+    failures=$((failures + 1))
+fi
 
 # Pages nobody waits for parse slowly, at background priority, so runners get a minute to finish.
 for _ in $(seq 60); do

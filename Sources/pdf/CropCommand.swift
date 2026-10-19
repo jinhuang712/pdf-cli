@@ -72,12 +72,18 @@ struct CropCommand: ParsableCommand {
         var kept: Transcript?
         var keepable: (kind: Region.Kind, number: String)?
         var twins = 1
+        // The pages whose text mentions it, as "Fig. 4", in the pages parsed so far.
+        var mentioned: [Int] = []
         if let wanted {
             let found = try Self.locate(wanted, page: page, path: path, password: password, docID: docID, store: store, reader: reader)
             number = found.page + 1
             region = found.region.box.outward
             caption = found.caption
             twins = found.twins
+            let layers = try InfoCommand.cachedPages(docID: docID, store: store).compactMap { page -> (index: Int, layer: PDFCore.PageText)? in
+                page.result.pageText.map { (page.index, $0) }
+            }
+            mentioned = ReferenceIndex.pagesMentioning(wanted.kind, found.region.number, in: layers)
             if wanted.kind != .figure {
                 let regionNumber = Region.normalized(found.region.number)
                 keepable = (wanted.kind, regionNumber)
@@ -116,14 +122,20 @@ struct CropCommand: ParsableCommand {
                 var latex: String?
                 var markdown: String?
                 var transcribed: String?
+                var mentionedOn: [Int]?
             }
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.withoutEscapingSlashes, .sortedKeys]
-            print(String(decoding: try encoder.encode(Body(file: path, page: number, bbox: region.map(Output.format), image: made.url.path,
-                                                           width: made.width, height: made.height, tokens: tokens, caption: caption,
-                                                           latex: kept?.kind == .equation ? kept?.text : nil,
-                                                           markdown: kept?.kind == .table ? kept?.text : nil, transcribed: kept?.day)),
-                         as: UTF8.self))
+            print(
+                String(
+                    decoding: try encoder.encode(
+                        Body(
+                            file: path, page: number, bbox: region.map(Output.format), image: made.url.path,
+                            width: made.width, height: made.height, tokens: tokens, caption: caption,
+                            latex: kept?.kind == .equation ? kept?.text : nil,
+                            markdown: kept?.kind == .table ? kept?.text : nil, transcribed: kept?.day,
+                            mentionedOn: wanted == nil ? nil : mentioned)),
+                    as: UTF8.self))
         } else {
             print("\(made.url.path)  (~\(Info.thousands(tokens)) image tokens, \(made.width)×\(made.height) px)")
             if let caption, !caption.isEmpty {
@@ -133,6 +145,11 @@ struct CropCommand: ParsableCommand {
             }
             if let wanted, twins > 1 {
                 print("p.\(number) numbers \(twins) \(wanted.kind.rawValue)s \(wanted.number): this is the first of them")
+            }
+            if !mentioned.isEmpty {
+                print(
+                    "mentioned on " + mentioned.prefix(12).map { "p.\($0)" }.joined(separator: ", ")
+                        + (mentioned.count > 12 ? ", and \(mentioned.count - 12) more" : ""))
             }
             if let keepable {
                 let language = Transcript.language(of: keepable.kind)
