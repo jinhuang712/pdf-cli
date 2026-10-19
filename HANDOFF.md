@@ -4,10 +4,11 @@ For whoever picks up pdf-cli next, a person or a new Claude Code session. Read t
 
 ## Where things stand
 
-- **Built and on `main`** (pushed, nothing half-done, no open branch): milestone M0; every task of M1, M1.1–M1.15; and M2.5, M2.6, M2.7 and M2.13 of M2.
+- **Built and on `main`** (pushed): milestone M0; every task of M1, M1.1–M1.15; and M2.5, M2.6, M2.7 and M2.13 of M2.
+- **Half-done, on a branch:** M2.8, citations and references, on `claude/m2-8-citations`, pushed to origin and not on `main`. It is built and committed, and the unit tests and `scripts/test-cache.sh` pass; the sweep, the review, the report and the landing are left. Its edits to DESIGNS.md, FEATURES.md and ROADMAP.md are on the branch, marked `drafted`.
 - **Not met yet:** the exit criteria of M1 and M2. They need the goals measured, and every goal in GOALS.md is still unmeasured: the measuring waits for the final wrap-up (the user, 2026-10-17).
-- **Docs:** all seven core docs are approved: the user approved them on 2026-10-18 with the direction below, M2.13's edits the same day, and M2.7's on 2026-10-19.
-- **Waiting on the user:** nothing. Next in ROADMAP's order is M2.8.
+- **Docs:** all seven core docs on `main` are approved: the user approved them on 2026-10-18 with the direction below, M2.13's edits the same day, and M2.7's on 2026-10-19.
+- **Waiting on the user:** nothing. Next is the rest of M2.8, below.
 
 ## The user's direction
 
@@ -41,9 +42,13 @@ Under them: worker processes with time and memory limits and one pool of slots (
 
 ## What comes next
 
-1. **The rest of M2,** in ROADMAP's order, which is the order of building; a task's ID is its name, not its place, so M2.13, added last, was built before M2.7: M2.8 citations and references, M2.9 `pdf dump`, M2.10 `pdf reparse`, which clears the picks of the pages it parses again but should keep their transcripts, read from the image, which a parse leaves as it is, M2.11 `pdf setup` and `pdf doctor`. M2.4, a layout model, comes only if a goal fails with rules alone.
-2. **M3:** M3.1 search by meaning, M3.2 tables across pages, M3.5 the Homebrew release.
-3. **The final wrap-up:** the open test set, the question set and the scorer (M2.1–M2.3), the quality thresholds (M2.12), the question set run in Claude Code (M3.6), the workers' memory, and every goal measured.
+1. **Finish M2.8** on its branch, from step 3 of "How to work" below. The branch's `reports/M2.8-citations.md`, a draft, says what is built, what was checked and what is left.
+   - Work in a worktree of the branch: `git worktree add .claude/worktrees/m2-8 claude/m2-8-citations`, or the one it was built in, `.claude/worktrees/pdf-cli-work-36ac3a`, if it is still there.
+   - Sweep `private/testset/` with the release build, against `main`'s build in a scratch worktree. The notes must not move, since the parse changed: a hanging indent now starts a block. Count the lists, entries, citations and links found, and time the books.
+   - Then the review on Opus, the fixes, the report finished and listed in `reports/README.md`, this file's rows for M2.8 (where things stand, what is built: `--ref`, `--refs`, parser version 18, the landed tasks), and the landing. This note is on `main` and the branch sits on it, so `merge --ff-only` works.
+2. **The rest of M2,** in ROADMAP's order, which is the order of building; a task's ID is its name, not its place, so M2.13, added last, was built before M2.7: M2.9 `pdf dump`, M2.10 `pdf reparse`, which clears the picks of the pages it parses again but should keep their transcripts, read from the image, which a parse leaves as it is, M2.11 `pdf setup` and `pdf doctor`. M2.4, a layout model, comes only if a goal fails with rules alone.
+3. **M3:** M3.1 search by meaning, M3.2 tables across pages, M3.5 the Homebrew release.
+4. **The final wrap-up:** the open test set, the question set and the scorer (M2.1–M2.3), the quality thresholds (M2.12), the question set run in Claude Code (M3.6), the workers' memory, and every goal measured.
 
 `TODO.md` holds five follow-ups with no milestone: a content stream that inflates to 600 MB, links past the first 1,000 of a file, the cost of joining shapes into drawings, running headers that `pdf search` still finds, and `pdf crop --figure N` parsing a whole long file before it says the number is not there.
 
