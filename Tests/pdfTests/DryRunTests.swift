@@ -15,32 +15,45 @@ import Testing
         try OutputContractTests.pdf(arguments, home: home, stdin: stdin)
     }
 
-    /// Every file under the home, by path, with its bytes. A database is compared by what it
-    /// holds (`sqlite3 .dump`, which reads the write-ahead log too), and its log and index
-    /// files are left out: opening a database folds its log in, which changes no row.
+    /// Every file under the home, by path, with its bytes: a database's header and log too, and
+    /// its `user_version`, which `sqlite3 -readonly` reads without touching the files. Only a
+    /// shared-memory index (`-shm`) is compared by its size: SQLite's readers keep their marks in it.
     static func snapshot(_ home: URL) -> [String: Data] {
         var found: [String: Data] = [:]
         let walker = FileManager.default.enumerator(at: home, includingPropertiesForKeys: [.isDirectoryKey])
         while let url = walker?.nextObject() as? URL {
             let name = url.lastPathComponent
-            if name.hasSuffix("-wal") || name.hasSuffix("-shm") { continue }
             let directory = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
             var content = Data()
-            if name.hasSuffix(".sqlite") {
-                let process = Process()
-                process.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
-                process.arguments = [url.path, ".dump"]
-                let pipe = Pipe()
-                process.standardOutput = pipe
-                try? process.run()
-                content = pipe.fileHandleForReading.readDataToEndOfFile()
-                process.waitUntilExit()
+            if name.hasSuffix("-shm") {
+                content = Data("\((try? Data(contentsOf: url))?.count ?? 0) bytes".utf8)
             } else if !directory {
                 content = (try? Data(contentsOf: url)) ?? Data()
             }
+            if name.hasSuffix(".sqlite") { content.append(Data(userVersion(url).utf8)) }
             found[String(url.path.dropFirst(home.path.count)) + (directory ? "/" : "")] = content
         }
         return found
+    }
+
+    static func userVersion(_ database: URL) -> String {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
+        process.arguments = ["-readonly", database.path, "PRAGMA user_version"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        try? process.run()
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+
+    static func sqlite(_ database: URL, _ statement: String) throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
+        process.arguments = [database.path, statement]
+        try process.run()
+        process.waitUntilExit()
     }
 
     /// Waits until a runner that a read left behind has stopped writing,.
@@ -63,7 +76,7 @@ import Testing
         #expect(realKeys.isSubset(of: dryKeys), "\(label): the dry run lacks \(realKeys.subtracting(dryKeys))")
         #expect(dryKeys.subtracting(realKeys).subtracting(["dryRun"]).isSubset(of: extra), "\(label): extra keys \(dryKeys.subtracting(realKeys))")
         #expect(real?["dryRun"] == nil, "\(label): the real run says dryRun")
-        for key in realKeys where !["kept"].isEmpty {
+        for key in realKeys {
             #expect("\(real?[key] ?? "")" == "\(dry?[key] ?? "")", "\(label): \(key) differs")
         }
     }
@@ -86,6 +99,9 @@ import Testing
         // A second pick would replace the first, and the dry run says which.
         let again = try Self.pdf(["pick", file, "p2.2", "a", "--dry-run", "--json"], home: home)
         #expect(again.json?["replaces"] as? String == "b", "\(again.output)")
+        let same = try Self.pdf(["pick", file, "p2.2", "b", "--dry-run"], home: home)
+        #expect(same.output.contains("(already picked b)"), "\(same.output)")
+        #expect(dryJSON.json?["replaces"] is NSNull, "replaces is null when nothing is picked: \(dryJSON.output)")
         // A miss ends the same way as the real run.
         for json in [[], ["--json"]] {
             let miss = try Self.pdf(["pick", file, "p2.1", "a"] + json, home: home)
@@ -108,7 +124,7 @@ import Testing
         #expect(dry.status == 0)
         #expect(dry.output.hasPrefix("dry run: would keep the LaTeX of equation 1 on p.2, 11 characters, with none kept now"), "\(dry.output)")
         let dryJSON = try Self.pdf(["transcribe", file, "--page", "2", "--equation", "1", "--dry-run", "--json"], home: home, stdin: latex)
-        #expect(dryJSON.json?["characters"] as? Int == 11 && dryJSON.json?["replaces"] as? Bool == false)
+        #expect(dryJSON.json?["characters"] as? Int == 11 && dryJSON.json?["replaces"] is NSNull)
         #expect(Self.snapshot(home) == before, "a dry transcribe changed the cache or the library")
         let real = try Self.pdf(["transcribe", file, "--page", "2", "--equation", "1", "--json"], home: home, stdin: latex)
         #expect(real.status == 0)
@@ -116,7 +132,7 @@ import Testing
         // Kept now: a dry run replaces it, and a dry clear removes it, each changing nothing.
         let kept = Self.snapshot(home)
         let replace = try Self.pdf(["transcribe", file, "--page", "2", "--equation", "1", "--dry-run", "--json"], home: home, stdin: "x\n")
-        #expect(replace.json?["replaces"] as? Bool == true)
+        #expect((replace.json?["replaces"] as? String)?.count == 10, "the day of the reading it replaces: \(replace.output)")
         let clearDry = try Self.pdf(["transcribe", file, "--page", "2", "--equation", "1", "--clear", "--dry-run", "--json"], home: home)
         let clearText = try Self.pdf(["transcribe", file, "--page", "2", "--equation", "1", "--clear", "--dry-run"], home: home)
         #expect(clearDry.json?["removed"] as? Bool == true && clearDry.json?["dryRun"] as? Bool == true, "\(clearDry.output)")
@@ -187,6 +203,86 @@ import Testing
             #expect(run.status == 1, "pdf \(arguments.joined(separator: " ")): \(run.output)")
             #expect(Self.snapshot(home).isEmpty, "pdf \(arguments.joined(separator: " ")) created \(Self.snapshot(home).keys)")
         }
-        #expect(try Self.pdf(["pick", Self.unsure, "p2.2", "a", "--dry-run"], home: home).output.contains("is not in the cache yet"))
+        #expect(try Self.pdf(["pick", Self.unsure, "p2.2", "a", "--dry-run"], home: home).output.contains("not in the cache yet"))
+    }
+
+    @Test func aDryRunOnAnOlderCacheLeavesItAndSaysSo() async throws {
+        let home = try OutputContractTests.freshHome()
+        let file = Self.regions
+        _ = try Self.pdf(["read", file, "--page", "2", "--budget", "all"], home: home)
+        try await Self.settle(home)
+        let cache = home.appendingPathComponent("Caches/cache.sqlite")
+        try Self.sqlite(cache, "PRAGMA user_version=7")
+        let before = Self.snapshot(home)
+        #expect(Self.userVersion(cache).hasPrefix("7"))
+        let runs: [[String]] = [
+            ["pick", Self.regions, "p2.1", "a", "--dry-run"],
+            ["transcribe", file, "--page", "2", "--equation", "1", "--dry-run"],
+            ["transcribe", file, "--page", "2", "--equation", "1", "--clear", "--dry-run"],
+            ["rm", file, "--dry-run"],
+        ]
+        for arguments in runs {
+            let run = try Self.pdf(arguments, home: home, stdin: "x\n")
+            #expect(run.status == 1 && run.output.contains("older version of pdf"), "pdf \(arguments.joined(separator: " ")): \(run.output)")
+        }
+        #expect(Self.snapshot(home) == before, "a dry run changed the older cache")
+        #expect(Self.userVersion(cache).hasPrefix("7"))
+    }
+
+    @Test func aMissingFileIsNoSuchFileEvenWithNoCache() throws {
+        let home = try OutputContractTests.freshHome()
+        let missing = OutputContractTests.missing
+        for arguments in [["pick", missing, "p1.1", "a"], ["transcribe", missing, "--page", "1", "--equation", "1"]] {
+            let real = try Self.pdf(arguments, home: try OutputContractTests.freshHome(), stdin: "x\n")
+            let dry = try Self.pdf(arguments + ["--dry-run"], home: home, stdin: "x\n")
+            #expect(dry.status == 1 && dry.output == real.output && dry.output.contains("no such file"), "\(dry.output)")
+        }
+        #expect(Self.snapshot(home).isEmpty)
+    }
+
+    @Test func aFileChangedSinceItWasReadIsNamedAsSuch() async throws {
+        let home = try OutputContractTests.freshHome()
+        let copy = home.appendingPathComponent("copy.pdf")
+        try FileManager.default.copyItem(atPath: Self.regions, toPath: copy.path)
+        _ = try Self.pdf(["read", copy.path, "--page", "2", "--budget", "all"], home: home)
+        try await Self.settle(home)
+        var bytes = try Data(contentsOf: copy)
+        bytes.append(Data("\n% touched\n".utf8))
+        try bytes.write(to: copy)
+        let run = try Self.pdf(["transcribe", copy.path, "--page", "2", "--equation", "1", "--dry-run"], home: home, stdin: "x\n")
+        #expect(run.status == 1 && run.output.contains("changed since it was read"), "\(run.output)")
+        // A file never read: no page in the advice, as the file's page count is unknown.
+        let fresh = try Self.pdf(["pick", Self.unsure, "p99.1", "a", "--dry-run"], home: home)
+        #expect(fresh.status == 1 && fresh.output.contains("not in the cache yet") && !fresh.output.contains("--page 99"), "\(fresh.output)")
+    }
+
+    @Test func rmDryRunOfAFileOnlyTheCacheKnowsCountsItsDocument() async throws {
+        let home = try OutputContractTests.freshHome()
+        let copy = home.appendingPathComponent("copy.pdf").path
+        try FileManager.default.copyItem(atPath: Self.regions, toPath: copy)
+        for path in [Self.regions, copy] { _ = try Self.pdf(["read", path, "--page", "2", "--budget", "all"], home: home) }
+        _ = try Self.pdf(["transcribe", Self.regions, "--page", "2", "--equation", "1"], home: home, stdin: "x\n")
+        try await Self.settle(home)
+        // The copy leaves the library list, but the cache still knows it.
+        try Self.sqlite(home.appendingPathComponent("Support/library.sqlite"), "DELETE FROM library_entry WHERE path LIKE '%copy.pdf'")
+        let before = Self.snapshot(home)
+        let dry = try Self.pdf(["rm", copy, "--dry-run", "--json"], home: home)
+        #expect(Self.snapshot(home) == before)
+        #expect(dry.status == 0 && dry.json?["transcriptsKept"] as? Int == 1 && (dry.json?["sharedWith"] as? [String])?.count == 1, "\(dry.output)")
+        let real = try Self.pdf(["rm", copy, "--json"], home: home)
+        #expect(real.json?["cachedPages"] as? Int == dry.json?["cachedPages"] as? Int)
+    }
+
+    @Test func aCacheWithItsLogFilesGoneIsNamedNotRawSQLite() async throws {
+        let home = try OutputContractTests.freshHome()
+        _ = try Self.pdf(["read", Self.regions, "--page", "2", "--budget", "all"], home: home)
+        try await Self.settle(home)
+        let caches = home.appendingPathComponent("Caches")
+        try Self.sqlite(caches.appendingPathComponent("cache.sqlite"), "PRAGMA wal_checkpoint(TRUNCATE)")
+        for name in ["cache.sqlite-wal", "cache.sqlite-shm"] { try? FileManager.default.removeItem(at: caches.appendingPathComponent(name)) }
+        let before = Self.snapshot(home)
+        let run = try Self.pdf(["rm", Self.regions, "--dry-run"], home: home)
+        #expect(run.status == 1 && run.output.contains("log files are gone") && !run.output.contains("SQLite error"), "\(run.output)")
+        #expect(Self.snapshot(home) == before)
     }
 }

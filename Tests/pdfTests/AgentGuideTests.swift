@@ -211,6 +211,16 @@ import Testing
     }
 
     /// One read, in context for the rest of a session once the skill loads: it stays small.
+    /// The guide's `--dry-run` line names the commands whose help has the flag, and no others.
+    @Test func theGuideNamesTheCommandsThatTakeDryRun() throws {
+        let line = try #require(AgentGuide.text.split(separator: "\n").first { $0.contains("`--dry-run`") })
+        let named = Set(
+            line.components(separatedBy: " take ")[0].split(separator: "`").map(String.init)
+                .filter { $0.range(of: #"^[a-z]+$"#, options: .regularExpression) != nil })
+        let having = Set(Self.shown.filter { Self.flags(of: $0.value).contains("--dry-run") }.keys)
+        #expect(named == having, "the guide names \(named.sorted()), the helps have --dry-run on \(having.sorted())")
+    }
+
     @Test func theGuideStaysCompact() {
         #expect(Output.tokens(AgentGuide.text) < 2_000)
     }

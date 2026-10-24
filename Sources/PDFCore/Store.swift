@@ -142,12 +142,46 @@ final class DecodedLayer: @unchecked Sendable {
 public final class Store: Sendable {
     let pool: DatabasePool
 
-    public init(directory: URL = Env.cacheDirectory) throws {
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    /// A dry run says why it cannot open the cache without changing it.
+    public struct OlderCache: Error, CustomStringConvertible {
+        public var description: String {
+            "the cache is from an older version of pdf, which the next normal command brings up to date; a dry run changes nothing: run pdf read on the file first"
+        }
+    }
+
+    /// With `readOnly` (a dry run, ROADMAP.md → M2.18) the file is opened read-only: no folder,
+    /// no schema, no row, and no write of any kind. A cache from an older schema is refused,
+    /// as only a normal command brings it up to date. The file must exist, see `exists`.
+    public init(directory: URL = Env.cacheDirectory, readOnly: Bool = false) throws {
         var configuration = Configuration()
         configuration.busyMode = .timeout(10)
-        pool = try Store.open(directory.appendingPathComponent("cache.sqlite").path, configuration)
+        let path = directory.appendingPathComponent("cache.sqlite").path
+        if readOnly {
+            configuration.readonly = true
+            pool = try Store.open(path, configuration)
+            let version = try pool.read { db in try Int.fetchOne(db, sql: "PRAGMA user_version") ?? 0 }
+            guard version >= Store.schemaVersion else { throw OlderCache() }
+            return
+        }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        pool = try Store.open(path, configuration)
         try write { db in try Store.createSchema(db) }
+    }
+
+    /// A read-only open that finds a journal a crashed writer left (SQLite's error 8, a database
+    /// it may not repair), or log files gone (error 14), reads as one sentence: only a normal
+    /// command repairs it.
+    public static func readOnlyFailure(_ error: Error) -> String? {
+        guard let error = error as? DatabaseError else { return nil }
+        if error.resultCode == .SQLITE_CANTOPEN {
+            // A cache in WAL mode whose log files are gone (a clean close deletes them) cannot be
+            // opened read-only: SQLite would have to create them.
+            return
+                "the cache's log files are gone, so a dry run cannot read it without writing; the next normal command recreates them: run pdf ls, then again"
+        }
+        guard error.resultCode == .SQLITE_READONLY else { return nil }
+        return
+            "another pdf run was cut off and left its work half written; the next normal command repairs it, and a dry run changes nothing: run pdf ls, then again"
     }
 
     /// Opens the database. When several commands open a new cache at the same moment, the
@@ -533,24 +567,48 @@ public final class Store: Sendable {
     /// still uses. Picks are the agent's work, kept apart, and stay.
     @discardableResult
     public func remove(paths: [String]) throws -> Removed {
-        try remove(paths: paths, dryRun: false)
+        try write { db in
+            var removed = Removed()
+            for path in paths {
+                try db.execute(sql: "DELETE FROM file_entry WHERE path = ?", arguments: [path])
+                removed.files += db.changesCount
+            }
+            try Store.dropUnused(db, into: &removed)
+            return removed
+        }
     }
 
-    /// With `dryRun`, the same deletes run and are rolled back, so the counts are exactly what
-    /// a real removal would give and nothing is kept.
-    @discardableResult
-    public func remove(paths: [String], dryRun: Bool) throws -> Removed {
-        try pool.writeWithoutTransaction { db in
+    /// What `remove` would give for these paths, counted with SELECTs that mirror its deletes and
+    /// `dropUnused`, so a dry run takes no write lock and writes nothing.
+    public func wouldRemove(paths: [String]) throws -> Removed {
+        try pool.read { db in
+            let marks = Array(repeating: "?", count: paths.count).joined(separator: ",")
+            let arguments = StatementArguments(paths)
             var removed = Removed()
-            try db.inTransaction(.immediate) {
-                for path in paths {
-                    try db.execute(sql: "DELETE FROM file_entry WHERE path = ?", arguments: [path])
-                    removed.files += db.changesCount
-                }
-                try Store.dropUnused(db, into: &removed)
-                return dryRun ? .rollback : .commit
-            }
+            let kept = "SELECT doc_id FROM file_entry WHERE doc_id IS NOT NULL AND path NOT IN (\(marks))"
+            removed.files = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM file_entry WHERE path IN (\(marks))", arguments: arguments) ?? 0
+            removed.documents = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM document WHERE id NOT IN (\(kept))", arguments: arguments) ?? 0
+            removed.pages =
+                try Int.fetchOne(
+                    db,
+                    sql: """
+                        SELECT COUNT(*) FROM page_result WHERE page_key NOT IN (
+                            SELECT page_key FROM document_page WHERE doc_id IN (\(kept)) AND doc_id IN (SELECT id FROM document))
+                        """, arguments: arguments) ?? 0
             return removed
+        }
+    }
+
+    /// The documents these files are indexed as.
+    public func docIDs(paths: [String]) throws -> Set<String> {
+        try pool.read { db in
+            var found = Set<String>()
+            for path in paths {
+                if let id = try String.fetchOne(db, sql: "SELECT doc_id FROM file_entry WHERE path = ? AND doc_id IS NOT NULL", arguments: [path]) {
+                    found.insert(id)
+                }
+            }
+            return found
         }
     }
 

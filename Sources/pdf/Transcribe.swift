@@ -80,17 +80,22 @@ struct TranscribeCommand: ParsableCommand {
             given = text
         }
         // A dry run opens only what is there, and reads only what the cache holds.
-        if dryRun && !Store.exists() { throw Contract.fail(path, Contract.notReadYet(path, page: page), json: json) }
-        let store = try Store()
+        if dryRun {
+            try Contract.requireFile(path)
+            if !Store.exists() { throw Contract.fail(path, Contract.notReadYet(path, page: page, .neverRead), json: json) }
+        }
+        let store = try Store(readOnly: dryRun)
         let reader = Reader(store: store, library: dryRun ? nil : try Library())
         let docID: String
         let read: ReadOutcome
         if dryRun {
-            guard let cached = try reader.peek(path: path, pages: [page - 1]) else {
-                throw Contract.fail(path, Contract.notReadYet(path, page: page), json: json)
+            let found: ReadOutcome
+            switch try reader.peek(path: path, pages: [page - 1]) {
+            case .uncached(let why): throw Contract.fail(path, Contract.notReadYet(path, page: page, why), json: json)
+            case .found(let outcome): found = outcome
             }
-            read = cached
-            switch cached {
+            read = found
+            switch found {
             case .fileFailed(let reason): throw Contract.fail(file: path, reason: reason, json: json)
             case .pages(let id, _, _): docID = id
             }
@@ -134,20 +139,35 @@ struct TranscribeCommand: ParsableCommand {
                 var kept: String
                 var sameNumber: Int?
                 var dryRun: Bool?
-                var replaces: Bool?
+                var replaces: String?
                 var characters: Int?
+
+                /// In a dry run `replaces` is always there: the day of the reading it would replace, or null.
+                enum CodingKeys: String, CodingKey { case file, page, kind, number, kept, sameNumber, dryRun, replaces, characters }
+                func encode(to encoder: Encoder) throws {
+                    var c = encoder.container(keyedBy: CodingKeys.self)
+                    try c.encode(file, forKey: .file)
+                    try c.encode(page, forKey: .page)
+                    try c.encode(kind, forKey: .kind)
+                    try c.encode(number, forKey: .number)
+                    try c.encode(kept, forKey: .kept)
+                    try c.encodeIfPresent(sameNumber, forKey: .sameNumber)
+                    try c.encodeIfPresent(dryRun, forKey: .dryRun)
+                    try c.encodeIfPresent(characters, forKey: .characters)
+                    if dryRun != nil { try c.encode(replaces, forKey: .replaces) }
+                }
             }
             print(
                 Contract.json(
                     Body(
                         file: path, page: page, kind: kind.rawValue, number: number, kept: given,
                         sameNumber: found.count > 1 ? found.count : nil, dryRun: dryRun ? true : nil,
-                        replaces: dryRun ? earlier != nil : nil, characters: dryRun ? given.unicodeScalars.count : nil)))
+                        replaces: earlier?.day, characters: dryRun ? given.unicodeScalars.count : nil)))
             return
         }
         if dryRun {
             print(
-                "dry run: would keep the \(language) of \(name), \(given.unicodeScalars.count) characters"
+                "dry run: would keep the \(language) of \(name), \(count(given.unicodeScalars.count, "character"))"
                     + (earlier.map { ", replacing the one kept \($0.day)" } ?? ", with none kept now") + "; nothing was kept")
         } else {
             print("kept the \(language) of \(name); pdf read shows it there, labelled [\(kind.rawValue) \(number), transcribed \(kept.day)]")

@@ -38,15 +38,19 @@ struct PickCommand: ParsableCommand {
     func pick() throws {
         let (page, index) = Self.address(block)!
         let chosen = ["a", "b"].firstIndex(of: reading.lowercased())!
-        if dryRun && !Store.exists() { throw Contract.fail(path, Contract.notReadYet(path, page: page + 1), json: json) }
-        let store = try Store()
+        // A dry run opens the cache read-only, and answers only from what it holds: it parses
+        // nothing and writes nothing.
+        if dryRun {
+            try Contract.requireFile(path)
+            if !Store.exists() { throw Contract.fail(path, Contract.notReadYet(path, page: page + 1, .neverRead), json: json) }
+        }
+        let store = try Store(readOnly: dryRun)
         let outcome: ReadOutcome
         if dryRun {
-            // Only what the cache holds: a dry run parses nothing and writes nothing.
-            guard let cached = try Reader(store: store).peek(path: path, pages: [page]) else {
-                throw Contract.fail(path, Contract.notReadYet(path, page: page + 1), json: json)
+            switch try Reader(store: store).peek(path: path, pages: [page]) {
+            case .uncached(let why): throw Contract.fail(path, Contract.notReadYet(path, page: page + 1, why), json: json)
+            case .found(let found): outcome = found
             }
-            outcome = cached
         } else {
             outcome = try Reader(store: store, library: try Library()).read(path: path, pages: [page])
         }
@@ -77,6 +81,19 @@ struct PickCommand: ParsableCommand {
                     var text: String
                     var dryRun: Bool?
                     var replaces: String?
+
+                    /// `replaces` is always there in a dry run, null when nothing is picked yet.
+                    enum CodingKeys: String, CodingKey { case file, page, block, picked, text, dryRun, replaces }
+                    func encode(to encoder: Encoder) throws {
+                        var c = encoder.container(keyedBy: CodingKeys.self)
+                        try c.encode(file, forKey: .file)
+                        try c.encode(page, forKey: .page)
+                        try c.encode(block, forKey: .block)
+                        try c.encode(picked, forKey: .picked)
+                        try c.encode(text, forKey: .text)
+                        try c.encodeIfPresent(dryRun, forKey: .dryRun)
+                        if dryRun != nil { try c.encode(replaces, forKey: .replaces) }
+                    }
                 }
                 print(
                     Contract.json(
@@ -86,7 +103,8 @@ struct PickCommand: ParsableCommand {
             } else if dryRun {
                 print(
                     "dry run: would pick \(reading.lowercased()) for p.\(page + 1) ¶\(index + 1): \(readings[chosen])"
-                        + (replaces.map { " (replaces an earlier pick, \($0))" } ?? "") + "; nothing was kept")
+                        + (replaces.map { $0 == reading.lowercased() ? " (already picked \($0))" : " (replaces an earlier pick, \($0))" } ?? "")
+                        + "; nothing was kept")
             } else {
                 print("picked \(reading.lowercased()) for p.\(page + 1) ¶\(index + 1): \(readings[chosen])")
             }

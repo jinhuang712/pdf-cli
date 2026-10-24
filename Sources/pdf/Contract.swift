@@ -61,14 +61,30 @@ enum Contract {
         }
     }
 
-    /// Why a dry run cannot say more: it parses nothing, and the page is not in the cache yet.
-    static func notReadYet(_ path: String, page: Int) -> String {
-        "p.\(page) is not in the cache yet, and a dry run parses nothing; run pdf read \(Output.quoted(path)) --page \(page), then again"
+    /// Why a dry run cannot say more: it parses nothing, and the cache holds nothing for this
+    /// file version (DESIGNS.md → Decision: a dry run answers from what is kept and never parses).
+    static func notReadYet(_ path: String, page: Int, _ why: Reader.Uncached) -> String {
+        let file = Output.quoted(path)
+        switch why {
+        case .neverRead:
+            return "not in the cache yet, and a dry run parses nothing; run pdf read \(file), then again"
+        case .changed:
+            return
+                "changed since it was read, or pdf was updated, so its cached pages no longer apply, and a dry run parses nothing; run pdf read \(file), then again"
+        case .pageMissing:
+            return "p.\(page) is not in the cache yet, and a dry run parses nothing; run pdf read \(file) --page \(page), then again"
+        }
+    }
+
+    /// A dry run's first step: the file must be there, as for the real run.
+    static func requireFile(_ path: String) throws {
+        guard FileManager.default.fileExists(atPath: Reader.resolve(path)) else { throw ReadError.notFound(path) }
     }
 
     /// One clean sentence: a Foundation error (a file or folder that cannot be opened) gives its
     /// localized text, the tool's own errors their description.
     static func reason(of error: Error) -> String {
+        if let cutOff = Store.readOnlyFailure(error) { return cutOff }
         let domain = (error as NSError).domain
         if error is CocoaError || domain.hasPrefix("NS") || domain == NSPOSIXErrorDomain {
             return error.localizedDescription

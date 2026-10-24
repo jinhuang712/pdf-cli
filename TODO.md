@@ -16,3 +16,4 @@ Small fixes and follow-ups with no milestone yet. An item moves to ROADMAP.md on
 - M2.15 review, L3: `pdf transcribe` reads standard input before it checks the file, so a missing file with nothing piped reports the missing text, not the file. Noted 2026-10-25.
 - M2.15 review, L6: `pdf rm --json` gives `removed` as a display string: split it into `id` and `title`. `pdf agent-guide --install --json` drops the warning detail and the `/reload-skills` hint of the text. Noted 2026-10-25.
 - M2.15 review, L7: `pdf rm /private/tmp/x.pdf` and `pdf ls` show the same file as `/tmp/x.pdf` when the file is gone (path resolution), and `pdf dump -o /tmp/x` where `/tmp` is a link is refused as a link. Noted 2026-10-25.
+- M2.18 review, 11: `pdf rm` of a missing file given as `/private/tmp/x.pdf` does not find the library entry `/tmp/x.pdf`: `Reader.resolve` strips `/private` only while the file exists. Same cause as M2.15 L7. Noted 2026-10-25.

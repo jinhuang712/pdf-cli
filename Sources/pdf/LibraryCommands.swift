@@ -257,7 +257,7 @@ struct RemoveCommand: ParsableCommand {
         // A dry run opens only the databases that exist, and the library read only: with none, it
         // finds what the real run finds in the new empty ones, nothing.
         let library: Library? = dryRun && !Library.exists() ? nil : try Library(readOnly: dryRun)
-        let store: Store? = dryRun && !Store.exists() ? nil : try Store()
+        let store: Store? = dryRun && !Store.exists() ? nil : try Store(readOnly: dryRun)
         let entries = try library?.entries() ?? []
         let path = Reader.resolve(target)
         var paths: [String]
@@ -285,7 +285,8 @@ struct RemoveCommand: ParsableCommand {
             shown = "\(listed[0].shortID) · \(listed[0].displayTitle)"
         }
         // The documents these files carry, for what a dry run says stays.
-        let docIDs = Set(entries.filter { paths.contains($0.path) }.map(\.docID))
+        var docIDs = Set(entries.filter { paths.contains($0.path) }.map(\.docID))
+        if dryRun, let store { docIDs.formUnion(try store.docIDs(paths: paths)) }
         var kept = (picks: 0, transcripts: 0, shared: [String]())
         if dryRun, let store {
             let keys = try docIDs.flatMap { try store.pageKeys(docID: $0) }
@@ -295,7 +296,7 @@ struct RemoveCommand: ParsableCommand {
             }
             kept.shared = Set(try docIDs.flatMap { try store.paths(docID: $0) }).subtracting(paths).sorted()
         }
-        let removed = try store?.remove(paths: paths, dryRun: dryRun) ?? Store.Removed()
+        let removed = try dryRun ? store?.wouldRemove(paths: paths) ?? Store.Removed() : store?.remove(paths: paths) ?? Store.Removed()
         let unlisted = dryRun ? entries.filter { paths.contains($0.path) }.count : try library?.remove(paths: paths) ?? 0
         guard removed.files + unlisted > 0 else {
             throw Contract.fail(target, "not in the library", json: json)
