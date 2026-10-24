@@ -387,7 +387,7 @@ One SQLite file holds the cache and both kinds of search.
 
 What the tool can rebuild from the PDFs goes to `~/Library/Caches/pdf-cli/`: the SQLite cache with its keyword index, and the crop images. The agent's own work goes to `~/Library/Application Support/pdf-cli/`: the library list, picks and memos. These are the folders macOS sets aside for each kind of data, so a cleanup tool that clears caches costs time and leaves the agent's work intact.
 
-The cache keeps every parse result until `pdf rm` or `pdf gc` removes it, as the principle "Pay once, read many times" says. Crop images are the exception: each one goes 7 days after it is written, because making it again needs no parse.
+The cache keeps every parse result until `pdf rm` or `pdf doctor --clean` removes it, as the principle "Pay once, read many times" says. Crop images are the exception: each one goes 7 days after it is written, because making it again needs no parse.
 
 The 10 sample papers hold 3.8 KB of text per page, measured with PDFKit. With positions and the keyword index, a page likely takes 10–20 KB, so a 30-page paper takes about 0.3–0.6 MB, against 1.6 MB for the average sample PDF itself. The estimate stays unmeasured until the cache exists.
 
@@ -401,13 +401,13 @@ The 10 sample papers hold 3.8 KB of text per page, measured with PDFKit. With po
 
 The library list holds one entry per file path, with the file's document and its title. Every command that reads a file adds it, or points it at its new document when the file changed. A file already listed as it is costs one read of the list and no write, so a cached read stays fast. The ID that commands show is the first 8 hex digits of the document's ID, which hashes the page keys, so two copies of one file share an ID. `pdf rm` accepts any 4 digits or more from its start.
 
-`pdf rm` forgets the file and drops every document and page result that no other file still uses. Picks stay: they are the agent's work, kept apart from the cache, and a file added again shows them again. `pdf gc` also forgets files that are gone or changed since they were indexed, results of older parser versions, and the locks of runners that are gone. It then rebuilds the database to give the space back, and empties SQLite's write-ahead log after the rebuild, since the rebuild writes through it: without that, a trial freed nothing.
+`pdf rm` forgets the file and drops every document and page result that no other file still uses. Picks stay: they are the agent's work, kept apart from the cache, and a file added again shows them again. `pdf doctor --clean` (which took over `pdf gc`) also forgets files that are gone or changed since they were indexed, results of older parser versions, and the locks of runners that are gone. It then rebuilds the database to give the space back, and empties SQLite's write-ahead log after the rebuild, since the rebuild writes through it: without that, a trial freed nothing.
 
 A cleanup never takes what a read still needs:
-- A runner saves a document, its file and the pages its index could not read in one transaction, and `pdf gc` deletes a file's entry only while it still holds the state it read, so a parse in progress keeps its rows.
+- A runner saves a document, its file and the pages its index could not read in one transaction, and the cleanup deletes a file's entry only while it still holds the state it read, so a parse in progress keeps its rows.
 - The rebuild holds SQLite's write lock, which would make a runner's writes fail, so it runs only while no runner is alive.
 - A file is gone only when it is missing from a volume that is mounted. A file on an unplugged drive or an offline share keeps its rows and its library entry, and `pdf ls` shows it as out of reach.
-- A cache upgrade marks each file to be indexed again on its next read, instead of forgetting it: forgetting every file let a `pdf gc` right after an upgrade drop every cached page, OCR results included, as the M1.5 review found.
+- A cache upgrade marks each file to be indexed again on its next read, instead of forgetting it: forgetting every file let a cleanup right after an upgrade drop every cached page, OCR results included, as the M1.5 review found.
 
 | Option | For | Against |
 |---|---|---|
@@ -564,7 +564,7 @@ Searches took 34–79 ms on cached files. Naming each hit's section costs more o
 - **Which way up:** a region is given in fractions of the page as stored, before its rotation, the same frame as the positions in `pdf read --json` and the crop commands in failure blocks. The image comes out upright. A test draws a black box and crops it at 0°, 90°, 180° and 270°.
 - **Rounding:** a region is rounded outward to hundredths of the page, its near edges down and its far edges up, and that region is both drawn and named. Rounding to the nearest hundredth, as the first version did, cut 4 pt off a block's edge and turned a region thinner than half a hundredth into the whole page, as the review found.
 - **What it shows:** the page as a reader sees it, comments and highlights included. So the image belongs to one version of one file, its path and state, not to the document shared by every copy.
-- **Kept:** in the cache folder for 7 days; the same command within them answers in about 35 ms, and `pdf gc` removes older images. A finished image replaces the old one at once, with `rename(2)`, and a folder is removed only when it has been empty for an hour, since a crop waiting for its worker holds an empty folder: removing it at once failed 9 of 10 crops run together in the review.
+- **Kept:** in the cache folder for 7 days; the same command within them answers in about 35 ms, and `pdf doctor --clean` removes older images. A finished image replaces the old one at once, with `rename(2)`, and a folder is removed only when it has been empty for an hour, since a crop waiting for its worker holds an empty folder: removing it at once failed 9 of 10 crops run together in the review.
 - **Locked files:** `--password-stdin` hands the password to the worker in its environment, as `pdf add` does.
 
 Crops took 90–120 ms on cached files with the release build, and 0.84 s for the first crop of an unseen 456-page file, most of it the index.
@@ -644,7 +644,7 @@ Under an image, a word's ink may be the image's own, so ink cannot tell whether 
 
 The agent guide is one Markdown text built into the binary. `pdf agent-guide` prints it, and `pdf agent-guide --install claude-code` writes the same text, under YAML frontmatter, as a Claude Code skill: `~/.claude/skills/pdf-cli/SKILL.md`, or the `skills` folder under `CLAUDE_CONFIG_DIR` when it is set: Claude Code's docs say that folder replaces `~/.claude` for its settings, history and plugins, and an April 2026 bug report shows Claude Code looking for skills there too. The format follows [code.claude.com/docs/en/skills](https://code.claude.com/docs/en/skills), checked on 2026-10-16: the frontmatter holds only `name` and `description`, the two fields every place that takes skills accepts, and the description leads with when to use the tool, since the listing shows it alone until the skill loads, cut at 1,536 characters. Claude Code fills `$1` and `${CLAUDE_…}` in a skill and runs a command written as an exclamation mark before a code span, so a test keeps all three out of the guide.
 
-The skill grants no tool permission: `allowed-tools: Bash(pdf *)` would let Claude run every `pdf` command without asking, `pdf rm` and `pdf gc` included, and that choice stays the user's. An install replaces an earlier `SKILL.md`, as a newer guide, and says so; it writes through a link, even one to a file not made yet, so a skills folder kept in a dotfiles repository keeps its link. It warns when no `pdf` is on the PATH, or another one is, since the skill's commands run the one a shell finds. A test holds the guide to the CLI both ways: every command and flag it names exists, every command it writes out parses, and it names every command and flag but two it leaves out on purpose, so neither drifts from the other.
+The skill grants no tool permission: `allowed-tools: Bash(pdf *)` would let Claude run every `pdf` command without asking, `pdf rm` and `pdf doctor --clean` included, and that choice stays the user's. An install replaces an earlier `SKILL.md`, as a newer guide, and says so; it writes through a link, even one to a file not made yet, so a skills folder kept in a dotfiles repository keeps its link. It warns when no `pdf` is on the PATH, or another one is, since the skill's commands run the one a shell finds. A test holds the guide to the CLI both ways: every command and flag it names exists, every command it writes out parses, and it names every command and flag but two it leaves out on purpose, so neither drifts from the other.
 
 | Option | For | Against |
 |---|---|---|
@@ -703,6 +703,24 @@ So `pdf setup` (M2.11) asks the user once how much memory parsing may take, as l
 | Ask the budget the first time `pdf` runs | No extra command. | `pdf` runs in an agent's shell with no one at the terminal: the question would hang the command. |
 
 Searching runs no worker: SQLite answers in the command's own process. OCR runs inside a page's worker, as a step, on the neural and graphics chips more than the cores; whether it needs a limit of its own waits for the measurement of one, two and three at once.
+
+## Decision: parsing's memory in `settings.json`, and `doctor --clean` — 2026-10-25
+
+M2.11 built `pdf setup` and `pdf doctor`. Three choices were not written down before.
+
+- **Where the setting lives:** `settings.json` in the agent's folder, `~/Library/Application Support/pdf-cli/`, beside the library. `Env` reads it once for every process, the CLI, the runner and the workers, and `pdf doctor` shows it with its source. Until then the tool had no stored setting, only the `PDF_CLI_*` variables for tests, which still win and are named as the source when they do.
+- **What the budget makes:** the worker count is the budget over 2 GB, at most the performance cores and at least 1 (2 when the cores are fewer), and a worker is stopped at 2 GB, or at the budget when that is smaller, so the limits never add up past it. Light, balanced and fastest are 2, 4 and 8 GB. With nothing set the old default holds, half the performance cores and at least 2, so a Mac that never runs `pdf setup` behaves as before. The pool already capped the Mac and kept slot 0 for pages a command waits on; M2.11 added the budget, fewer workers under memory pressure, heat or Low Power Mode, and half as many workers for a file read by OCR (never fewer than two where the pool has two).
+- **Cleaning is `pdf doctor --clean`:** one flag on the command that shows the sizes, with `--dry-run` beside it, and `pdf gc` ends 64 with the pointer, as the stubs of `--raw` do.
+
+| Option | For | Against |
+|---|---|---|
+| **`settings.json` in Application Support; `doctor --clean`** | The user's own folder survives a cache clear, `Env` already reads the two folders, and a plain file can be read, tested and removed by hand. `--clean` needs no new command name. | A second kind of file there beside the databases. A user who edits it by hand can break it: `doctor` names an invalid file and the defaults hold. |
+| macOS defaults (a plist through `UserDefaults`) | The native place for a setting. | A command-line tool has no bundle to name a domain, `cfprefsd` caches reads across processes, and a test needs the user's real defaults kept clean. |
+| The Caches folder | `Env` already reads it. | A cache clear, which the user is told is safe, would drop the setting. |
+| `pdf doctor clean` as a subcommand | Reads as a sentence. | A command with a subcommand for one job, where `--dry-run` and `--json` are flags of the command anyway. |
+| `pdf doctor --fix` | Familiar from other tools. | Suggests that it repairs problems; it only removes what no read can use, and some problems (an older schema) it leaves to the next normal command. |
+
+Holds as: unit tests store and read back each preset and a number through `Env`, a dry clean changes no byte of either folder, and a clean removes what `pdf gc` removed. The numbers wait for the final wrap-up's measurement of a worker's memory.
 
 ## Decision: annotations from the file's facts, their words checked against what a reader sees — 2026-10-17
 

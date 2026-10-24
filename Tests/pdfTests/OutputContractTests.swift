@@ -84,7 +84,8 @@ import Testing
             (["pick", file, "p1.1", "a"], [1], "failed"), (["transcribe", file, "--page", "1", "--equation", "1"], [1], "failed"),
             (["note", file, "1"], [1], "failed"), (["ref", file, "1"], [1], "failed"),
             (["agent-guide"], [0], "guide"), (["agent-guide", "--install", "claude-code"], [0], "installed"),
-            (["rm", file], [0], "removed"), (["gc"], [0], "removed"),
+            (["rm", file], [0], "removed"), (["doctor", "--clean"], [0], "clean"), (["doctor"], [0, 2], "cache"),
+            (["setup"], [0], "workers"), (["setup", "--memory", "balanced"], [0], "memoryMB"),
         ]
         for command in commands {
             let run = try Self.pdf(command.arguments + ["--json"], home: home, stdin: "x\n", config: config)
@@ -123,7 +124,7 @@ import Testing
         // The library commands: an unknown PDF is not there (1), a wrong flag is 64.
         let removed = try Self.pdf(["rm", Self.missing, "--json"], home: home)
         #expect(removed.status == 1 && removed.json?["failed"] != nil && removed.json?["file"] as? String == Self.missing)
-        for name in ["ls", "rm", "gc", "agent-guide"] {
+        for name in ["ls", "rm", "doctor", "setup", "agent-guide"] {
             #expect(try Self.pdf([name, "--no-such-flag"], home: home).status == 64, "pdf \(name) --no-such-flag")
         }
     }
@@ -217,11 +218,11 @@ import Testing
         #expect(reason != nil && !reason!.contains("Error Domain") && !reason!.contains("NSCocoa"), "\(run.output)")
     }
 
-    @Test func aCompactingGCDoesNotBlameARemovalThatNeverHappened() throws {
+    @Test func aCompactingCleanDoesNotBlameARemovalThatNeverHappened() throws {
         let home = try Self.freshHome()
         _ = try Self.pdf(["add", Self.fixture], home: home)
         for _ in 0..<2 {
-            let run = try Self.pdf(["gc"], home: home)
+            let run = try Self.pdf(["doctor", "--clean"], home: home)
             #expect(run.status == 0 && run.output.contains("freed") && !run.output.contains("pdf rm"), "\(run.output)")
         }
     }
