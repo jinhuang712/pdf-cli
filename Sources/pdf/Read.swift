@@ -14,7 +14,7 @@ struct ReadCommand: ParsableCommand {
 
             Which part: --page, --printed-page, --section, --full, --from.
             How much and in what form: --budget, --format, --json.
-            Set-aside text, shown on request: --raw, --include-hidden, --headers.
+            Set-aside text, shown on request: --show raw,hidden,headers.
             Notes and references: --notes, --refs. To look up one note or entry: pdf note, pdf ref.
 
             Examples:
@@ -51,9 +51,12 @@ struct ReadCommand: ParsableCommand {
     @Option(help: ArgumentHelp("Go on from where a read stopped, as its next: line says, such as p4.7.", valueName: "address"))
     var from: String?
     @Option(help: "The output format: md or text.") var format: Format = .md
-    @Flag(help: "Show the text set aside as doubtful, labelled with its reason.") var raw = false
-    @Flag(help: "Show the words of text a reader cannot see, labelled, in place of their markers.") var includeHidden = false
-    @Flag(help: "Show the running headers, footers, page numbers and publisher stamps in place, labelled.") var headers = false
+    @Option(
+        name: .customLong("show"),
+        help: ArgumentHelp(
+            "Show what is set aside, in place and labelled: raw (text set aside as doubtful), hidden (the words of text a reader cannot see) and headers (running headers, footers, page numbers, publisher stamps). A comma list, such as raw,hidden; the flag can repeat.",
+            valueName: "raw|hidden|headers"))
+    var shows: [String] = []
     @Option(
         help: ArgumentHelp(
             "Where footnotes and endnotes show: end of the output, inline by the paragraph that refers to each, or off.",
@@ -68,10 +71,38 @@ struct ReadCommand: ParsableCommand {
     // The removed flags stay only to point to their commands (M2.16): hidden, they run nothing.
     @Option(help: .private) var footnote: String?
     @Option(help: .private) var ref: String?
+    // The same for the three flags that `--show` took over (M2.17).
+    @Flag(name: .customLong("raw"), help: .private) var removedRaw = false
+    @Flag(name: .customLong("include-hidden"), help: .private) var removedIncludeHidden = false
+    @Flag(name: .customLong("headers"), help: .private) var removedHeaders = false
+
+    /// What `--show` asks for (DESIGNS.md → Decision: `--show` shows what was set aside, M2.17).
+    static let shownValues = ["raw", "hidden", "headers"]
+    /// The values of every `--show`, split at commas; nil when one is not a known value.
+    static func shown(_ specs: [String]) -> Set<String>? {
+        var found: Set<String> = []
+        for spec in specs {
+            for part in spec.split(separator: ",", omittingEmptySubsequences: false) {
+                let value = part.trimmingCharacters(in: .whitespaces)
+                guard shownValues.contains(value) else { return nil }
+                found.insert(value)
+            }
+        }
+        return found
+    }
+    var raw: Bool { Self.shown(shows)?.contains("raw") ?? false }
+    var includeHidden: Bool { Self.shown(shows)?.contains("hidden") ?? false }
+    var headers: Bool { Self.shown(shows)?.contains("headers") ?? false }
 
     func validate() throws {
         if footnote != nil { throw ValidationError("`--footnote` is now its own command: pdf note <pdf> 7") }
         if ref != nil { throw ValidationError("`--ref` is now its own command: pdf ref <pdf> 12") }
+        if removedRaw { throw ValidationError("`--raw` is now `--show raw`") }
+        if removedIncludeHidden { throw ValidationError("`--include-hidden` is now `--show hidden`") }
+        if removedHeaders { throw ValidationError("`--headers` is now `--show headers`") }
+        guard Self.shown(shows) != nil else {
+            throw ValidationError("--show takes raw, hidden or headers, or a comma list such as raw,hidden")
+        }
         guard Self.tokens(budget) != nil else { throw ValidationError("--budget takes a number of tokens, or all") }
         if let from, Self.place(from) == nil {
             throw ValidationError("--from takes an address such as p4, p4.7 or p4.7:120")
@@ -140,8 +171,9 @@ struct ReadCommand: ParsableCommand {
         let limit = Self.tokens(budget)!
         let picks = try Picks().picks(keys: keys)
         let transcripts = try Transcripts().transcripts(keys: keys)
+        let shownList = Self.shownValues.filter { Self.shown(shows)!.contains($0) }
         let flags =
-            (raw ? " --raw" : "") + (includeHidden ? " --include-hidden" : "") + (headers ? " --headers" : "")
+            (shownList.isEmpty ? "" : " --show " + shownList.joined(separator: ","))
             + (notes == .end ? "" : " --notes \(notes.rawValue)")
             + (refs == .off ? "" : " --refs \(refs.rawValue)")
             + (format == .text ? " --format text" : "")

@@ -385,7 +385,7 @@ struct Visibility {
         }
         // Only strings a reader sees: drawn to show, not squeezed or stacked, 2 pt tall or more,
         // not clipped away, with no image or shape drawn over most of them, and with ink. What
-        // the place holds goes out with `--raw`, so a string hidden any way must stay out.
+        // the place holds goes out with `--show raw`, so a string hidden any way must stay out.
         for run in drawing.runs where run.kind == .shown && run.glyphs >= 3 && run.toText.axisAligned && !run.crushed
             && !run.clipped && run.height >= 2 {
             let rect = run.bounds.intersection(crop)

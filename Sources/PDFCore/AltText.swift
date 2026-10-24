@@ -3,7 +3,7 @@ import Foundation
 
 /// A picture's alternate text: the words a tagged PDF gives for readers who cannot see it, in
 /// its structure tree (FEATURES.md → F3). A reader of the page never sees them, so they are
-/// hidden text: `pdf read` counts them and shows them only with `--include-hidden`, labelled,
+/// hidden text: `pdf read` counts them and shows them only with `--show hidden`, labelled,
 /// as a stamp's name stays out since M1.14 (DESIGNS.md → Decision: a marker in place of hidden
 /// text over its words with a label).
 ///

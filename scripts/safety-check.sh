@@ -35,7 +35,7 @@ stopped() {
 }
 
 # Checks the planted strings of one file, as the manifest names it, against its normal output in
-# $work/normal and its output with --include-hidden in $work/shown. Prints a line a string, then
+# $work/normal and its output with --show hidden in $work/shown. Prints a line a string, then
 # "kept K of N".
 check_planted() {
     awk -F '\t' -v file="$1" -v manifest=testdata/safety/planted.tsv -v normal="$home/normal" '
@@ -99,7 +99,7 @@ check_planted() {
                 if (leaks != "") print "FAIL  " file " p." p ": planted words read as text:" leaks
                 else if (!flagged[p]) print "FAIL  " file " p." p ": no hidden-text marker"
                 else { kept++; print "ok    " file " p." p ": planted text flagged and kept out" }
-                if (!shown) print "FAIL  " file " p." p ": --include-hidden does not show it"
+                if (!shown) print "FAIL  " file " p." p ": --show hidden does not show it"
             }
             print "kept " kept " of " count
         }
@@ -110,7 +110,7 @@ for file in testdata/safety/hidden-*.pdf testdata/hidden/hidden.pdf; do
     name=${file#testdata/}
     run read "$file" --budget all >"$home/normal"
     status=$?
-    run read "$file" --budget all --include-hidden >"$home/shown"
+    run read "$file" --budget all --show hidden >"$home/shown"
     if stopped $status "$(cat "$home/normal" "$home/shown")"; then stops=$((stops + 1)); fail "$name: crashed or hung (status $status)"; fi
     result=$(check_planted "$name")
     printf '%s\n' "$result" | grep -v '^kept '

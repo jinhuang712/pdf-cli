@@ -186,7 +186,7 @@ import Testing
         #expect(failure.reason == "the page draws text here that PDFKit left out of its text")
         #expect(failure.commands?["crop"]?.hasPrefix("pdf crop unread.pdf --page 1 --bbox 0.10,0.11,") == true)
         #expect(failure.commands?["raw"] == nil)
-        // What its strings spell never goes out, even with `--raw`: the image shows the place.
+        // What its strings spell never goes out, even with `--show raw`: the image shows the place.
         let raw = Output.pageBlocks(page, picks: [:], path: "unread.pdf", raw: true).units.flatMap(\.blocks)
         #expect(raw.filter { $0.kind == .failure } == [failure])
         #expect(!raw.contains { $0.kind == .doubtful })
@@ -284,7 +284,7 @@ import Testing
         #expect(hidden(layer).isEmpty)
     }
 
-    /// Normal output puts a marker in place of the run; --include-hidden shows its words,
+    /// Normal output puts a marker in place of the run; --show hidden shows its words,
     /// labelled; the summary counts them; and the keyword index leaves them out.
     @Test func outputMarksHiddenRunsAndTheIndexLeavesThemOut() throws {
         let page0 = try layer(0)
@@ -294,8 +294,8 @@ import Testing
         var plain = Output.Document(file: "hidden.pdf", pageCount: 1)
         _ = plain.add(page)
         let text = plain.report().text
-        #expect(text.contains("[hidden: 10 words, in the color behind it · show: pdf read hidden.pdf --page 1 --include-hidden]"))
-        #expect(text.contains("hidden text: 2 places on p.1 (show: --include-hidden)"))
+        #expect(text.contains("[hidden: 10 words, in the color behind it · show: pdf read hidden.pdf --page 1 --show hidden]"))
+        #expect(text.contains("hidden text: 2 places on p.1 (show: --show hidden)"))
         #expect(!text.contains("PLANTED"))
         var shown = Output.Document(file: "hidden.pdf", pageCount: 1, includeHidden: true)
         _ = shown.add(page)

@@ -584,7 +584,7 @@ let amounts = unread.add("<< /Type /Font /Subtype /Type3 /FontBBox [0 0 500 700]
 try unread.write([
     Page(name: "text in a Type 3 font with no text map", content: visible + "BT /U 12 Tf 72 680 Td (ABCABCABC) Tj ET\n"),
     Page(name: "visible: the same font with a text map", content: visible + "BT /M 12 Tf 72 680 Td (ABCABCABC) Tj ET\n"),
-    // Hidden strings PDFKit leaves out stay out: what the place holds goes out with --raw.
+    // Hidden strings PDFKit leaves out stay out: what the place holds goes out with --show raw.
     Page(name: "hidden: the line squeezed to a hundredth", content: visible + "BT /U 12 Tf 1 Tz 72 680 Td (ABCABCABC) Tj ET\n"),
     Page(name: "hidden: the line under an image drawn after it", content: visible + "BT /U 12 Tf 72 680 Td (ABCABCABC) Tj ET\n"
         + "q 200 0 0 20 66 675 cm /Im Do Q\n"),

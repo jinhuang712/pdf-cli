@@ -194,7 +194,7 @@ import Testing
         #expect(Self.refusal(["agent-guide", "--install", "codex"]) != nil)
         #expect(Self.refusal(["read", "paper.pdf", "--from", "p4.7", "--budget", "all"]) == nil)
         let flags = Self.flags(of: ReadCommand.self)
-        #expect(flags.contains("--include-hidden") && flags.contains("-h") && !flags.contains("--Raw") && !flags.contains("--bbox"))
+        #expect(flags.contains("--show") && flags.contains("-h") && !flags.contains("--Raw") && !flags.contains("--bbox"))
         #expect(Self.flags(of: AddCommand.self).contains("-j"))
         let near = Self.matches(Self.mention, in: "`pdf read x.pdf --json2 --Raw` and pdf figure 3")
         #expect(near.count == 4)

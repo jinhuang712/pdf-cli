@@ -63,12 +63,12 @@ public enum Output {
     public struct Block: Encodable, Equatable, Sendable {
         public enum Kind: String, Encodable, Sendable {
             case page, text, failure, unsure, look
-            /// The text of a block in doubt, shown with `--raw`.
+            /// The text of a block in doubt, shown with `--show raw`.
             case doubtful = "low-quality-text"
-            /// The text layer that OCR replaced, shown with `--raw`.
+            /// The text layer that OCR replaced, shown with `--show raw`.
             case oldOCR = "old-ocr"
             /// Text a reader cannot see that has no block of its own, as text off the page: a
-            /// marker, or its words with `--include-hidden`.
+            /// marker, or its words with `--show hidden`.
             case hidden
             /// What an annotation shows beside the text: a comment, a note, a mark on words, a
             /// filled-in field or a link, after the block it sits on. `status` names which.
@@ -82,7 +82,7 @@ public enum Output {
             /// An entry of the list of references that the text cites, with its id, after the
             /// text with `--refs end`.
             case reference
-            /// The text inside a figure, a table or an equation, shown with `--raw`, labelled with
+            /// The text inside a figure, a table or an equation, shown with `--show raw`, labelled with
             /// what it lost.
             case setAside = "set-aside-text"
         }
@@ -167,7 +167,7 @@ public enum Output {
         /// How many runs of text a reader cannot see the unit marks.
         var hidden = 0
         /// The running headers, footers and publisher stamps the unit sets aside, or shows with
-        /// `--headers`.
+        /// `--show headers`.
         var furniture = 0
         /// The block a unit of no blocks stands for, as a running header set aside: a read cut
         /// there, a section's end and `--from` place it as they would the block.
@@ -188,7 +188,7 @@ public enum Output {
     struct PageBlocks {
         /// The page heading, then the page's units.
         var units: [Unit]
-        /// The page carries a text layer that OCR replaced, which only `--raw` shows.
+        /// The page carries a text layer that OCR replaced, which only `--show raw` shows.
         var oldLayers = 0
         /// The notes that go after the text, each with the number of the block that refers to it,
         /// or of its own first block where none does, and its own blocks' numbers: a read shows a
@@ -213,7 +213,7 @@ public enum Output {
         let unsureByBlock = Dictionary(grouping: quality.unsure, by: \.block)
         func status(_ doubt: Doubt) -> PageQuality.Status { doubt.kind == .failed ? .failed : .lowQuality }
         // The number of the page's last block so far: what has no block in the layer is numbered
-        // after it, the same with `--raw` or without, so a read cut there goes on past it.
+        // after it, the same with `--show raw` or without, so a read cut there goes on past it.
         var after = layer?.blocks.count ?? 0
         // A damaged content stream: nothing of it shows, in the text or the image, so its block
         // names no command.
@@ -283,7 +283,7 @@ public enum Output {
         } else if let layer {
             // Figures, tables and equations: each goes out once, as one block where the first of
             // its blocks stands, with its caption's text. The text inside it is set aside, shown
-            // with `--raw`, unless it holds text a reader cannot see, whose markers go out as they
+            // with `--show raw`, unless it holds text a reader cannot see, whose markers go out as they
             // would anywhere.
             let regions = layer.regions ?? []
             var captionOf: [Int: Int] = [:], insideOf: [Int: Int] = [:], anchors: [Int: [Int]] = [:]
@@ -511,7 +511,7 @@ public enum Output {
                 // A caption's text went out with its region's block.
                 if furniture == nil, captionOf[index] != nil { continue }
                 // Text inside a figure, a table or an equation: a unit of its own, as a running
-                // header's, that counts it, or shows it with `--raw`.
+                // header's, that counts it, or shows it with `--show raw`.
                 if furniture == nil, let position = insideOf[index] {
                     let label = Output.insideLabel(regions[position].kind)
                     var unit = Unit(blocks: [], number: index + 1)
@@ -600,7 +600,7 @@ public enum Output {
             }
             // Text the page draws that PDFKit left out has no block either: a failure block for
             // each place says where to look. The image alone shows it: what its strings spell
-            // never goes out, even with `--raw`, as a string hidden in a way the place check
+            // never goes out, even with `--show raw`, as a string hidden in a way the place check
             // misses would go out with it.
             if let unread = layer.unread, let doubt = quality.doubts.first(where: { $0.reason == Quality.unreadReason }) {
                 for (position, place) in unread.enumerated() {
@@ -1061,7 +1061,7 @@ public enum Output {
                 pending += notes
             }
             // The page is done: it counts as read even if it holds no block, and its old OCR
-            // layer, which only `--raw` shows, counts as set aside.
+            // layer, which only `--show raw` shows, counts as set aside.
             if pagesRead.last != number { pagesRead.append(number) }
             oldLayers += content.oldLayers
             collect(content, page: number, before: reached, from: block)
@@ -1169,7 +1169,7 @@ public enum Output {
             if raw {
                 summary.append("showing the text set aside as doubtful")
             } else if !aside.isEmpty {
-                summary.append("set aside: " + aside.joined(separator: ", ") + " (show: --raw)")
+                summary.append("set aside: " + aside.joined(separator: ", ") + " (show: --show raw)")
             }
             if notesMode == .off, notesAside > 0 {
                 summary.append("footnotes and endnotes: \(notesAside) set aside (show: --notes end)")
@@ -1178,12 +1178,13 @@ public enum Output {
                 summary.append(
                     headers
                         ? "showing running headers and footers: \(furniture)"
-                        : "running headers and footers: \(furniture) set aside (show: --headers)")
+                        : "running headers and footers: \(furniture) set aside (show: --show headers)")
             }
             if !hidden.isEmpty {
                 let total = hidden.reduce(0) { $0 + $1.count }
-                summary.append((includeHidden ? "showing hidden text: " : "hidden text: ") + "\(total) place\(total == 1 ? "" : "s") on "
-                               + hidden.map { "p.\($0.page)" }.joined(separator: ", ") + (includeHidden ? "" : " (show: --include-hidden)"))
+                summary.append(
+                    (includeHidden ? "showing hidden text: " : "hidden text: ") + "\(total) place\(total == 1 ? "" : "s") on "
+                        + hidden.map { "p.\($0.page)" }.joined(separator: ", ") + (includeHidden ? "" : " (show: --show hidden)"))
             }
             if let parsed, parsed < pageCount {
                 summary.append("provisional: \(parsed) of \(pageCount) pages parsed so far")
@@ -1332,15 +1333,15 @@ public enum Output {
     static func marker(_ words: String, reason: HiddenReason, includeHidden: Bool, path: String, page: Int) -> String {
         if includeHidden { return "[hidden, \(reason.words): \(words)]" }
         let count = words.split(whereSeparator: \.isWhitespace).count
-        return "[hidden: \(count) word\(count == 1 ? "" : "s"), \(reason.words) · show: pdf read \(path) --page \(page) --include-hidden]"
+        return "[hidden: \(count) word\(count == 1 ? "" : "s"), \(reason.words) · show: pdf read \(path) --page \(page) --show hidden]"
     }
 
     /// The failure block: what is in doubt, why, and how to read it instead.
-    /// - Parameter offersRaw: `--raw` has text of the doubt's to show.
+    /// - Parameter offersRaw: `--show raw` has text of the doubt's to show.
     static func failureBlock(_ doubt: Doubt, page: Int, block: Int?, region: Box?, path: String, raw: Bool,
                              offersRaw: Bool = true) -> Block {
         var commands = ["crop": "pdf crop \(path) --page \(page)" + (region.map { " --bbox \(format($0))" } ?? "")]
-        if doubt.kind == .lowQuality && !raw && offersRaw { commands["raw"] = "pdf read \(path) --page \(page) --raw" }
+        if doubt.kind == .lowQuality && !raw && offersRaw { commands["raw"] = "pdf read \(path) --page \(page) --show raw" }
         return Block(kind: .failure, page: page, block: block, box: region ?? Box(x: 0, y: 0, width: 1, height: 1),
                      status: doubt.kind.rawValue, reason: doubt.reason, score: doubt.score, commands: commands)
     }
@@ -1373,7 +1374,7 @@ public enum Output {
             return style == .md ? "## \(heading)" : "=== \(heading) ==="
         case .text:
             let text = placed(block.text ?? "", links: block.links ?? [], style: style)
-            // A running header, footer or publisher stamp, shown with `--headers`.
+            // A running header, footer or publisher stamp, shown with `--show headers`.
             let label =
                 block.status.flatMap(Furniture.Kind.init(rawValue:)).map { "[\($0.label)] " }
                 ?? (block.status == "headnote" || block.status == "margin" ? "[\(block.status!)] " : "")
@@ -1454,7 +1455,7 @@ public enum Output {
     static let noteTokens = 800
     static let pageNoteTokens = 4_000
 
-    /// What `--raw` labels the text inside a region with: what it lost.
+    /// What `--show raw` labels the text inside a region with: what it lost.
     static func insideLabel(_ kind: Region.Kind) -> String {
         switch kind {
         case .table: return "table text: rows and columns lost"

@@ -193,7 +193,7 @@ public enum Worker {
             if readAllByOCR || OCR.needed(text: page.string ?? "", images: check.images) {
                 let textLayer = TextLayer.read(page, visibility: Visibility(page: page))
                 if var read = await OCR.pageText(page, check: true), !OCR.lostText(ocr: read, layer: textLayer) {
-                    // The replaced layer, which `--raw` shows, as a reader would see it: what it
+                    // The replaced layer, which `--show raw` shows, as a reader would see it: what it
                     // hides stays out.
                     let replaced = textLayer.blocks.map(\.visibleText).filter { !$0.isEmpty }.joined(separator: "\n")
                     if !replaced.isEmpty { read.replacedText = replaced }
@@ -217,7 +217,7 @@ public enum Worker {
                 (layer, method) = await readTextLayer(page, atRisk: repairSpaces || check.pageAtRisk)
                 // A page whose drawn text PDFKit mostly left out of the page's text, as one set in
                 // Type 3 fonts with no text map, is read by OCR, as a page with no usable text
-                // layer is; the layer stays for `--raw`. Only where OCR reads clearly more than the
+                // layer is; the layer stays for `--show raw`. Only where OCR reads clearly more than the
                 // layer holds: where it does not, the layer was whole and its places a mistake, as
                 // OCR read a page of Arabic letters worse. Otherwise the layer serves, flagged.
                 if let share = layer.unreadShare, share >= OCR.unreadShare, var read = await OCR.pageText(page, check: true),

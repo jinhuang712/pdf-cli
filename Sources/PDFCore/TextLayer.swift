@@ -91,7 +91,7 @@ public struct Picture: Codable, Equatable, Sendable {
     public var kind: String
     public var box: Box
     /// The file's alternate text for it: text a reader cannot see, so it goes out only with
-    /// `--include-hidden` (`AltText`).
+    /// `--show hidden` (`AltText`).
     public var alt: String? = nil
 }
 
@@ -107,7 +107,7 @@ public struct PageText: Codable, Equatable, Sendable {
     public var confidence: Double? = nil
     /// The OCR engine that read the page: "document recognizer" or "text recognizer".
     public var ocrEngine: String? = nil
-    /// The text layer that OCR replaced, kept so `--raw` can show it. Nothing goes missing
+    /// The text layer that OCR replaced, kept so `--show raw` can show it. Nothing goes missing
     /// without a trace (PHILOSOPHY.md).
     public var replacedText: String? = nil
     /// For a page read by OCR: the share of its words that a second OCR reading also finds. Nil

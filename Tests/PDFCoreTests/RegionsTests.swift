@@ -149,7 +149,7 @@ import Testing
     }
 
     /// `pdf read` shows each as one block with its crop command in place of its text, counts the
-    /// text it sets aside, shows it with `--raw`, and counts the alt text as hidden text.
+    /// text it sets aside, shows it with `--show raw`, and counts the alt text as hidden text.
     @Test func readShowsRegionsInPlaceOfTheirText() throws {
         let url = repoRoot.appendingPathComponent("testdata/safety/hidden-figure-alt.pdf")
         let document = try #require(PDFDocument(url: url))
@@ -162,7 +162,7 @@ import Testing
         #expect(normal.contains("[figure 1] Two bars of a chart.\n  crop: pdf crop f.pdf --page 1 --figure 1"))
         #expect(normal.contains("[table 1] Results of the method.\n  crop: pdf crop f.pdf --page 1 --table 1"))
         #expect(normal.contains("[equation 1] crop: pdf crop f.pdf --page 1 --equation 1"))
-        #expect(normal.contains("set aside: 4 blocks of text inside figures, tables and equations (show: --raw)"))
+        #expect(normal.contains("set aside: 4 blocks of text inside figures, tables and equations (show: --show raw)"))
         #expect(normal.contains("hidden text: 1 place on p.1"))
         #expect(!normal.contains("PLANTED") && !normal.contains("0.91"))
         let raw = Output.render(file: "f.pdf", pageCount: 1, pages: [output], raw: true).text

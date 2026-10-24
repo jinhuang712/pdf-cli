@@ -1,6 +1,8 @@
 import Foundation
 import Testing
 
+@testable import pdf
+
 /// Every command against the output contract (FEATURES.md → F7 and F8; DESIGNS.md → Decision: one
 /// output contract for every command): each takes `--json` and prints JSON; a failure has one
 /// shape; the exit codes are 1 for a file that is not there, 3 for one that is no PDF, 64 for a
@@ -20,6 +22,7 @@ import Testing
     struct Run {
         var status: Int32
         var output: String
+        var errors = ""
         var json: [String: Any]? {
             (try? JSONSerialization.jsonObject(with: Data(output.utf8))) as? [String: Any]
         }
@@ -38,13 +41,17 @@ import Testing
         let output = Pipe()
         process.standardInput = input
         process.standardOutput = output
-        process.standardError = Pipe()
+        let errorPipe = Pipe()
+        process.standardError = errorPipe
         try process.run()
         input.fileHandleForWriting.write(Data(stdin.utf8))
         try input.fileHandleForWriting.close()
         let data = output.fileHandleForReading.readDataToEndOfFile()
+        let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
-        return Run(status: process.terminationStatus, output: String(decoding: data, as: UTF8.self))
+        return Run(
+            status: process.terminationStatus, output: String(decoding: data, as: UTF8.self),
+            errors: String(decoding: errorData, as: UTF8.self))
     }
 
     static func freshHome() throws -> URL {
@@ -146,6 +153,30 @@ import Testing
         // The old flags are gone; hidden, they point to the new commands and run nothing.
         #expect(try Self.pdf(["read", file, "--footnote", "1"], home: home).status == 64)
         #expect(try Self.pdf(["read", file, "--ref", "1"], home: home).status == 64)
+    }
+
+    /// `--show` takes raw, hidden and headers, as a comma list or repeated; the three flags it
+    /// took over end 64 with a pointer and run nothing (M2.17).
+    @Test func showTakesTheThreeValuesAndTheOldFlagsPointToIt() throws {
+        #expect(ReadCommand.shown([]) == [])
+        #expect(ReadCommand.shown(["raw"]) == ["raw"])
+        #expect(ReadCommand.shown(["hidden"]) == ["hidden"])
+        #expect(ReadCommand.shown(["headers"]) == ["headers"])
+        #expect(ReadCommand.shown(["raw,hidden"]) == ["raw", "hidden"])
+        #expect(ReadCommand.shown(["raw", "headers,hidden"]) == ["raw", "hidden", "headers"])
+        #expect(ReadCommand.shown(["raw,"]) == nil && ReadCommand.shown(["all"]) == nil && ReadCommand.shown(["Raw"]) == nil)
+        let home = try Self.freshHome()
+        let file = Self.fixture
+        let unknown = try Self.pdf(["read", file, "--show", "raw,all"], home: home)
+        #expect(unknown.status == 64 && unknown.errors.contains("raw, hidden or headers"), "\(unknown.errors.prefix(200))")
+        for (old, new) in [("--raw", "--show raw"), ("--include-hidden", "--show hidden"), ("--headers", "--show headers")] {
+            let run = try Self.pdf(["read", file, old], home: home)
+            #expect(run.status == 64 && run.errors.contains("`\(old)` is now `\(new)`"), "\(old): \(run.errors.prefix(200))")
+        }
+        // A repeated and a listed --show read the same.
+        let listed = try Self.pdf(["read", file, "--page", "1", "--show", "raw,hidden"], home: home)
+        let repeated = try Self.pdf(["read", file, "--page", "1", "--show", "hidden", "--show", "raw"], home: home)
+        #expect(listed.status == 0 && listed.output == repeated.output, "\(listed.output.prefix(200))")
     }
 
     /// A found note and a found entry, in JSON, on two smoke files (M2.16's review, L6).

@@ -827,7 +827,7 @@ enum References {
     /// A block's text with its references to notes written `[^7]` and its raised citations
     /// `[12]`, each found by its token and its place among the block's raised markers with that
     /// token, in one pass, so neither moves the other's places. Markers inside a hidden-text
-    /// label, which `--include-hidden` shows, count for neither.
+    /// label, which `--show hidden` shows, count for neither.
     static func linked(_ text: String, notes: [PageNotes.Reference], raised: [PageCitations.Raised]) -> String {
         guard !notes.isEmpty || !raised.isEmpty else { return text }
         let ns = text as NSString

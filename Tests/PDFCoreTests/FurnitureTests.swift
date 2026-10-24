@@ -116,12 +116,12 @@ import Testing
         #expect(!Furniture.within(Array("abcdefghij".unicodeScalars), Array("jihgfedcba".unicodeScalars), limit: 2))
     }
 
-    /// `pdf read` sets them aside, counts them in its first line, and shows them with `--headers`.
+    /// `pdf read` sets them aside, counts them in its first line, and shows them with `--show headers`.
     @Test func readSetsThemAsideAndHeadersShowsThem() throws {
         let output = try outputPage(
             0, [("Journal of Things 12", top()), ("Body text.", body), ("12", bottom())], furniture: [0: .header, 2: .footer])
         let normal = Output.render(file: "paper.pdf", pageCount: 1, pages: [output]).text
-        #expect(normal.contains("running headers and footers: 2 set aside (show: --headers)"))
+        #expect(normal.contains("running headers and footers: 2 set aside (show: --show headers)"))
         #expect(!normal.contains("Journal of Things") && normal.contains("¶2 Body text."))
         let shown = Output.render(file: "paper.pdf", pageCount: 1, pages: [output], headers: true).text
         #expect(shown.contains("¶1 [header] Journal of Things 12") && shown.contains("¶3 [footer] 12"))

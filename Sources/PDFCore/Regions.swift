@@ -2,7 +2,7 @@ import CoreGraphics
 import Foundation
 
 /// A figure, a table or a numbered equation on a page (FEATURES.md → F3 and F5, ROADMAP.md →
-/// M2.6). `pdf read` shows it as one block in place of the text inside it, which `--raw` shows,
+/// M2.6). `pdf read` shows it as one block in place of the text inside it, which `--show raw` shows,
 /// `pdf info` lists the figures and tables, and `pdf crop --figure 4` crops it.
 public struct Region: Codable, Equatable, Sendable {
     public enum Kind: String, Codable, Sendable, CaseIterable {
@@ -21,7 +21,7 @@ public struct Region: Codable, Equatable, Sendable {
     /// without their rows and columns, a figure's labels, an equation's symbols out of place.
     public var blocks: [Int]
     /// The file's alternate text for the pictures inside it: text a reader cannot see, so it
-    /// goes out only with `--include-hidden`.
+    /// goes out only with `--show hidden`.
     public var alt: String? = nil
 
     /// "figure 4", "table B-1" or "equation 5".

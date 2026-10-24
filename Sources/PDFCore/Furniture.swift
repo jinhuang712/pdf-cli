@@ -3,14 +3,14 @@ import Foundation
 /// Running headers and footers, page numbers and publisher stamps: text at a page's edge that
 /// belongs to the book or the journal, not to the page (FEATURES.md → F14, ROADMAP.md → M2.5).
 /// `pdf read` sets them aside, counts them in its summary line and keeps them in place with
-/// `--headers`; `pdf info` lists each once. They are judged when a page is read, against the
+/// `--show headers`; `pdf info` lists each once. They are judged when a page is read, against the
 /// pages around it parsed so far, so a page's parse never depends on another page's.
 public enum Furniture {
     public enum Kind: String, Codable, Sendable {
         case header, footer
         case stamp = "publisher-stamp"
 
-        /// The label `--headers` shows in front of the block's text.
+        /// The label `--show headers` shows in front of the block's text.
         public var label: String { self == .stamp ? "publisher stamp" : rawValue }
     }
 

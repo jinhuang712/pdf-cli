@@ -43,9 +43,9 @@ import Testing
                                    pages: [try page(0, read, method: "ocr"), try page(1, layer(["Fine text."]))])
         #expect(report.exitCode == 2)
         #expect(report.text.contains("⚠ p.1 low-quality: two OCR readings of the page disagree (score 0.62)"))
-        #expect(report.text.contains("raw: pdf read scan.pdf --page 1 --raw"))
+        #expect(report.text.contains("raw: pdf read scan.pdf --page 1 --show raw"))
         #expect(!report.text.contains("Xeeris"))
-        #expect(report.text.contains("set aside: 1 doubtful block (show: --raw)"))
+        #expect(report.text.contains("set aside: 1 doubtful block (show: --show raw)"))
         let raw = Output.render(file: "scan.pdf", pageCount: 2, pages: [try page(0, read, method: "ocr")], raw: true)
         #expect(raw.text.contains("[low-quality] Xeeris aubecription"))
     }
@@ -154,7 +154,7 @@ import Testing
         let both = Output.render(file: "paper.pdf", pageCount: 1, pages: [try page(0, read)])
         #expect(both.text.contains("⚠ p.1 ¶2 low-quality: the page draws text here that PDFKit left out of its text"))
         #expect(both.text.contains("⚠ p.1 ¶3 low-quality: part of the page's drawing commands is damaged"))
-        // `--raw` numbers it the same.
+        // `--show raw` numbers it the same.
         let raw = Output.pageBlocks(try page(0, read), picks: [:], path: "paper.pdf", raw: true).units.flatMap(\.blocks)
         #expect(raw.contains { $0.kind == .failure && $0.block == 3 && $0.reason?.hasPrefix("part of the page's") == true })
     }
@@ -417,7 +417,7 @@ import Testing
         #expect(report.contains(" more annotations here, not shown]"))
     }
 
-    /// An annotation the file hides is a marker, and its words, labelled, with --include-hidden.
+    /// An annotation the file hides is a marker, and its words, labelled, with --show hidden.
     @Test func anAnnotationTheFileHidesIsAMarker() throws {
         let read = PageText(blocks: [block("A paragraph.", y: 0.2)], words: 2, runTogether: 0)
         var hidden = note(.comment, x: 0.8, y: 0.21)
@@ -427,7 +427,7 @@ import Testing
         let page = Output.Page(index: 0, result: try self.page(0, read).result, key: "k", annotations: [hidden])
         let report = Output.render(file: "paper.pdf", pageCount: 1, pages: [page])
         #expect(!report.text.contains("PLANTED"))
-        #expect(report.text.contains("[hidden: 3 words, an annotation the file hides · show: pdf read paper.pdf --page 1 --include-hidden]"))
+        #expect(report.text.contains("[hidden: 3 words, an annotation the file hides · show: pdf read paper.pdf --page 1 --show hidden]"))
         #expect(report.text.contains("hidden text: 1 place on p.1"))
         let shown = Output.render(file: "paper.pdf", pageCount: 1, pages: [page], includeHidden: true)
         #expect(shown.text.contains("[hidden, an annotation the file hides: [comment · Reviewer 3] PLANTED reply OK.]"))
