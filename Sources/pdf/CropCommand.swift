@@ -54,6 +54,10 @@ struct CropCommand: ParsableCommand {
     }
 
     func run() throws {
+        try Contract.guarding(path, json: json) { try crop() }
+    }
+
+    func crop() throws {
         let store = try Store()
         let password = passwordStdin ? Password.read(for: path) : nil
         // A locked file needs its password on every crop, since none is stored.
@@ -63,8 +67,7 @@ struct CropCommand: ParsableCommand {
         switch try reader.read(path: path, pages: [], password: password) {
         case .fileFailed(let reason):
             let shown = reason.hasPrefix(OpenFailure.locked) ? reason + unlock : reason
-            print(json ? ReadCommand.failureJSON(path, shown) : "\(path): failed: \(shown)")
-            throw ExitCode(3)
+            throw Contract.fail(path, shown, json: json, code: Contract.fileFailed)
         case .pages(let id, let pageCount, _):
             if let page, page > pageCount { throw ReadError.pageOutOfRange(page: page - 1, pageCount: pageCount) }
             docID = id
@@ -105,13 +108,7 @@ struct CropCommand: ParsableCommand {
         } catch {
             let reason = (error as? CropError)?.description ?? "\(error)"
             let message = "p.\(number) could not be drawn: \(reason)" + (reason.hasPrefix(OpenFailure.locked) ? unlock : "")
-            if json {
-                print(String(decoding: try JSONSerialization.data(withJSONObject: ["file": path, "page": number, "failed": message],
-                                                                  options: [.sortedKeys, .withoutEscapingSlashes]), as: UTF8.self))
-            } else {
-                print("\(path): \(message)")
-            }
-            throw ExitCode(1)
+            throw Contract.fail(path, message, json: json)
         }
         let tokens = Crop.tokens(width: made.width, height: made.height)
         if json {

@@ -109,6 +109,10 @@ struct ReadCommand: ParsableCommand {
     }
 
     func run() throws {
+        try Contract.guarding(path, json: json) { try read() }
+    }
+
+    func read() throws {
         let store = try Store()
         let reader = Reader(store: store, library: try Library())
         if let footnote { return try self.footnote(footnote) }
@@ -122,8 +126,7 @@ struct ReadCommand: ParsableCommand {
         let docID: String, pageCount: Int
         switch try reader.read(path: path, pages: [first - 1]) {
         case .fileFailed(let reason):
-            print(json ? Self.failureJSON(path, reason) : "\(path): failed: \(Output.failure(reason, file: path))")
-            throw ExitCode(3)
+            throw Contract.fail(file: path, reason: reason, json: json)
         case .pages(let id, let count, _):
             docID = id
             pageCount = count
@@ -241,8 +244,7 @@ struct ReadCommand: ParsableCommand {
         let pageCount: Int
         switch try reader.read(path: path, pages: [0]) {
         case .fileFailed(let reason):
-            print(json ? Self.failureJSON(path, reason) : "\(path): failed: \(Output.failure(reason, file: path))")
-            throw ExitCode(3)
+            throw Contract.fail(file: path, reason: reason, json: json)
         case .pages(let id, let count, _):
             docID = id
             pageCount = count
@@ -292,8 +294,7 @@ struct ReadCommand: ParsableCommand {
         let pageCount: Int
         switch try reader.read(path: path, pages: [0]) {
         case .fileFailed(let reason):
-            print(json ? Self.failureJSON(path, reason) : "\(path): failed: \(Output.failure(reason, file: path))")
-            throw ExitCode(3)
+            throw Contract.fail(file: path, reason: reason, json: json)
         case .pages(let id, let count, _):
             docID = id
             pageCount = count
@@ -434,10 +435,4 @@ struct ReadCommand: ParsableCommand {
         return (page, block, offset)
     }
 
-    static func failureJSON(_ path: String, _ reason: String) -> String {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.withoutEscapingSlashes, .sortedKeys]
-        let body = ["file": path, "failed": Output.failure(reason, file: path)]
-        return (try? encoder.encode(body)).map { String(decoding: $0, as: UTF8.self) } ?? "{}"
-    }
 }

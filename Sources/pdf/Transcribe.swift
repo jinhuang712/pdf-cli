@@ -19,6 +19,7 @@ struct TranscribeCommand: ParsableCommand {
               printf '%s\\n' '\\frac{a}{b}' | pdf transcribe paper.pdf --page 4 --equation 5
               pdf transcribe paper.pdf --page 6 --table 2 < table.md
               pdf transcribe paper.pdf --page 4 --equation 5 --clear
+              pdf transcribe paper.pdf --page 6 --table 2 --json < table.md
             """
     )
 
@@ -27,6 +28,7 @@ struct TranscribeCommand: ParsableCommand {
     @Option(help: ArgumentHelp("An equation, by its number, as pdf read shows it, such as 5.", valueName: "N")) var equation: String?
     @Option(help: ArgumentHelp("A table, by its number, as pdf read shows it, such as 2.", valueName: "N")) var table: String?
     @Flag(help: "Remove what is kept for it.") var clear = false
+    @Flag(help: "Print JSON.") var json = false
 
     /// Why nothing was kept: an error with no usage after it, as the command was used right.
     struct Refusal: Error, CustomStringConvertible {
@@ -48,6 +50,10 @@ struct TranscribeCommand: ParsableCommand {
     }
 
     func run() throws {
+        try Contract.guarding(path, json: json) { try transcribe() }
+    }
+
+    func transcribe() throws {
         let (kind, asked) = wanted!
         let language = Transcript.language(of: kind)
         // The text first, so a read with none fails before anything is parsed.
@@ -75,8 +81,7 @@ struct TranscribeCommand: ParsableCommand {
         let docID: String
         switch try reader.read(path: path, pages: []) {
         case .fileFailed(let reason):
-            print("\(path): failed: \(Output.failure(reason, file: path))")
-            throw ExitCode(3)
+            throw Contract.fail(file: path, reason: reason, json: json)
         case .pages(let id, let pageCount, _):
             if page > pageCount { throw ReadError.pageOutOfRange(page: page - 1, pageCount: pageCount) }
             docID = id
@@ -102,6 +107,22 @@ struct TranscribeCommand: ParsableCommand {
         guard let given else { return try remove(key, kind, number, transcripts) }
         let kept = Transcript(pageKey: key, kind: kind, number: number, text: given, madeAt: Date())
         try transcripts.save(kept)
+        if json {
+            struct Body: Encodable {
+                var file: String
+                var page: Int
+                var kind: String
+                var number: String
+                var kept: String
+                var sameNumber: Int?
+            }
+            print(
+                Contract.json(
+                    Body(
+                        file: path, page: page, kind: kind.rawValue, number: number, kept: given,
+                        sameNumber: found.count > 1 ? found.count : nil)))
+            return
+        }
         print("kept the \(language) of \(name); pdf read shows it there, labelled [\(kind.rawValue) \(number), transcribed \(kept.day)]")
         if found.count > 1 {
             print("p.\(page) numbers \(found.count) \(kind.rawValue)s \(number): this goes with the first, which pdf crop --\(kind.rawValue) \(number) crops")
@@ -110,7 +131,18 @@ struct TranscribeCommand: ParsableCommand {
 
     func remove(_ key: String, _ kind: Region.Kind, _ number: String, _ transcripts: Transcripts) throws {
         let name = "\(kind.rawValue) \(number) on p.\(page)"
-        print(try transcripts.remove(pageKey: key, kind: kind, number: number)
-            ? "removed the \(Transcript.language(of: kind)) kept for \(name)" : "\(name) has no \(Transcript.language(of: kind)) kept")
+        let removed = try transcripts.remove(pageKey: key, kind: kind, number: number)
+        if json {
+            struct Body: Encodable {
+                var file: String
+                var page: Int
+                var kind: String
+                var number: String
+                var removed: Bool
+            }
+            print(Contract.json(Body(file: path, page: page, kind: kind.rawValue, number: number, removed: removed)))
+            return
+        }
+        print(removed ? "removed the \(Transcript.language(of: kind)) kept for \(name)" : "\(name) has no \(Transcript.language(of: kind)) kept")
     }
 }

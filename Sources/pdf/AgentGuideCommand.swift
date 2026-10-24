@@ -15,6 +15,7 @@ struct AgentGuideCommand: ParsableCommand {
             Examples:
               pdf agent-guide
               pdf agent-guide --install claude-code
+              pdf agent-guide --install claude-code --json
             """
     )
 
@@ -24,10 +25,19 @@ struct AgentGuideCommand: ParsableCommand {
 
     @Option(help: ArgumentHelp("Install the guide for an agent instead of printing it.", valueName: "agent"))
     var install: Agent?
+    @Flag(help: "Print JSON.") var json = false
 
     func run() throws {
+        try Contract.guarding("pdf agent-guide", json: json) { try guide() }
+    }
+
+    func guide() throws {
         guard install != nil else {
-            print(AgentGuide.text, terminator: "")
+            if json {
+                print(Contract.json(["guide": AgentGuide.text]))
+            } else {
+                print(AgentGuide.text, terminator: "")
+            }
             return
         }
         let file = AgentGuide.claudeCodeSkillFile()
@@ -35,8 +45,26 @@ struct AgentGuideCommand: ParsableCommand {
         do {
             installed = try AgentGuide.install(at: file)
         } catch {
-            print("could not install the Claude Code skill at \(file.path): \((error as NSError).localizedDescription)")
-            throw ExitCode(1)
+            throw Contract.fail(file.path, "could not install the Claude Code skill: \((error as NSError).localizedDescription)", json: json)
+        }
+        if json {
+            struct Body: Encodable {
+                var file: String
+                var installed: String
+                var warnings: [String]
+            }
+            let me = Bundle.main.executableURL?.resolvingSymlinksInPath()
+            var warnings: [String] = []
+            if let found = AgentGuide.commandOnPath() {
+                if let me, found != me {
+                    warnings.append("the pdf on the PATH is \(found.path), not this one, \(me.path): the skill's commands run that one")
+                }
+            } else {
+                warnings.append("no pdf on the PATH, so the skill's commands cannot run until one is there")
+            }
+            let state = installed == .new ? "new" : installed == .replaced ? "replaced" : "unchanged"
+            print(Contract.json(Body(file: file.path, installed: state, warnings: warnings)))
+            return
         }
         switch installed {
         case .new: print("installed the Claude Code skill: \(file.path)")

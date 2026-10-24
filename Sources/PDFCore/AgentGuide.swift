@@ -26,9 +26,9 @@ public enum AgentGuide {
         | Command | What it does |
         |---|---|
         | `pdf info <pdf>` | A first look. `--json` lists every section, at every level. |
-        | `pdf read <pdf>` | Text from page 1, or from `--page 3-5,8`, `--section 2.1`, `--section Method`, `--printed-page iv` or `--from p4.7`. Also `--budget N` or `--budget all`, `--raw`, `--include-hidden`, `--headers`, `--notes inline` or `--notes off`, `--footnote 7`, `--ref 12`, `--refs end`, `--json`, `--format text`. |
-        | `pdf search [<pdf>] <words>` | The paragraphs that hold every word, best first; else those that hold some, as it says. `--regex <pattern>` matches across lines, columns and pages. `--top N`, `--from N`, `--budget N`, `--json`. |
-        | `pdf crop <pdf> --page N` | A PNG of the page, or of a region with `--bbox x,y,width,height` in fractions of the page from its top left, or of `--figure 4`, `--table 2` or `--equation 5`. `--grid` draws lines labelled with those fractions. It prints the image's path and cost, at most about 1,600 image tokens. `--json`. |
+        | `pdf read <pdf>` | Text from page 1, or from `--page 3-5,8`, `--section 2.1`, `--section Method`, `--printed-page iv` or `--from p4.7`. Also `--budget N` or `--budget all`, `--raw`, `--include-hidden`, `--headers`, `--notes inline` or `--notes off`, `--footnote 7`, `--ref 12`, `--refs end`, `--format text`. |
+        | `pdf search [<pdf>] <words>` | The paragraphs that hold every word, best first; else those that hold some, as it says. `--regex <pattern>` matches across lines, columns and pages. `--top N`, `--from N`, `--budget N`. |
+        | `pdf crop <pdf> --page N` | A PNG of the page, or of a region with `--bbox x,y,width,height` in fractions of the page from its top left, or of `--figure 4`, `--table 2` or `--equation 5`. `--grid` draws lines labelled with those fractions. It prints the image's path and cost, at most about 1,600 image tokens. |
         | `pdf dump <pdf> --markdown` | Writes files, prints their paths: `--markdown`, `--text`, `--figures`, `--tables`, `--notes`, `--refs`, `--attachments`, `--scripts` (never opened or run), `-o <folder>`. |
         | `pdf pick <pdf> p2.5 a` | Keeps reading `a` or `b` of an unsure block's words. |
         | `pdf transcribe <pdf> --page N --equation 5` | Keeps an equation's LaTeX or a table's Markdown, from standard input; `--clear` removes it. |
@@ -45,7 +45,7 @@ public enum AgentGuide {
         - Columns read one after the other. Running headers, footers and page numbers are left out and counted in the first line; `--headers` shows them, as `[header] …`.
         - Output stops at about 5,000 tokens with a `next:` line: run that command as given.
         - `^{...}` and `_{...}` mark raised and lowered characters, as in `10^{-5}` and `x_{2}`.
-        - `pdf read` exits 0 when every page asked for read well. 2: some pages are flagged; the rest is valid. 3: no page asked for holds text, or the file failed. 1: the command could not run. 64: it was used wrongly. `pdf info` and `pdf search` exit 0 on a flagged file and 3 on a failed one; `pdf add` 2 on a flagged page.
+        - Every command takes `--json` and ends 0: done; 2: some pages are flagged, the rest is valid; 3: the file failed or no page holds text; 1: it could not run, as on a missing file; 64: used wrongly. A failure reads `<path>: failed: <reason>`, in `--json` `{"file": …, "failed": …}`.
 
         ## Beside the text
 

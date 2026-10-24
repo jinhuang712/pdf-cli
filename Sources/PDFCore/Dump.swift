@@ -54,11 +54,11 @@ public enum Dump {
     /// runs it in a worker (`supervised`), which a file that exhausts memory cannot take down with it.
     public static func payloads(path: String, folder: URL, attachments: Bool, scripts: Bool) throws -> [Item] {
         let url = URL(fileURLWithPath: path)
-        guard let document = CGPDFDocument(url as CFURL) else { throw DumpError(description: OpenFailure.classify(url: url)) }
+        guard let document = CGPDFDocument(url as CFURL) else { throw DumpError(description: OpenFailure.classify(url: url), fileFailed: true) }
         if document.isEncrypted && !document.isUnlocked {
             _ = document.unlockWithPassword("") || document.unlockWithPassword(Env.password)
         }
-        guard document.isUnlocked else { throw DumpError(description: OpenFailure.locked) }
+        guard document.isUnlocked else { throw DumpError(description: OpenFailure.locked, fileFailed: true) }
         var items: [Item] = []
         var names = (attachments: Set<String>(), scripts: Set<String>())
         var files = 0, bytes = 0
@@ -108,9 +108,9 @@ public enum Dump {
         if scripts { arguments.append("--scripts") }
         do {
             let event = try Crop.runWorker(arguments, environment: password.map { [Env.passwordVariable: $0] } ?? [:])
-            if let reason = event?.reason { throw DumpError(description: reason) }
+            if let reason = event?.reason { throw DumpError(description: reason, fileFailed: true) }
             guard let text = event?.text, let items = try? JSONDecoder().decode([Item].self, from: Data(text.utf8)) else {
-                throw DumpError(description: "the reader stopped before it reported")
+                throw DumpError(description: "the reader stopped before it reported", fileFailed: true)
             }
             return items
         } catch let error as CropError {
@@ -193,5 +193,10 @@ public enum Dump {
 
 public struct DumpError: Error, CustomStringConvertible {
     public var description: String
-    public init(description: String) { self.description = description }
+    /// The file could not be read (exit 3), as against a folder that could not be written (exit 1).
+    public var fileFailed: Bool
+    public init(description: String, fileFailed: Bool = false) {
+        self.description = description
+        self.fileFailed = fileFailed
+    }
 }

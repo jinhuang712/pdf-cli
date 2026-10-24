@@ -74,6 +74,10 @@ struct SearchCommand: ParsableCommand {
     }
 
     func run() throws {
+        try Contract.guarding(scope.path ?? "pdf search", json: json) { try search() }
+    }
+
+    func search() throws {
         let store = try Store()
         let library = try Library()
         let (path, query) = scope
@@ -81,8 +85,7 @@ struct SearchCommand: ParsableCommand {
         if let path {
             switch try Reader(store: store, library: library).read(path: path, pages: [0]) {
             case .fileFailed(let reason):
-                print(json ? ReadCommand.failureJSON(path, reason) : "\(path): failed: \(Output.failure(reason, file: path))")
-                throw ExitCode(3)
+                throw Contract.fail(file: path, reason: reason, json: json)
             case .pages(let docID, let pageCount, _):
                 targets = [Target(path: path, docID: docID, pageCount: pageCount,
                                   parsed: try Self.waitForPages(docID: docID, store: store))]
@@ -105,7 +108,14 @@ struct SearchCommand: ParsableCommand {
                                       parsed: keys.filter { cached.contains($0) }.count))
             }
             if targets.isEmpty {
-                print("the library is empty: pdf add puts PDFs in it, and every PDF pdf reads joins it")
+                let report = Report(
+                    query: regex ?? query, regex: regex != nil, targets: [], single: false, total: 0, loose: false,
+                    capped: false, from: from, store: store, picks: nil)
+                if json {
+                    print(String(decoding: try report.json([], next: nil), as: UTF8.self))
+                } else {
+                    print("the library is empty: pdf add puts PDFs in it, and every PDF pdf reads joins it")
+                }
                 return
             }
         }

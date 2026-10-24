@@ -15,6 +15,7 @@ struct AddCommand: ParsableCommand {
               pdf add paper.pdf
               pdf add ~/papers
               pdf add "papers/*.pdf" -j 2
+              pdf add paper.pdf --json
             """
     )
 
@@ -27,6 +28,18 @@ struct AddCommand: ParsableCommand {
     var password: String?
     @Flag(help: "Read the password from standard input, as in: echo \"$PW\" | pdf add paper.pdf --password-stdin")
     var passwordStdin = false
+    @Flag(help: "Print JSON.") var json = false
+
+    /// One file of the run: what was added, or why not.
+    struct Added: Encodable {
+        var file: String
+        var id: String?
+        var title: String?
+        var pages: Int?
+        /// The flagged pages, as the text line gives them; absent when none is.
+        var flagged: String?
+        var failed: String?
+    }
 
     func validate() throws {
         if let workers, workers < 1 { throw ValidationError("-j needs 1 or more") }
@@ -34,13 +47,26 @@ struct AddCommand: ParsableCommand {
     }
 
     func run() throws {
+        try Contract.guarding("pdf add", json: json) { try add() }
+    }
+
+    func add() throws {
         var files: [String] = []
         var seen = Set<String>()
+        var outcome: [Added] = []
         var missing = 0
+        // A file that failed to open (exit 3) and one that could not be tried (exit 1) are counted apart.
+        var unopenable = 0
+        func note(_ entry: Added) {
+            outcome.append(entry)
+            if !json { print(entry.failed.map { "\(entry.file): failed: \($0)" } ?? "") }
+        }
         for path in paths {
             let found = Self.pdfs(at: path)
             if found.isEmpty {
-                print("failed: no PDF found · \(path)")
+                // A path that names nothing is a missing file; one that names a folder or a pattern with no PDF in it is not.
+                let names = FileManager.default.fileExists(atPath: path) || path.contains(where: { "*?[".contains($0) })
+                note(Added(file: path, failed: names ? "no PDF found" : "no such file"))
                 missing += 1
             }
             for file in found where seen.insert(Reader.resolve(file)).inserted { files.append(file) }
@@ -57,7 +83,8 @@ struct AddCommand: ParsableCommand {
                 switch try reader.read(path: file, pages: nil, workers: workers, password: password) {
                 case .fileFailed(let reason):
                     failed += 1
-                    print("failed: \(Output.failure(reason, file: file)) · \(file)")
+                    unopenable += 1
+                    note(Added(file: file, failed: Output.failure(reason, file: file)))
                 case .pages(let docID, let pageCount, let results):
                     let keys = try store.pageKeys(docID: docID)
                     let pages = results.map { Output.Page(index: $0.page, result: $0.result, key: keys[$0.page]) }
@@ -66,19 +93,37 @@ struct AddCommand: ParsableCommand {
                     let title = try store.documentInfo(docID: docID)?.title ?? ""
                     let entry = LibraryEntry(path: Reader.resolve(file), docID: docID, title: title, pageCount: pageCount,
                                              addedAt: Date())
-                    print("\(entry.shortID) · \(entry.displayTitle) · \(count(pageCount, "page")) · "
-                          + (flags.map { "flagged: \($0)" } ?? "ok") + " · \(file)")
+                    outcome.append(Added(file: file, id: entry.shortID, title: entry.displayTitle, pages: pageCount, flagged: flags))
+                    if !json {
+                        print(
+                            "\(entry.shortID) · \(entry.displayTitle) · \(count(pageCount, "page")) · "
+                                + (flags.map { "flagged: \($0)" } ?? "ok") + " · \(file)")
+                    }
                 }
             } catch {
                 failed += 1
-                print("failed: \(error) · \(file)")
+                if case ReadError.notFound = error {
+                    note(Added(file: file, failed: "no such file"))
+                } else {
+                    unopenable += 1
+                    note(Added(file: file, failed: Contract.reason(of: error)))
+                }
             }
         }
         let total = files.count + missing
-        if total > 1 {
+        if json {
+            struct Body: Encodable {
+                var files: [Added]
+                var added: Int
+                var flagged: Int
+                var failed: Int
+            }
+            print(Contract.json(Body(files: outcome, added: total - failed, flagged: flagged, failed: failed)))
+        } else if total > 1 {
             print("added \(total - failed) of \(count(total, "PDF")) · \(flagged) with flagged pages · \(failed) failed")
         }
-        if failed == total { throw ExitCode(3) }
+        // Every file failed: 3 if one failed to open, 1 if none could even be tried (all missing).
+        if failed == total { throw ExitCode(unopenable > 0 ? Contract.fileFailed : Contract.couldNotRun) }
         if failed + flagged > 0 { throw ExitCode(2) }
     }
 
@@ -120,20 +165,44 @@ struct ListCommand: ParsableCommand {
         discussion: """
             Examples:
               pdf ls
+              pdf ls --json
             """
     )
 
+    @Flag(help: "Print JSON.") var json = false
+
     func run() throws {
+        try Contract.guarding("pdf ls", json: json) { try list() }
+    }
+
+    func list() throws {
         let entries = try Library().entries()
-        guard !entries.isEmpty else {
-            print("the library is empty · add a PDF with: pdf add <path>")
-            return
+        struct Item: Encodable {
+            var id: String
+            var title: String
+            var pages: Int
+            var status: String
+            var file: String
         }
-        let store = try Store()
-        let picks = try Picks()
-        for entry in entries {
-            print("\(entry.shortID) · \(entry.displayTitle) · \(count(entry.pageCount, "page")) · "
-                  + (try status(of: entry, store: store, picks: picks)) + " · \(entry.path)")
+        var items: [Item] = []
+        if !entries.isEmpty {
+            let store = try Store()
+            let picks = try Picks()
+            for entry in entries {
+                items.append(
+                    Item(
+                        id: entry.shortID, title: entry.displayTitle, pages: entry.pageCount,
+                        status: try status(of: entry, store: store, picks: picks), file: entry.path))
+            }
+        }
+        if json {
+            print(Contract.json(["documents": items]))
+        } else if items.isEmpty {
+            print("the library is empty · add a PDF with: pdf add <path>")
+        } else {
+            for item in items {
+                print("\(item.id) · \(item.title) · \(count(item.pages, "page")) · \(item.status) · \(item.file)")
+            }
         }
     }
 
@@ -170,12 +239,18 @@ struct RemoveCommand: ParsableCommand {
             Examples:
               pdf rm paper.pdf
               pdf rm 1f9472ae
+              pdf rm paper.pdf --json
             """
     )
 
     @Argument(help: "The PDF's path, or its ID as pdf ls shows it.") var target: String
+    @Flag(help: "Print JSON.") var json = false
 
     func run() throws {
+        try Contract.guarding(target, json: json) { try remove() }
+    }
+
+    func remove() throws {
         let library = try Library()
         let store = try Store()
         let entries = try library.entries()
@@ -194,9 +269,11 @@ struct RemoveCommand: ParsableCommand {
             let id = target.lowercased()
             let documents = Set(entries.map(\.docID).filter { id.count >= 4 && $0.hasPrefix(id) })
             guard documents.count == 1, let docID = documents.first else {
-                print(documents.isEmpty ? "not in the library: \(target)"
-                      : "\(target) matches \(documents.count) PDFs; give more of the ID or the path")
-                throw ExitCode(1)
+                throw Contract.fail(
+                    target,
+                    documents.isEmpty
+                        ? "not in the library"
+                        : "matches \(documents.count) PDFs; give more of the ID or the path", json: json)
             }
             let listed = entries.filter { $0.docID == docID }
             paths = Array(Set(listed.map(\.path) + (try store.paths(docID: docID)))).sorted()
@@ -205,10 +282,18 @@ struct RemoveCommand: ParsableCommand {
         let removed = try store.remove(paths: paths)
         let unlisted = try library.remove(paths: paths)
         guard removed.files + unlisted > 0 else {
-            print("not in the library: \(target)")
-            throw ExitCode(1)
+            throw Contract.fail(target, "not in the library", json: json)
         }
-        print("removed \(shown) · \(count(removed.pages, "cached page")) · " + paths.joined(separator: ", "))
+        if json {
+            struct Body: Encodable {
+                var removed: String
+                var files: [String]
+                var cachedPages: Int
+            }
+            print(Contract.json(Body(removed: shown, files: paths, cachedPages: removed.pages)))
+        } else {
+            print("removed \(shown) · \(count(removed.pages, "cached page")) · " + paths.joined(separator: ", "))
+        }
     }
 }
 
@@ -220,10 +305,17 @@ struct GCCommand: ParsableCommand {
         discussion: """
             Examples:
               pdf gc
+              pdf gc --json
             """
     )
 
+    @Flag(help: "Print JSON.") var json = false
+
     func run() throws {
+        try Contract.guarding("pdf gc", json: json) { try collect() }
+    }
+
+    func collect() throws {
         let store = try Store()
         let before = store.size
         let removed = try store.collectGarbage()
@@ -235,10 +327,37 @@ struct GCCommand: ParsableCommand {
         let bytes = ByteCountFormatter()
         bytes.countStyle = .file
         bytes.allowsNonnumericFormatting = false
-        print("removed " + [count(removed.files, "file") + " gone or changed", count(removed.documents, "document"),
-                            count(removed.pages, "page result"), count(gone.count, "library entry", "library entries")
-                            + " for files gone", count(crops, "crop") + " older than 7 days"].joined(separator: ", ")
-              + " · freed \(bytes.string(fromByteCount: max(0, before - store.size)))")
+        // The size is what compacting the cache gave back, which includes the space that results
+        // removed earlier (by pdf rm) left behind; the counts are only what this run removed.
+        let freed = compacted ? max(0, before - store.size) : 0
+        if json {
+            struct Body: Encodable {
+                var removed: [String: Int]
+                var freedBytes: Int64
+                var compacted: Bool
+            }
+            print(
+                Contract.json(
+                    Body(
+                        removed: [
+                            "files": removed.files, "documents": removed.documents, "pages": removed.pages,
+                            "libraryEntries": gone.count, "crops": crops,
+                        ],
+                        freedBytes: freed, compacted: compacted)))
+            return
+        }
+        let counts = [
+            count(removed.files, "file") + " gone or changed", count(removed.documents, "document"),
+            count(removed.pages, "page result"),
+            count(gone.count, "library entry", "library entries")
+                + " for files gone", count(crops, "crop") + " older than 7 days",
+        ]
+        let nothing = removed.files + removed.documents + removed.pages + gone.count + crops == 0
+        print(
+            "removed " + counts.joined(separator: ", ")
+                + (compacted
+                    ? " · compacted the cache, freed \(bytes.string(fromByteCount: freed))"
+                        + (nothing && freed > 0 ? ", the space that earlier pdf rm calls left" : "") : ""))
         if !compacted { print("a parse is running, so the space returns after the next pdf gc") }
     }
 }

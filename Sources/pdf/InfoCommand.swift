@@ -19,11 +19,14 @@ struct InfoCommand: ParsableCommand {
     @Flag(help: "Print JSON.") var json = false
 
     func run() throws {
+        try Contract.guarding(path, json: json) { try info() }
+    }
+
+    func info() throws {
         let store = try Store()
         switch try Reader(store: store, library: try Library()).read(path: path, pages: [0]) {
         case .fileFailed(let reason):
-            print(json ? ReadCommand.failureJSON(path, reason) : "\(path): failed: \(Output.failure(reason, file: path))")
-            throw ExitCode(3)
+            throw Contract.fail(file: path, reason: reason, json: json)
         case .pages(let docID, let pageCount, _):
             let info = try Self.info(path: path, docID: docID, pageCount: pageCount, store: store)
             if json {

@@ -14,12 +14,14 @@ struct PickCommand: ParsableCommand {
             Examples:
               pdf pick paper.pdf p2.3 a
               pdf pick paper.pdf p7.1 b
+              pdf pick paper.pdf p7.1 b --json
             """
     )
 
     @Argument(help: "Path to a PDF file.") var path: String
     @Argument(help: "The block, as its unsure block names it: p2.3 is page 2, paragraph 3.") var block: String
     @Argument(help: "The reading to keep: a or b.") var reading: String
+    @Flag(help: "Print JSON.") var json = false
 
     func validate() throws {
         if Self.address(block) == nil { throw ValidationError("name the block as its unsure block does, such as p2.3") }
@@ -27,23 +29,36 @@ struct PickCommand: ParsableCommand {
     }
 
     func run() throws {
+        try Contract.guarding(path, json: json) { try pick() }
+    }
+
+    func pick() throws {
         let (page, index) = Self.address(block)!
         let chosen = ["a", "b"].firstIndex(of: reading.lowercased())!
         let store = try Store()
         switch try Reader(store: store, library: try Library()).read(path: path, pages: [page]) {
         case .fileFailed(let reason):
-            print("\(path): failed: \(Output.failure(reason, file: path))")
-            throw ExitCode(3)
+            throw Contract.fail(file: path, reason: reason, json: json)
         case .pages(let docID, _, let results):
             let spans = Quality.judge(results[0].result).unsure.filter { $0.block == index && $0.pickable }
             guard !spans.isEmpty else {
-                print("p.\(page + 1) ¶\(index + 1) has no unsure words to pick from")
-                throw ExitCode(1)
+                throw Contract.fail(path, "p.\(page + 1) ¶\(index + 1) has no unsure words to pick from", json: json)
             }
             let readings = Picks.readings(of: spans)
             let key = try store.pageKeys(docID: docID)[page]
             try Picks().save(Pick(pageKey: key, block: index, readings: readings, chosen: chosen, pickedAt: Date()))
-            print("picked \(reading.lowercased()) for p.\(page + 1) ¶\(index + 1): \(readings[chosen])")
+            if json {
+                struct Body: Encodable {
+                    var file: String
+                    var page: Int
+                    var block: Int
+                    var picked: String
+                    var text: String
+                }
+                print(Contract.json(Body(file: path, page: page + 1, block: index + 1, picked: reading.lowercased(), text: readings[chosen])))
+            } else {
+                print("picked \(reading.lowercased()) for p.\(page + 1) ¶\(index + 1): \(readings[chosen])")
+            }
         }
     }
 

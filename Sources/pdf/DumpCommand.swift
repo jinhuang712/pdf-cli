@@ -57,8 +57,12 @@ struct DumpCommand: ParsableCommand {
     }
 
     func run() throws {
+        try Contract.guarding(path, json: json) { try dump() }
+    }
+
+    func dump() throws {
         let password = passwordStdin ? Password.read(for: path) : nil
-        let folder = URL(fileURLWithPath: output ?? defaultFolder(), isDirectory: true).standardizedFileURL
+        let folder = Self.canonical(URL(fileURLWithPath: output ?? defaultFolder(), isDirectory: true))
         var written: [Written] = []
         var notices: [String] = []
 
@@ -69,8 +73,7 @@ struct DumpCommand: ParsableCommand {
         let pageCount: Int
         switch try reader.read(path: path, pages: markdown || text || figures || tables || notes || refs ? nil : [0], password: password) {
         case .fileFailed(let reason):
-            print(json ? ReadCommand.failureJSON(path, reason) : "\(path): failed: \(reason)")
-            throw ExitCode(3)
+            throw Contract.fail(file: path, reason: reason, json: json)
         case .pages(let id, let count, _):
             docID = id
             pageCount = count
@@ -80,7 +83,7 @@ struct DumpCommand: ParsableCommand {
             var arguments = ["--format", format, "--budget", "all"]
             arguments += pages.map { ["--page", $0] } ?? ["--full"]
             arguments += ["--", path]
-            let (target, handle) = try Self.create(name, in: folder)
+            let (target, handle) = try Self.create(name, in: folder, file: path, json: json)
             do {
                 let exit = try Self.capture(arguments, into: handle)
                 if exit == 3 || exit == 1 || exit == 64 {
@@ -162,8 +165,9 @@ struct DumpCommand: ParsableCommand {
             do {
                 items = try Dump.supervised(path: path, folder: folder, attachments: attachments, scripts: scripts, password: password)
             } catch let error as DumpError {
-                print(json ? ReadCommand.failureJSON(path, error.description) : "\(path): failed: \(error.description)")
-                throw ExitCode(3)
+                throw error.fileFailed
+                    ? Contract.fail(file: path, reason: error.description, json: json)
+                    : Contract.fail(path, error.description, json: json)
             }
             for item in items {
                 if let skipped = item.skipped {
@@ -183,13 +187,31 @@ struct DumpCommand: ParsableCommand {
                 var written: [Written]
                 var notices: [String]
             }
-            print(String(decoding: try Self.encoder.encode(Body(file: path, folder: folder.path, written: written, notices: notices)), as: UTF8.self))
+            print(Contract.json(Body(file: path, folder: folder.path, written: written, notices: notices)))
         } else {
             for item in written {
                 print((item.path ?? "") + "  (" + item.kind + (item.page.map { ", p.\($0)" } ?? "") + (item.note.map { ": " + $0 } ?? "") + ")")
             }
             for notice in notices { print("note: \(notice)") }
         }
+    }
+
+    /// The folder with every link above it resolved, so that all paths a dump prints, in text and
+    /// in JSON, are in one form (`/private/tmp/…`, never `/tmp/…`). The folder itself is left as
+    /// given: a link there is refused, not followed.
+    static func canonical(_ folder: URL) -> URL {
+        let url = folder.standardizedFileURL
+        var parent = url.deletingLastPathComponent()
+        var rest: [String] = []
+        while parent.path != "/", !FileManager.default.fileExists(atPath: parent.path) {
+            rest.insert(parent.lastPathComponent, at: 0)
+            parent = parent.deletingLastPathComponent()
+        }
+        var buffer = [Int8](repeating: 0, count: Int(PATH_MAX))
+        guard realpath(parent.path, &buffer) != nil else { return url }
+        var resolved = URL(fileURLWithPath: String(cString: buffer), isDirectory: true)
+        for part in rest { resolved.appendPathComponent(part, isDirectory: true) }
+        return resolved.appendingPathComponent(url.lastPathComponent, isDirectory: true)
     }
 
     static var encoder: JSONEncoder {
@@ -209,12 +231,11 @@ struct DumpCommand: ParsableCommand {
         return folder == URL(fileURLWithPath: path).standardizedFileURL.path ? folder + "-dump" : folder
     }
 
-    static func create(_ name: String, in folder: URL) throws -> (url: URL, handle: FileHandle) {
+    static func create(_ name: String, in folder: URL, file: String, json: Bool) throws -> (url: URL, handle: FileHandle) {
         do {
             return try Dump.create(name, in: folder)
         } catch let error as DumpError {
-            print("failed: \(error.description)")
-            throw ExitCode(1)
+            throw Contract.fail(file, error.description, json: json)
         }
     }
 
