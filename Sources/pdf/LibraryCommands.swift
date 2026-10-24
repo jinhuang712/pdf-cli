@@ -331,68 +331,23 @@ struct RemoveCommand: ParsableCommand {
     }
 }
 
-/// Removes cached results that no read can use any more (FEATURES.md → F11).
+/// `pdf gc` went into `pdf doctor --clean` (M2.11; DESIGNS.md → Decision: `read` reads, `note` and
+/// `ref` look up, `--show` shows what was set aside, `doctor` cleans). It stays as a hidden stub that
+/// ends 64 with the pointer and runs nothing; it is no alias.
 struct GCCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "gc",
-        abstract: "Remove cached results for files that no longer exist, and for old parser versions.",
-        discussion: """
-            Examples:
-              pdf gc
-              pdf gc --json
-            """
+        abstract: "Removed: `pdf gc` is now `pdf doctor --clean`.",
+        shouldDisplay: false
     )
 
-    @Flag(help: "Print JSON.") var json = false
+    @Argument(parsing: .unconditionalRemaining) var arguments: [String] = []
 
-    func run() throws {
-        try Contract.guarding("pdf gc", json: json) { try collect() }
+    func validate() throws {
+        throw ValidationError("`pdf gc` is now `pdf doctor --clean`")
     }
 
-    func collect() throws {
-        let store = try Store()
-        let before = store.size
-        let removed = try store.collectGarbage()
-        let library = try Library()
-        let gone = try library.entries().filter { FileStat.isGone(path: $0.path) }.map(\.path)
-        try library.remove(paths: gone)
-        let compacted = store.compact()
-        let crops = Crop.removeOld()
-        let bytes = ByteCountFormatter()
-        bytes.countStyle = .file
-        bytes.allowsNonnumericFormatting = false
-        // The size is what compacting the cache gave back, which includes the space that results
-        // removed earlier left behind, and the write-ahead log; the counts are only what this run removed.
-        let freed = compacted ? max(0, before - store.size) : 0
-        if json {
-            struct Body: Encodable {
-                var removed: [String: Int]
-                var freedBytes: Int64
-                var compacted: Bool
-            }
-            print(
-                Contract.json(
-                    Body(
-                        removed: [
-                            "files": removed.files, "documents": removed.documents, "pages": removed.pages,
-                            "libraryEntries": gone.count, "crops": crops,
-                        ],
-                        freedBytes: freed, compacted: compacted)))
-            return
-        }
-        let counts = [
-            count(removed.files, "file") + " gone or changed", count(removed.documents, "document"),
-            count(removed.pages, "page result"),
-            count(gone.count, "library entry", "library entries")
-                + " for files gone", count(crops, "crop") + " older than 7 days",
-        ]
-        print(
-            "removed " + counts.joined(separator: ", ")
-                + (compacted
-                    ? " · compacted the cache, freed \(bytes.string(fromByteCount: freed))"
-                    : ""))
-        if !compacted { print("a parse is running, so the space returns after the next pdf gc") }
-    }
+    func run() throws {}
 }
 
 /// "1 file", "2 files".

@@ -237,28 +237,62 @@ public enum Crop {
         return Made(url: url, width: width, height: height, kept: true)
     }
 
+    /// What a sweep of the crop folder removed, or would.
+    public struct Swept: Equatable, Sendable {
+        public var images = 0
+        public var bytes: Int64 = 0
+    }
+
     /// Removes crops older than 7 days, partial images that a stopped crop left more than an hour
     /// ago, and folders empty for more than an hour: a folder another crop just made is empty
     /// while that crop waits for its worker. Returns how many images it removed.
     @discardableResult
-    public static func removeOld() -> Int {
+    public static func removeOld() -> Int { sweep().images }
+
+    /// `removeOld` with the bytes it freed. With `dryRun` it counts the same and removes nothing.
+    public static func sweep(dryRun: Bool = false, in directory: URL? = nil) -> Swept {
+        let folder = directory ?? Crop.folder
         let manager = FileManager.default
-        var removed = 0
+        var swept = Swept()
         func age(_ url: URL) -> TimeInterval {
             let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
             return Date().timeIntervalSince(modified)
+        }
+        func size(_ url: URL) -> Int64 {
+            Int64((try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0)
         }
         for directory in (try? manager.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.contentModificationDateKey])) ?? [] {
             let files = (try? manager.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
             for file in files {
                 let partial = file.lastPathComponent.hasPrefix(".")
-                if age(file) >= (partial ? 3600 : keep), (try? manager.removeItem(at: file)) != nil, !partial { removed += 1 }
+                guard age(file) >= (partial ? 3600 : keep) else { continue }
+                let bytes = size(file)
+                if dryRun || (try? manager.removeItem(at: file)) != nil {
+                    if !partial {
+                        swept.images += 1
+                        swept.bytes += bytes
+                    }
+                }
             }
-            if age(directory) >= 3600, ((try? manager.contentsOfDirectory(atPath: directory.path)) ?? []).isEmpty {
+            if !dryRun, age(directory) >= 3600, ((try? manager.contentsOfDirectory(atPath: directory.path)) ?? []).isEmpty {
                 try? manager.removeItem(at: directory)
             }
         }
-        return removed
+        return swept
+    }
+
+    /// The images in the crop folder, and their bytes.
+    public static func usage(in directory: URL? = nil) -> Swept {
+        let folder = directory ?? Crop.folder
+        var swept = Swept()
+        let walker = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey])
+        while let url = walker?.nextObject() as? URL {
+            let values = try? url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
+            guard values?.isRegularFile == true else { continue }
+            swept.images += 1
+            swept.bytes += Int64(values?.fileSize ?? 0)
+        }
+        return swept
     }
 
     /// Runs one worker in a slot of the pool, within the time and memory limits a page has, and

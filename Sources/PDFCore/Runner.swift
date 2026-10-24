@@ -69,7 +69,7 @@ public final class Runner: @unchecked Sendable {
     }
 
     func acquireSlot(foreground: Bool) -> WorkerPool.Slot? {
-        WorkerPool.acquire(foreground: foreground, size: poolSize)
+        WorkerPool.acquire(foreground: foreground, size: Pressure.reduced(poolSize))
     }
 
     public func run() -> Int32 {
@@ -385,13 +385,19 @@ public final class Runner: @unchecked Sendable {
         var changed = false
         var locked: String?
         var failedSpawns = 0
-        let capacity = poolSize
         let readAllByOCR = reparse?.ocr == true || ((try? store.needsOCR(docID: docID)) ?? false)
         let repair = !readAllByOCR && ((try? store.spacesAtRisk(docID: docID)) ?? false)
         let parseArguments = readAllByOCR ? ["--read-all-by-ocr"] : repair ? ["--repair-spaces"] : []
         // A page through OCR takes about 0.7 s, so batches shrink once pages turn out slow, as
         // in a scan: a page a command asks for waits for one batch at most.
         var slow = readAllByOCR || repair
+        // How many workers this file may run now: fewer under memory pressure, heat or Low Power
+        // Mode, and half as many for a file read by OCR, whose pages weigh more.
+        let weighted = readAllByOCR || repair
+        var capacity: Int {
+            let allowed = Pressure.reduced(poolSize)
+            return weighted ? Pressure.ocrWeighted(allowed) : allowed
+        }
         var batchSize: Int { slow ? 2 : Runner.batchSize }
 
         func unchanged() -> Bool { FileStat(path: path) == stat }

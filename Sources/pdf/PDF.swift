@@ -16,7 +16,9 @@ struct PDF: AsyncParsableCommand {
               pdf dump <pdf> --markdown --figures  write them to files
               pdf pick, pdf transcribe       keep what you read
               pdf reparse <pdf> --page 7     read pages again, or with --step ocr by OCR
-              pdf add, ls, rm, gc            the library: add, list, remove, clean
+              pdf add, ls, rm                the library: add, list, remove
+              pdf doctor [--clean]           what works on this Mac and what is wrong; clean up
+              pdf setup                      how much memory parsing may take (for the user)
               pdf agent-guide                the guide that teaches an agent
 
             Examples:
@@ -36,7 +38,8 @@ struct PDF: AsyncParsableCommand {
             AddCommand.self, ReparseCommand.self, InfoCommand.self, ReadCommand.self, NoteCommand.self, RefCommand.self, SearchCommand.self,
             CropCommand.self, DumpCommand.self, PickCommand.self, TranscribeCommand.self,
             ListCommand.self, RemoveCommand.self,
-            GCCommand.self, AgentGuideCommand.self, Spike.self, DebugPages.self, DebugOCR.self, RunnerCommand.self, WorkerCommand.self,
+            DoctorCommand.self, SetupCommand.self, GCCommand.self, AgentGuideCommand.self, Spike.self, DebugPages.self, DebugOCR.self,
+            RunnerCommand.self, WorkerCommand.self,
         ]
     )
 }

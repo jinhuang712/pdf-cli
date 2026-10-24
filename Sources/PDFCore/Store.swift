@@ -659,16 +659,7 @@ public final class Store: Sendable {
     /// the documents and pages only they used, results of older parser versions, and the locks
     /// of runners that are gone. A file out of reach, as on an unplugged drive, keeps its rows.
     public func collectGarbage() throws -> Removed {
-        let entries = try pool.read { db in
-            try Row.fetchAll(db, sql: "SELECT path, size, modified_ns, inode, device FROM file_entry")
-        }
-        let stale: [(path: String, stat: FileStat)] = entries.compactMap { row in
-            let path: String = row["path"]
-            let cached = FileStat(size: row["size"], modifiedNanos: row["modified_ns"], inode: row["inode"],
-                                  device: row["device"])
-            if let now = FileStat(path: path) { return now == cached ? nil : (path, cached) }
-            return FileStat.isGone(path: path) ? (path, cached) : nil
-        }
+        let stale = try staleFiles()
         return try write { db in
             var removed = Removed()
             // Only an entry that still holds the stat read above goes: a runner may have indexed
@@ -811,5 +802,107 @@ public final class Store: Sendable {
     static func isAlive(pid: Int32, heartbeat: Double) -> Bool {
         guard Date().timeIntervalSince1970 - heartbeat < heartbeatTimeout else { return false }
         return kill(pid, 0) == 0 || errno == EPERM
+    }
+}
+
+// MARK: Doctor
+
+extension Store {
+    /// A live runner, as the cache's locks name it.
+    public struct LiveRunner: Equatable, Sendable {
+        public var pid: Int32
+        /// What it holds the lock of: `path:<file>` or `doc:<id>`.
+        public var lock: String
+    }
+
+    /// What the cache holds, counted.
+    public struct Counts: Equatable, Sendable {
+        public var files = 0
+        public var documents = 0
+        public var pages = 0
+        /// Pages parsed by an older parser, which a cleanup removes.
+        public var oldPages = 0
+    }
+
+    public func counts() throws -> Counts {
+        try pool.read { db in
+            func one(_ sql: String, _ arguments: StatementArguments = []) throws -> Int {
+                try Int.fetchOne(db, sql: sql, arguments: arguments) ?? 0
+            }
+            return Counts(
+                files: try one("SELECT COUNT(*) FROM file_entry"), documents: try one("SELECT COUNT(*) FROM document"),
+                pages: try one("SELECT COUNT(*) FROM page_result"),
+                oldPages: try one(
+                    "SELECT COUNT(*) FROM page_result WHERE parser_version <> ?",
+                    [Env.parserVersion]))
+        }
+    }
+
+    /// Runners that hold a lock now, and the locks of runners that are gone.
+    public func runners() throws -> (alive: [LiveRunner], leftover: [String]) {
+        try pool.read { db in
+            var alive: [LiveRunner] = []
+            var leftover: [String] = []
+            for row in try Row.fetchAll(db, sql: "SELECT lock_key, pid, heartbeat_at FROM runner_lock ORDER BY lock_key") {
+                if Store.isAlive(pid: row["pid"], heartbeat: row["heartbeat_at"]) {
+                    alive.append(LiveRunner(pid: row["pid"], lock: row["lock_key"]))
+                } else {
+                    leftover.append(row["lock_key"])
+                }
+            }
+            return (alive, leftover)
+        }
+    }
+
+    /// The bytes that compacting would give back from space earlier removals left: the database's
+    /// free pages. Rows a cleanup removes now come on top of it.
+    public func freePageBytes() throws -> Int64 {
+        try pool.read { db in
+            let free = try Int64.fetchOne(db, sql: "PRAGMA freelist_count") ?? 0
+            let size = try Int64.fetchOne(db, sql: "PRAGMA page_size") ?? 4096
+            return free * size
+        }
+    }
+
+    /// The file entries `collectGarbage` would delete: files gone, or changed since indexed.
+    func staleFiles() throws -> [(path: String, stat: FileStat)] {
+        let entries = try pool.read { db in
+            try Row.fetchAll(db, sql: "SELECT path, size, modified_ns, inode, device FROM file_entry")
+        }
+        return entries.compactMap { row in
+            let path: String = row["path"]
+            let cached = FileStat(
+                size: row["size"], modifiedNanos: row["modified_ns"], inode: row["inode"],
+                device: row["device"])
+            if let now = FileStat(path: path) { return now == cached ? nil : (path, cached) }
+            return FileStat.isGone(path: path) ? (path, cached) : nil
+        }
+    }
+
+    /// What `collectGarbage` would remove, counted with SELECTs that mirror its deletes, so a dry
+    /// run takes no write lock and writes nothing.
+    public func wouldCollectGarbage() throws -> Removed {
+        let stale = Set(try staleFiles().map(\.path))
+        return try pool.read { db in
+            var removed = Removed()
+            let paths = Array(stale)
+            let marks = paths.isEmpty ? "''" : Array(repeating: "?", count: paths.count).joined(separator: ",")
+            let arguments = StatementArguments(paths)
+            let kept = "SELECT doc_id FROM file_entry WHERE doc_id IS NOT NULL AND path NOT IN (\(marks))"
+            removed.files = paths.count
+            removed.documents =
+                try Int.fetchOne(
+                    db, sql: "SELECT COUNT(*) FROM document WHERE id NOT IN (\(kept))",
+                    arguments: arguments) ?? 0
+            // A page goes when its parser is old, or when no document that stays holds it.
+            removed.pages =
+                try Int.fetchOne(
+                    db,
+                    sql: """
+                        SELECT COUNT(*) FROM page_result WHERE parser_version <> ? OR page_key NOT IN (
+                            SELECT page_key FROM document_page WHERE doc_id IN (\(kept)) AND doc_id IN (SELECT id FROM document))
+                        """, arguments: StatementArguments([Env.parserVersion] + paths)) ?? 0
+            return removed
+        }
     }
 }

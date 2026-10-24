@@ -52,10 +52,7 @@ public enum Env {
     }
 
     /// How much memory one worker may hold before it is stopped and its page fails.
-    public static var memoryLimitBytes: UInt64 {
-        let megabytes = variables["PDF_CLI_MEMORY_LIMIT_MB"].flatMap(UInt64.init) ?? 2048
-        return megabytes << 20
-    }
+    public static var memoryLimitBytes: UInt64 { UInt64(parsing.workerLimitMB) << 20 }
 
     /// The password that `pdf add --password` gives for a locked file. It reaches the runner
     /// and its workers in their environment, which other users cannot read, unlike a command
@@ -63,12 +60,52 @@ public enum Env {
     public static var password: String { variables[passwordVariable] ?? "" }
     public static let passwordVariable = "PDF_CLI_PASSWORD"
 
-    /// How many workers run at once on this Mac, across every parse: half the performance
-    /// cores, and at least 2, so the user's own work stays responsive (see `WorkerPool`).
-    public static var workerCount: Int {
-        if let count = variables["PDF_CLI_WORKERS"].flatMap(Int.init), count > 0 { return count }
-        let cores = sysctlInt("hw.perflevel0.physicalcpu") ?? sysctlInt("hw.physicalcpu") ?? 4
-        return max(2, cores / 2)
+    /// How many workers run at once on this Mac, across every parse (see `WorkerPool`): what
+    /// the user's memory budget allows, else half the performance cores and at least 2, so the
+    /// user's own work stays responsive.
+    public static var workerCount: Int { parsing.workers }
+
+    /// The performance cores, or all the cores where the Mac has one kind.
+    public static var performanceCores: Int {
+        sysctlInt("hw.perflevel0.physicalcpu") ?? sysctlInt("hw.physicalcpu") ?? 4
+    }
+
+    /// Where a parsing setting comes from, as `pdf doctor` says it.
+    public enum Source: String, Sendable {
+        case environment, setup, `default`
+    }
+
+    /// The parsing settings in force, with where each comes from. Read once for the process.
+    public struct Parsing: Sendable {
+        public var memoryBudgetMB: Int?
+        public var memorySource: Source
+        public var workers: Int
+        public var workersSource: Source
+        public var workerLimitMB: Int
+        public var workerLimitSource: Source
+        /// Why the settings file was not used, when it was not.
+        public var problem: String?
+    }
+
+    public static let parsing: Parsing = resolveParsing(supportDirectory: supportDirectory, variables: variables)
+
+    static func resolveParsing(supportDirectory: URL, variables: [String: String]) -> Parsing {
+        let (stored, problem) = Settings.load(from: supportDirectory)
+        let plan = Settings.plan(budgetMB: stored.memoryMB, performanceCores: performanceCores)
+        let fromSetup: Source = stored.memoryMB == nil ? .default : .setup
+        var parsing = Parsing(
+            memoryBudgetMB: stored.memoryMB, memorySource: fromSetup, workers: plan.workers,
+            workersSource: fromSetup, workerLimitMB: plan.workerLimitMB,
+            workerLimitSource: fromSetup, problem: problem)
+        if let count = variables["PDF_CLI_WORKERS"].flatMap(Int.init), count > 0 {
+            parsing.workers = count
+            parsing.workersSource = .environment
+        }
+        if let megabytes = variables["PDF_CLI_MEMORY_LIMIT_MB"].flatMap(Int.init), megabytes > 0 {
+            parsing.workerLimitMB = megabytes
+            parsing.workerLimitSource = .environment
+        }
+        return parsing
     }
 
     /// The macOS build that parsed a page, such as "25E246". Each page records it.

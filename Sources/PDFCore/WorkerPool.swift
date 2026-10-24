@@ -32,8 +32,10 @@ public enum WorkerPool {
     /// Slot 0 is kept for work a command waits on, such as a page the agent asked for or a new
     /// file's index. Pages nobody asked for take only the other slots, so they never make a
     /// command wait. A pool of one slot has nothing to keep apart.
-    public static func acquire(foreground: Bool, size: Int = Env.workerCount,
-                               directory: URL = Env.cacheDirectory) -> Slot? {
+    public static func acquire(
+        foreground: Bool, size: Int = Pressure.reduced(Env.workerCount),
+        directory: URL = Env.cacheDirectory
+    ) -> Slot? {
         let folder = directory.appendingPathComponent("slots", isDirectory: true)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let first = foreground || size < 2 ? 0 : 1
