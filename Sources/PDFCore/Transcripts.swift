@@ -39,12 +39,16 @@ public final class Transcripts: Sendable {
     public static func limit(_ kind: Region.Kind) -> Int { kind == .table ? 12_000 : 4_000 }
     let queue: DatabaseQueue
 
-    public init(directory: URL = Env.supportDirectory) throws {
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    /// With `readOnly`, the folder and the table are left as they are, which a dry run needs
+    /// (ROADMAP.md → M2.18); the file must exist, see `exists`.
+    public init(directory: URL = Env.supportDirectory, readOnly: Bool = false) throws {
+        if !readOnly { try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true) }
         var configuration = Configuration()
         configuration.busyMode = .timeout(10)
+        configuration.readonly = readOnly
         queue = try DatabaseQueue(path: directory.appendingPathComponent("library.sqlite").path,
                                   configuration: configuration)
+        if readOnly { return }
         try queue.write { db in
             try db.execute(sql: """
                 CREATE TABLE IF NOT EXISTS transcript (
@@ -129,6 +133,7 @@ public final class Transcripts: Sendable {
     public func transcripts(keys: [String]) throws -> [String: [Transcript]] {
         guard !keys.isEmpty else { return [:] }
         return try queue.read { db in
+            guard try db.tableExists("transcript") else { return [:] }
             var found: [String: [Transcript]] = [:]
             for chunk in stride(from: 0, to: keys.count, by: 500).map({ Array(keys[$0..<min($0 + 500, keys.count)]) }) {
                 let marks = Array(repeating: "?", count: chunk.count).joined(separator: ",")

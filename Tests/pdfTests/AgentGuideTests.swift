@@ -18,7 +18,8 @@ import Testing
     static let leftOut: [String: Set<String>] = ["read": ["--full"], "add": ["--password"], "dump": ["--page", "--password-stdin"]]
     /// `--json` is on every command (FEATURES.md → F7), and the guide says so once, in its line
     /// about exit codes, instead of beside each command; `OutputContractTests` holds each command to it.
-    static let everywhere: Set<String> = ["-h", "--help", "--version", "--json"]
+    /// `--dry-run` is on `pick`, `transcribe` and `rm` alike, and the guide names it once, with them.
+    static let everywhere: Set<String> = ["-h", "--help", "--version", "--json", "--dry-run"]
 
     /// A command or a flag the guide names: `pdf read`, or `--raw` and `-j`, in any case, with
     /// digits and underscores, so that a near miss such as `--Raw` or `--json2` is checked too.

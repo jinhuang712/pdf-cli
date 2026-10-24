@@ -234,16 +234,19 @@ struct RemoveCommand: ParsableCommand {
         commandName: "rm",
         abstract: "Remove a PDF from the library, and its results from the cache.",
         discussion: """
-            Picks stay, so a PDF added again shows them again.
+            Picks stay, so a PDF added again shows them again. --dry-run says what would go and what would stay (the \
+            picks, and the results another copy of the file still uses), and removes nothing.
 
             Examples:
               pdf rm paper.pdf
               pdf rm 1f9472ae
               pdf rm paper.pdf --json
+              pdf rm paper.pdf --dry-run
             """
     )
 
     @Argument(help: "The PDF's path, or its ID as pdf ls shows it.") var target: String
+    @Flag(help: "Say what would be removed and what would stay, and change nothing.") var dryRun = false
     @Flag(help: "Print JSON.") var json = false
 
     func run() throws {
@@ -251,16 +254,18 @@ struct RemoveCommand: ParsableCommand {
     }
 
     func remove() throws {
-        let library = try Library()
-        let store = try Store()
-        let entries = try library.entries()
+        // A dry run opens only the databases that exist, and the library read only: with none, it
+        // finds what the real run finds in the new empty ones, nothing.
+        let library: Library? = dryRun && !Library.exists() ? nil : try Library(readOnly: dryRun)
+        let store: Store? = dryRun && !Store.exists() ? nil : try Store()
+        let entries = try library?.entries() ?? []
         let path = Reader.resolve(target)
         var paths: [String]
         var shown: String
         if let entry = entries.first(where: { $0.path == path }) {
             paths = [path]
             shown = "\(entry.shortID) · \(entry.displayTitle)"
-        } else if try store.knows(path: path) {
+        } else if try store?.knows(path: path) ?? false {
             // A file the cache knows that never joined the library, as one read by a hidden
             // command.
             paths = [path]
@@ -276,11 +281,22 @@ struct RemoveCommand: ParsableCommand {
                         : "matches \(documents.count) PDFs; give more of the ID or the path", json: json)
             }
             let listed = entries.filter { $0.docID == docID }
-            paths = Array(Set(listed.map(\.path) + (try store.paths(docID: docID)))).sorted()
+            paths = Array(Set(listed.map(\.path) + (try store?.paths(docID: docID) ?? []))).sorted()
             shown = "\(listed[0].shortID) · \(listed[0].displayTitle)"
         }
-        let removed = try store.remove(paths: paths)
-        let unlisted = try library.remove(paths: paths)
+        // The documents these files carry, for what a dry run says stays.
+        let docIDs = Set(entries.filter { paths.contains($0.path) }.map(\.docID))
+        var kept = (picks: 0, transcripts: 0, shared: [String]())
+        if dryRun, let store {
+            let keys = try docIDs.flatMap { try store.pageKeys(docID: $0) }
+            if Library.exists() {
+                kept.picks = try Picks(readOnly: true).picks(keys: keys).values.reduce(0) { $0 + $1.count }
+                kept.transcripts = try Transcripts(readOnly: true).transcripts(keys: keys).values.reduce(0) { $0 + $1.count }
+            }
+            kept.shared = Set(try docIDs.flatMap { try store.paths(docID: $0) }).subtracting(paths).sorted()
+        }
+        let removed = try store?.remove(paths: paths, dryRun: dryRun) ?? Store.Removed()
+        let unlisted = dryRun ? entries.filter { paths.contains($0.path) }.count : try library?.remove(paths: paths) ?? 0
         guard removed.files + unlisted > 0 else {
             throw Contract.fail(target, "not in the library", json: json)
         }
@@ -289,8 +305,25 @@ struct RemoveCommand: ParsableCommand {
                 var removed: String
                 var files: [String]
                 var cachedPages: Int
+                var dryRun: Bool?
+                var picksKept: Int?
+                var transcriptsKept: Int?
+                var sharedWith: [String]?
             }
-            print(Contract.json(Body(removed: shown, files: paths, cachedPages: removed.pages)))
+            print(
+                Contract.json(
+                    Body(
+                        removed: shown, files: paths, cachedPages: removed.pages, dryRun: dryRun ? true : nil,
+                        picksKept: dryRun ? kept.picks : nil, transcriptsKept: dryRun ? kept.transcripts : nil,
+                        sharedWith: dryRun ? kept.shared : nil)))
+        } else if dryRun {
+            let picks: String = count(kept.picks, "pick")
+            let transcripts: String = count(kept.transcripts, "transcript")
+            var stays: [String] = ["\(picks) and \(transcripts) stay"]
+            if !kept.shared.isEmpty { stays.append("the results another copy uses stay: " + kept.shared.joined(separator: ", ")) }
+            let pages: String = count(removed.pages, "cached page")
+            let gone: String = paths.joined(separator: ", ")
+            print("dry run: would remove \(shown) · \(pages) · \(gone); " + stays.joined(separator: "; ") + "; nothing was removed")
         } else {
             print("removed \(shown) · \(count(removed.pages, "cached page")) · " + paths.joined(separator: ", "))
         }

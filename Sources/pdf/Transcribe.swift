@@ -13,13 +13,15 @@ struct TranscribeCommand: ParsableCommand {
             Give the text on standard input: pdf transcribe paper.pdf --page 4 --equation 5 <<'EOF', then the LaTeX, then \
             EOF on a line of its own. The quotes around EOF keep backslashes and dollar signs as written. Later reads show \
             it in the block, labelled transcribed with the day. Another transcribe replaces it; --clear removes it. At most \
-            4,000 characters for an equation, 12,000 for a table.
+            4,000 characters for an equation, 12,000 for a table. --dry-run reads the text, says what would be kept, \
+            replaced or removed, and changes nothing; it needs the page read before.
 
             Examples:
               printf '%s\\n' '\\frac{a}{b}' | pdf transcribe paper.pdf --page 4 --equation 5
               pdf transcribe paper.pdf --page 6 --table 2 < table.md
               pdf transcribe paper.pdf --page 4 --equation 5 --clear
               pdf transcribe paper.pdf --page 6 --table 2 --json < table.md
+              pdf transcribe paper.pdf --page 4 --equation 5 --dry-run < latex.txt
             """
     )
 
@@ -28,6 +30,7 @@ struct TranscribeCommand: ParsableCommand {
     @Option(help: ArgumentHelp("An equation, by its number, as pdf read shows it, such as 5.", valueName: "N")) var equation: String?
     @Option(help: ArgumentHelp("A table, by its number, as pdf read shows it, such as 2.", valueName: "N")) var table: String?
     @Flag(help: "Remove what is kept for it.") var clear = false
+    @Flag(help: "Say what would be kept or removed and change nothing.") var dryRun = false
     @Flag(help: "Print JSON.") var json = false
 
     /// Why nothing was kept: an error with no usage after it, as the command was used right.
@@ -76,19 +79,33 @@ struct TranscribeCommand: ParsableCommand {
             }
             given = text
         }
+        // A dry run opens only what is there, and reads only what the cache holds.
+        if dryRun && !Store.exists() { throw Contract.fail(path, Contract.notReadYet(path, page: page), json: json) }
         let store = try Store()
-        let reader = Reader(store: store, library: try Library())
+        let reader = Reader(store: store, library: dryRun ? nil : try Library())
         let docID: String
-        switch try reader.read(path: path, pages: []) {
-        case .fileFailed(let reason):
-            throw Contract.fail(file: path, reason: reason, json: json)
-        case .pages(let id, let pageCount, _):
-            if page > pageCount { throw ReadError.pageOutOfRange(page: page - 1, pageCount: pageCount) }
-            docID = id
+        let read: ReadOutcome
+        if dryRun {
+            guard let cached = try reader.peek(path: path, pages: [page - 1]) else {
+                throw Contract.fail(path, Contract.notReadYet(path, page: page), json: json)
+            }
+            read = cached
+            switch cached {
+            case .fileFailed(let reason): throw Contract.fail(file: path, reason: reason, json: json)
+            case .pages(let id, _, _): docID = id
+            }
+        } else {
+            switch try reader.read(path: path, pages: []) {
+            case .fileFailed(let reason):
+                throw Contract.fail(file: path, reason: reason, json: json)
+            case .pages(let id, let pageCount, _):
+                if page > pageCount { throw ReadError.pageOutOfRange(page: page - 1, pageCount: pageCount) }
+                docID = id
+            }
+            read = try reader.read(path: path, pages: [page - 1])
         }
-        let read = try reader.read(path: path, pages: [page - 1])
         let key = try store.pageKeys(docID: docID)[page - 1]
-        let transcripts = try Transcripts()
+        let transcripts: Transcripts? = dryRun ? nil : try Transcripts()
         guard case .pages(_, _, let results) = read, let layer = results.first?.result.pageText else {
             if clear { return try remove(key, kind, asked, transcripts) }
             throw Refusal(description: "p.\(page) has no text to find \(kind.rawValue) \(asked) in")
@@ -106,7 +123,8 @@ struct TranscribeCommand: ParsableCommand {
         let name = "\(kind.rawValue) \(number) on p.\(page)"
         guard let given else { return try remove(key, kind, number, transcripts) }
         let kept = Transcript(pageKey: key, kind: kind, number: number, text: given, madeAt: Date())
-        try transcripts.save(kept)
+        let earlier = dryRun ? try Self.earlier(key, kind, number) : nil
+        try transcripts?.save(kept)
         if json {
             struct Body: Encodable {
                 var file: String
@@ -115,23 +133,40 @@ struct TranscribeCommand: ParsableCommand {
                 var number: String
                 var kept: String
                 var sameNumber: Int?
+                var dryRun: Bool?
+                var replaces: Bool?
+                var characters: Int?
             }
             print(
                 Contract.json(
                     Body(
                         file: path, page: page, kind: kind.rawValue, number: number, kept: given,
-                        sameNumber: found.count > 1 ? found.count : nil)))
+                        sameNumber: found.count > 1 ? found.count : nil, dryRun: dryRun ? true : nil,
+                        replaces: dryRun ? earlier != nil : nil, characters: dryRun ? given.unicodeScalars.count : nil)))
             return
         }
-        print("kept the \(language) of \(name); pdf read shows it there, labelled [\(kind.rawValue) \(number), transcribed \(kept.day)]")
+        if dryRun {
+            print(
+                "dry run: would keep the \(language) of \(name), \(given.unicodeScalars.count) characters"
+                    + (earlier.map { ", replacing the one kept \($0.day)" } ?? ", with none kept now") + "; nothing was kept")
+        } else {
+            print("kept the \(language) of \(name); pdf read shows it there, labelled [\(kind.rawValue) \(number), transcribed \(kept.day)]")
+        }
         if found.count > 1 {
             print("p.\(page) numbers \(found.count) \(kind.rawValue)s \(number): this goes with the first, which pdf crop --\(kind.rawValue) \(number) crops")
         }
     }
 
-    func remove(_ key: String, _ kind: Region.Kind, _ number: String, _ transcripts: Transcripts) throws {
+    /// What a dry run finds kept: the library file is opened only when it exists, and read only.
+    static func earlier(_ key: String, _ kind: Region.Kind, _ number: String) throws -> Transcript? {
+        guard Library.exists() else { return nil }
+        return try Transcripts(readOnly: true).transcripts(keys: [key])[key]?
+            .first { $0.kind == kind && $0.number.lowercased() == number.lowercased() }
+    }
+
+    func remove(_ key: String, _ kind: Region.Kind, _ number: String, _ transcripts: Transcripts?) throws {
         let name = "\(kind.rawValue) \(number) on p.\(page)"
-        let removed = try transcripts.remove(pageKey: key, kind: kind, number: number)
+        let removed = try transcripts?.remove(pageKey: key, kind: kind, number: number) ?? (try Self.earlier(key, kind, number) != nil)
         if json {
             struct Body: Encodable {
                 var file: String
@@ -139,8 +174,14 @@ struct TranscribeCommand: ParsableCommand {
                 var kind: String
                 var number: String
                 var removed: Bool
+                var dryRun: Bool?
             }
-            print(Contract.json(Body(file: path, page: page, kind: kind.rawValue, number: number, removed: removed)))
+            print(Contract.json(Body(file: path, page: page, kind: kind.rawValue, number: number, removed: removed, dryRun: dryRun ? true : nil)))
+            return
+        }
+        if dryRun {
+            print(removed ? "dry run: would remove the \(Transcript.language(of: kind)) kept for \(name); nothing was removed"
+                : "dry run: \(name) has no \(Transcript.language(of: kind)) kept; nothing to remove")
             return
         }
         print(removed ? "removed the \(Transcript.language(of: kind)) kept for \(name)" : "\(name) has no \(Transcript.language(of: kind)) kept")

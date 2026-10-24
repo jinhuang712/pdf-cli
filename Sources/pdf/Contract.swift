@@ -61,6 +61,11 @@ enum Contract {
         }
     }
 
+    /// Why a dry run cannot say more: it parses nothing, and the page is not in the cache yet.
+    static func notReadYet(_ path: String, page: Int) -> String {
+        "p.\(page) is not in the cache yet, and a dry run parses nothing; run pdf read \(Output.quoted(path)) --page \(page), then again"
+    }
+
     /// One clean sentence: a Foundation error (a file or folder that cannot be opened) gives its
     /// localized text, the tool's own errors their description.
     static func reason(of error: Error) -> String {

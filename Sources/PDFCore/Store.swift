@@ -508,6 +508,11 @@ public final class Store: Sendable {
         public var files = 0
         public var documents = 0
         public var pages = 0
+        public init(files: Int = 0, documents: Int = 0, pages: Int = 0) {
+            self.files = files
+            self.documents = documents
+            self.pages = pages
+        }
     }
 
     /// Whether the cache knows a file at this path, changed since or not.
@@ -528,15 +533,30 @@ public final class Store: Sendable {
     /// still uses. Picks are the agent's work, kept apart, and stay.
     @discardableResult
     public func remove(paths: [String]) throws -> Removed {
-        try write { db in
+        try remove(paths: paths, dryRun: false)
+    }
+
+    /// With `dryRun`, the same deletes run and are rolled back, so the counts are exactly what
+    /// a real removal would give and nothing is kept.
+    @discardableResult
+    public func remove(paths: [String], dryRun: Bool) throws -> Removed {
+        try pool.writeWithoutTransaction { db in
             var removed = Removed()
-            for path in paths {
-                try db.execute(sql: "DELETE FROM file_entry WHERE path = ?", arguments: [path])
-                removed.files += db.changesCount
+            try db.inTransaction(.immediate) {
+                for path in paths {
+                    try db.execute(sql: "DELETE FROM file_entry WHERE path = ?", arguments: [path])
+                    removed.files += db.changesCount
+                }
+                try Store.dropUnused(db, into: &removed)
+                return dryRun ? .rollback : .commit
             }
-            try Store.dropUnused(db, into: &removed)
             return removed
         }
+    }
+
+    /// Whether the cache's database exists yet: a dry run opens it only then.
+    public static func exists(directory: URL = Env.cacheDirectory) -> Bool {
+        FileManager.default.fileExists(atPath: directory.appendingPathComponent("cache.sqlite").path)
     }
 
     /// Removes what no read can reach any more: files gone or changed since they were indexed,

@@ -43,6 +43,28 @@ public final class Reader: Sendable {
         self.library = library
     }
 
+    /// What the cache already holds for these pages, counted from 0, and nothing else: no parse,
+    /// no runner, no library entry, no write. Nil when the file or a page is not cached yet.
+    /// A dry run reads this way (ROADMAP.md → M2.18).
+    public func peek(path rawPath: String, pages wanted: [Int]) throws -> ReadOutcome? {
+        let path = Reader.resolve(rawPath)
+        guard let stat = FileStat(path: path) else { throw ReadError.notFound(rawPath) }
+        switch try store.entry(path: path, stat: stat) {
+        case .failed(let reason)?:
+            return .fileFailed(reason: reason)
+        case .document(let id)?:
+            let keys = try store.pageKeys(docID: id)
+            if let bad = wanted.first(where: { !keys.indices.contains($0) }) {
+                throw ReadError.pageOutOfRange(page: bad, pageCount: keys.count)
+            }
+            let results = try store.results(keys: wanted.map { keys[$0] })
+            guard wanted.allSatisfy({ results[keys[$0]] != nil }) else { return nil }
+            return .pages(docID: id, pageCount: keys.count, results: wanted.map { ($0, results[keys[$0]]!) })
+        case nil:
+            return nil
+        }
+    }
+
     /// The path the cache knows a file by: absolute, with symbolic links resolved.
     public static func resolve(_ path: String) -> String {
         URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path

@@ -16,7 +16,7 @@ public enum AgentGuide {
 
         ## Start here
 
-        1. `pdf info paper.pdf`: the title, authors, sections with their pages and sizes in tokens, flagged pages, figures, tables and references, comments, attachments and scripts, cheaply.
+        1. `pdf info paper.pdf`: the title, authors, sections with their pages and sizes in tokens, flagged pages, figures, tables and references, comments, attachments and scripts.
         2. `pdf read paper.pdf --section Method` or `pdf read paper.pdf --page 4-6`: the part you need.
         3. `pdf search paper.pdf dropout ablation`: the paragraphs that hold the words, best first. Without a PDF, `pdf search dropout ablation` searches every PDF read before.
         4. `pdf crop paper.pdf --page 4 --bbox 0.1,0.4,0.8,0.3`: an image of a region, for charts, tables, formulas and anything flagged. Read the printed path as an image.
@@ -25,7 +25,7 @@ public enum AgentGuide {
 
         | Command | What it does |
         |---|---|
-        | `pdf info <pdf>` | A first look. `--json` lists every section, at every level. |
+        | `pdf info <pdf>` | A first look. `--json` lists every section. |
         | `pdf read <pdf>` | Text from page 1, or from `--page 3-5,8`, `--section 2.1`, `--section Method`, `--printed-page iv` or `--from p4.7`. Also `--budget N` or `--budget all`, `--show raw,hidden,headers`, `--notes inline` or `--notes off`, `--refs end`, `--format text`. |
         | `pdf note <pdf> 7`, `pdf ref <pdf> 12` | One footnote (`3.7` where numbering restarts), or one reference (`Smith2020`), whole, with the places that cite it and a DOI. |
         | `pdf search [<pdf>] <words>` | The paragraphs that hold every word, best first; else those that hold some, as it says. `--regex <pattern>` matches across lines, columns and pages. `--top N`, `--from N`, `--budget N`. |
@@ -33,7 +33,7 @@ public enum AgentGuide {
         | `pdf dump <pdf> --markdown` | Writes files, prints their paths: `--markdown`, `--text`, `--figures`, `--tables`, `--notes`, `--refs`, `--attachments`, `--scripts` (never opened or run), `-o <folder>`. |
         | `pdf pick <pdf> p2.5 a` | Keeps reading `a` or `b` of an unsure block's words. |
         | `pdf transcribe <pdf> --page N --equation 5` | Keeps an equation's LaTeX or a table's Markdown, from standard input; `--clear` removes it. |
-        | `pdf add <pdfs or folders>` | Parses PDFs ahead of time, `-j N` at once. Any command adds a new PDF anyway. |
+        | `pdf add <pdfs or folders>` | Parses PDFs ahead, `-j N` at once. |
         | `pdf ls`, `pdf rm <pdf or ID>`, `pdf gc` | Lists the PDFs read; forgets one; cleans the cache. |
         | `pdf agent-guide` | Prints this guide. `--install claude-code` installs it as a Claude Code skill. |
 
@@ -42,11 +42,11 @@ public enum AgentGuide {
         ## Reading the output
 
         - `## p.4` starts a page and `¶7` its seventh block, most often a paragraph. Cite "p.4 ¶7"; `pdf read paper.pdf --from p4.7` reads on from there. Pages count from the file's first page; `## p.12 (printed 237)` gives the number printed on it. `--json` gives each block's position, in the fractions `pdf crop` takes with `--bbox`.
-        - The first line sums up the read: pages read and flagged, what was set aside or hidden with the flag that shows it, `provisional` while the file parses.
+        - The first line sums up the read: pages read and flagged, what was set aside or hidden with its flag, `provisional` while the file parses.
         - Columns read one after the other. Running headers, footers and page numbers are left out and counted in the first line; `--show headers` shows them, as `[header] …`.
         - Output stops at about 5,000 tokens with a `next:` line: run that command as given.
         - `^{...}` and `_{...}` mark raised and lowered characters, as in `10^{-5}` and `x_{2}`.
-        - Every command takes `--json`. Exit 0 done; 2 pages flagged, rest valid (`read`, `add`, `dump` only; `info`, `search`, `crop` end 0 and name them); 3 the file failed, or `read` found no text; 1 could not run, as on a missing file; 64 used wrongly. A failure reads `<path>: failed: <reason>`, in `--json` `{"file": …, "failed": …}`.
+        - `pick`, `transcribe` and `rm` take `--dry-run`: say what they would do, change nothing. Every command takes `--json`. Exit 0 done; 2 pages flagged, rest valid (`read`, `add`, `dump` only; `info`, `search`, `crop` end 0 and name them); 3 the file failed, or `read` found no text; 1 could not run, as on a missing file; 64 used wrongly. A failure reads `<path>: failed: <reason>`, in `--json` `{"file": …, "failed": …}`.
 
         ## Beside the text
 

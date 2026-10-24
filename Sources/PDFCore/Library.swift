@@ -33,12 +33,16 @@ public struct LibraryEntry: Equatable, Sendable {
 public final class Library: Sendable {
     let queue: DatabaseQueue
 
-    public init(directory: URL = Env.supportDirectory) throws {
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    /// With `readOnly`, the folder and the table are left as they are, which a dry run needs
+    /// (ROADMAP.md → M2.18); the file must exist, see `exists`.
+    public init(directory: URL = Env.supportDirectory, readOnly: Bool = false) throws {
+        if !readOnly { try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true) }
         var configuration = Configuration()
         configuration.busyMode = .timeout(10)
+        configuration.readonly = readOnly
         queue = try DatabaseQueue(path: directory.appendingPathComponent("library.sqlite").path,
                                   configuration: configuration)
+        if readOnly { return }
         try queue.write { db in
             try db.execute(sql: """
                 CREATE TABLE IF NOT EXISTS library_entry (
@@ -68,10 +72,16 @@ public final class Library: Sendable {
         }
     }
 
+    /// Whether the agent's folder holds its database yet: a dry run opens it only then.
+    public static func exists(directory: URL = Env.supportDirectory) -> Bool {
+        FileManager.default.fileExists(atPath: directory.appendingPathComponent("library.sqlite").path)
+    }
+
     /// Every entry, by path.
     public func entries() throws -> [LibraryEntry] {
         try queue.read { db in
-            try Row.fetchAll(db, sql: "SELECT * FROM library_entry ORDER BY path").map { row in
+            guard try db.tableExists("library_entry") else { return [] }
+            return try Row.fetchAll(db, sql: "SELECT * FROM library_entry ORDER BY path").map { row in
                 LibraryEntry(path: row["path"], docID: row["doc_id"], title: row["title"], pageCount: row["page_count"],
                              addedAt: Date(timeIntervalSince1970: row["added_at"]))
             }

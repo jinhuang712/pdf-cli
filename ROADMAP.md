@@ -88,7 +88,7 @@ The spike shipped no features. It answered the riskiest questions.
   - [x] M2.15 One output contract: `--json` on every command, including `add`, `ls`, `rm`, `gc`, `pick`, `transcribe` and `agent-guide --install`, and the exit-code table of F8 and one shape of failure line for all of them. The guide's lines about exit codes shrink to one.
   - [x] M2.16 `pdf note <pdf> 7` and `pdf ref <pdf> 12` take over `pdf read --footnote` and `--ref`, which go. They must also handle a look-up that matches nothing properly: today `read --section`, `--printed-page`, `--footnote` and `--ref` that match nothing end 64 with nothing on standard output under `--json` (M2.15's review, M4); give it the failure shape and exit 1.
   - [x] M2.17 `--show raw,hidden,headers` takes over `--raw`, `--include-hidden` and `--headers`, which go (hidden stubs end 64 with a pointer); the summary line and the failure blocks name the new flag.
-  - [ ] M2.18 `--dry-run` on `pdf pick`, `pdf transcribe` and `pdf rm`: says what would be kept or removed and changes nothing.
+  - [x] M2.18 `--dry-run` on `pdf pick`, `pdf transcribe` and `pdf rm`: says what would be kept or removed and changes nothing.
 - **Reparse** (F10)
   - [ ] M2.10 `pdf reparse`, plain and with `--step ocr`
 - **Setup and doctor** (F12)
