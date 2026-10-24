@@ -479,7 +479,7 @@ referenced:
   p.2 ¶5: …trained on public data[^3], and the rest of the paper…
 ```
 
-`pdf info` counts them: `notes read apart from the text: 12 footnotes, 3 margin notes (pdf read: --notes end|inline|off; pdf note ID)`, and lists the author notes as `author notes: [^*] Equal contribution.`. `--json` gives a note as a block of kind `note` with its `id`, its `status` (`footnote`, `endnote` or `author note`) and, for one listed after the text, its `place`.
+`pdf info` counts them: `notes read apart from the text: 12 footnotes, 3 margin notes (pdf read --notes end|inline|off; pdf note <pdf> ID)`, and lists the author notes as `author notes: [^*] Equal contribution.`. `--json` gives a note as a block of kind `note` with its `id`, its `status` (`footnote`, `endnote` or `author note`) and, for one listed after the text, its `place`.
 
 Settings: none.
 
@@ -524,7 +524,7 @@ cited:
   p.6 ¶7: … public medical VQA benchmarks: SLAKE [27], VQA-RAD [23], and PathVQA [15]. Following the evaluation protocol…
 ```
 
-`pdf info` counts them: `references: 46 entries, the list on p.9 (pdf ref ID; pdf read: --refs end)`. `--json` gives an entry that `--refs end` lists as a block of kind `reference` with its `id` and `place`, and `pdf ref` as the entry, its DOI and the places that cite it; `pdf crop --json` gives `mentionedOn`.
+`pdf info` counts them: `references: 46 entries, the list on p.9 (pdf ref <pdf> ID; pdf read --refs end)`. `--json` gives an entry that `--refs end` lists as a block of kind `reference` with its `id` and `place`, and `pdf ref` as the entry, its DOI and the places that cite it; `pdf crop --json` gives `mentionedOn`.
 
 Settings: none.
 

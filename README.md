@@ -23,7 +23,7 @@ Not available yet. The spike is done, and the first usable version is milestone 
 
 ## Use
 
-The first four work today, built from source, and so does cropping a page or a region of it with `pdf crop paper.pdf --page 7 --bbox 0.1,0.4,0.8,0.3`. So does reading footnotes and endnotes, with `pdf note paper.pdf 7`; references are planned (ROADMAP.md, M2.8). `pdf agent-guide --install claude-code` teaches Claude Code the tool, as a skill.
+The first four work today, built from source, and so does cropping a page or a region of it with `pdf crop paper.pdf --page 7 --bbox 0.1,0.4,0.8,0.3`. So does reading footnotes and endnotes, with `pdf note paper.pdf 7`, and the references a paper cites, with `pdf ref paper.pdf 12`. `pdf agent-guide --install claude-code` teaches Claude Code the tool, as a skill.
 
 | When the agent wants to | It runs |
 |---|---|

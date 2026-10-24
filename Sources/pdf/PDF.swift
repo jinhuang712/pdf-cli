@@ -10,7 +10,8 @@ struct PDF: AsyncParsableCommand {
               pdf info <pdf>                 look first: title, size, sections
               pdf read <pdf>                 then read it, or a part of it
               pdf search [<pdf>] <words>     find the pages with some words
-              pdf note <pdf> 7, pdf ref <pdf> 12  look up one footnote, or one cited reference
+              pdf note <pdf> 7               look up one footnote or endnote
+              pdf ref <pdf> 12               look up one cited reference
               pdf crop <pdf> --figure 4      see a figure, table or equation
               pdf dump <pdf> --markdown --figures  write them to files
               pdf pick, pdf transcribe       keep what you read

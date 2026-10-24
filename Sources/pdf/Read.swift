@@ -65,8 +65,13 @@ struct ReadCommand: ParsableCommand {
             valueName: "end|off"))
     var refs: RefsOption = .off
     @Flag(help: "Print JSON.") var json = false
+    // The removed flags stay only to point to their commands (M2.16): hidden, they run nothing.
+    @Option(help: .private) var footnote: String?
+    @Option(help: .private) var ref: String?
 
     func validate() throws {
+        if footnote != nil { throw ValidationError("`--footnote` is now its own command: pdf note <pdf> 7") }
+        if ref != nil { throw ValidationError("`--ref` is now its own command: pdf ref <pdf> 12") }
         guard Self.tokens(budget) != nil else { throw ValidationError("--budget takes a number of tokens, or all") }
         if let from, Self.place(from) == nil {
             throw ValidationError("--from takes an address such as p4, p4.7 or p4.7:120")
@@ -122,7 +127,7 @@ struct ReadCommand: ParsableCommand {
         }
         if let start {
             guard let position = numbers.firstIndex(of: start.page) else {
-                throw ValidationError("--from p\(start.page) is not among the pages to read")
+                throw Contract.fail(path, "--from p\(start.page) is not among the pages to read", json: json)
             }
             numbers.removeFirst(position)
         }
@@ -212,7 +217,12 @@ struct ReadCommand: ParsableCommand {
             return index + 1
         }
         if labels == nil, let number = Int(label), (1...pageCount).contains(number) { return number }
-        throw Contract.fail(path, "no page is printed \(label)" + (labels == nil ? "; the file has no page labels" : ""), json: json)
+        var known = ""
+        if let labels {
+            let shown = labels.prefix(12).joined(separator: ", ")
+            known = "; the pages are printed " + shown + (labels.count > 12 ? ", and \(labels.count - 12) more, up to \(labels[labels.count - 1])" : "")
+        }
+        throw Contract.fail(path, "no page is printed \(label)" + (labels == nil ? "; the file has no page labels" : known), json: json)
     }
 
     /// The section a `--section` value names, and where the next section at its level or above

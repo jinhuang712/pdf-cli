@@ -143,9 +143,23 @@ import Testing
         // An empty id is a wrong use: 64.
         #expect(try Self.pdf(["note", file, ""], home: home).status == 64)
         #expect(try Self.pdf(["ref", file, " "], home: home).status == 64)
-        // The old flags are gone.
+        // The old flags are gone; hidden, they point to the new commands and run nothing.
         #expect(try Self.pdf(["read", file, "--footnote", "1"], home: home).status == 64)
         #expect(try Self.pdf(["read", file, "--ref", "1"], home: home).status == 64)
+    }
+
+    /// A found note and a found entry, in JSON, on two smoke files (M2.16's review, L6).
+    @Test func aFoundNoteAndEntryHaveTheirKeysInJSON() throws {
+        let home = try Self.freshHome()
+        let smoke = Self.root.appendingPathComponent("testdata/smoke")
+        let note = try Self.pdf(["note", smoke.appendingPathComponent("arxiv-2608.04589.pdf").path, "3", "--json"], home: home)
+        #expect(note.status == 0, "\(note.output.prefix(200))")
+        #expect(Set(note.json.map { Array($0.keys) } ?? []).isSuperset(of: Set(["id", "kind", "page", "text", "references"])), "\(note.output.prefix(200))")
+        #expect(note.json?["id"] as? String == "3")
+        let entry = try Self.pdf(["ref", smoke.appendingPathComponent("arxiv-2608.26848.pdf").path, "15", "--json"], home: home)
+        #expect(entry.status == 0, "\(entry.output.prefix(200))")
+        #expect(Set(entry.json.map { Array($0.keys) } ?? []).isSuperset(of: Set(["id", "page", "text", "citations"])), "\(entry.output.prefix(200))")
+        #expect(entry.json?["id"] as? String == "15")
     }
 
     @Test func aFailingInnerReadKeepsItsExitCodeAndReason() throws {

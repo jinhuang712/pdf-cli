@@ -21,12 +21,12 @@ struct NoteCommand: ParsableCommand {
     )
 
     @Argument(help: "Path to a PDF file.") var path: String
-    @Argument(help: ArgumentHelp("The note's id, such as 7, 3.7 or *.", valueName: "id")) var id: String
+    @Argument(help: ArgumentHelp("The note's id, such as 7, 3.7 or '*'.", valueName: "id")) var id: String
     @Flag(help: "Print JSON.") var json = false
 
     func validate() throws {
         if id.trimmingCharacters(in: .whitespaces).isEmpty {
-            throw ValidationError("note takes a note's id, such as 7, 3.7 or *")
+            throw ValidationError("note takes a note's id, such as 7, 3.7 or '*'")
         }
     }
 

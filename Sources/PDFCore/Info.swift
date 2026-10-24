@@ -492,7 +492,7 @@ public struct Info: Encodable, Sendable {
         if !found.isEmpty {
             lines.append(
                 "notes read apart from the text: " + found.joined(separator: ", ")
-                    + " (pdf read: `--notes end|inline|off`; pdf note ID)")
+                    + " (pdf read --notes end|inline|off; pdf note <pdf> ID)")
         }
         if !referenceLists.isEmpty {
             let entries = referenceLists.reduce(0) { $0 + $1.entries }
@@ -501,7 +501,7 @@ public struct Info: Encodable, Sendable {
                 ? "the list on p.\(referenceLists[0].page)"
                 : "\(referenceLists.count) lists, on " + referenceLists.prefix(6).map { "p.\($0.page)" }.joined(separator: ", ")
                     + (referenceLists.count > 6 ? ", and \(referenceLists.count - 6) more" : "")
-            lines.append("references: \(entries) entr\(entries == 1 ? "y" : "ies"), \(lists) (pdf ref ID; pdf read: `--refs end`)")
+            lines.append("references: \(entries) entr\(entries == 1 ? "y" : "ies"), \(lists) (pdf ref <pdf> ID; pdf read --refs end)")
         }
         if !runningHeaders.isEmpty {
             let shown = runningHeaders.prefix(6).map { header -> String in

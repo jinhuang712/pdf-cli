@@ -411,7 +411,7 @@ public enum Output {
             for position in noteOrder {
                 var note = noteBlocks[position]!
                 if tokens(note.text ?? "") > Output.noteTokens {
-                    note.text = prefix(note.text ?? "", tokens: Output.noteTokens) + "… (whole: pdf note \(path) \(note.id ?? ""))"
+                    note.text = prefix(note.text ?? "", tokens: Output.noteTokens) + "… (whole: pdf note \(path) \(quoted(note.id ?? "")))"
                     noteBlocks[position] = note
                 }
                 let cost = tokens(render(note, style: .md, raw: false))
@@ -645,7 +645,7 @@ public enum Output {
                 ? nil
                 : Block(
                     kind: .annotation, page: number,
-                    text: "\(leftOut) more note\(leftOut == 1 ? "" : "s") on this page, not shown: pdf note \(path) \(firstLeftOut ?? "")",
+                    text: "\(leftOut) more note\(leftOut == 1 ? "" : "s") on this page, not shown: pdf note \(path) \(quoted(firstLeftOut ?? ""))",
                     status: "more")
             if notesMode == .inline, let more { inlineLeft.append(more) }
             if !inlineLeft.isEmpty {
