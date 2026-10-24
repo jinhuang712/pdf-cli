@@ -16,14 +16,8 @@ struct TranscribeCommand: ParsableCommand {
             4,000 characters for an equation, 12,000 for a table.
 
             Examples:
-              pdf transcribe paper.pdf --page 4 --equation 5 <<'EOF'
-              \\frac{a}{b} = c
-              EOF
-              pdf transcribe paper.pdf --page 6 --table 2 <<'EOF'
-              | model | score |
-              |---|---|
-              | A | 0.91 |
-              EOF
+              printf '%s\\n' '\\frac{a}{b}' | pdf transcribe paper.pdf --page 4 --equation 5
+              pdf transcribe paper.pdf --page 6 --table 2 < table.md
               pdf transcribe paper.pdf --page 4 --equation 5 --clear
             """
     )

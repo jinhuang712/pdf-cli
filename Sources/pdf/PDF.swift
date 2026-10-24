@@ -11,12 +11,12 @@ struct PDF: AsyncParsableCommand {
               pdf read <pdf>                 then read it, or a part of it
               pdf search [<pdf>] <words>     find the pages with some words
               pdf crop <pdf> --figure 4      see a figure, table or equation
-              pdf dump <pdf> --markdown      write text and figures to files
+              pdf dump <pdf> --markdown --figures  write them to files
               pdf pick, pdf transcribe       keep what you read
               pdf add, ls, rm, gc            the library: add, list, remove, clean
               pdf agent-guide                the guide that teaches an agent
 
-            Example:
+            Examples:
               pdf info paper.pdf
               pdf read paper.pdf --section Method
               pdf crop paper.pdf --table 2

@@ -150,6 +150,40 @@ import Testing
         }
     }
 
+    /// Every command's help and the top-level help, against the CLI: a flag a help text names is
+    /// a flag of that command, and each example in an "Examples:" block parses, so that a rename
+    /// cannot leave a stale help text behind.
+    @Test func theHelpTextsNameOnlyFlagsAndCommandsThatParse() {
+        let allFlags = Self.shown.values.reduce(into: Set<String>()) { $0.formUnion(Self.flags(of: $1)) }
+        var texts: [(String, String, Set<String>)] = [("pdf", PDF.helpMessage(for: PDF.self), allFlags)]
+        for (name, command) in Self.shown.sorted(by: { $0.key < $1.key }) {
+            texts.append((name, PDF.helpMessage(for: command), Self.flags(of: command)))
+        }
+        var examples = 0
+        for (name, help, own) in texts {
+            for match in Self.matches(#"(?<![\w-])--?[A-Za-z][\w-]*"#, in: help) {
+                let flag = Self.group(match, 0, in: help)!
+                guard flag.hasPrefix("--") else { continue }
+                #expect(own.contains(flag) || Self.everywhere.contains(flag), "pdf \(name) --help names \(flag), which is not its flag")
+            }
+            var inExamples = false
+            for line in help.split(separator: "\n", omittingEmptySubsequences: false).map(String.init) {
+                if line.hasPrefix("Examples:") { inExamples = true; continue }
+                if line.isEmpty || !line.hasPrefix(" ") { inExamples = false; continue }
+                guard inExamples else { continue }
+                var written = line.trimmingCharacters(in: .whitespaces)
+                if let pipe = written.range(of: "| pdf ") { written = String(written[written.index(after: pipe.lowerBound)...]).trimmingCharacters(in: .whitespaces) }
+                guard written.hasPrefix("pdf ") else { continue }
+                examples += 1
+                if let input = written.range(of: " < ") { written = String(written[..<input.lowerBound]) }
+                if let refused = Self.refusal(Self.arguments(written)) {
+                    Issue.record("pdf \(name) --help: the CLI refuses `\(written)`: \(refused)")
+                }
+            }
+        }
+        #expect(examples >= 25)
+    }
+
     /// The test itself: near misses and wrong uses a guide could hold must each be caught.
     @Test func theChecksCatchWhatTheyAreFor() {
         #expect(Self.refusal(["pick", "paper.pdf", "p2.5", "c"]) != nil)

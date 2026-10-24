@@ -9,13 +9,14 @@ struct DumpCommand: ParsableCommand {
         commandName: "dump",
         abstract: "Write a PDF's text, figures, tables, notes, references, attachments and scripts to files, and print their paths.",
         discussion: """
-            Give at least one of the flags below. -o names the folder; by default it is a folder named after \
+            Give at least one of the flags under "What to write". -o names the folder; by default it is a folder named after \
             the PDF, in the current folder. A file already there is never overwritten: run again with another -o. \
             Attachments are saved as they are, with no execute permission, and scripts as text; neither is \
             ever opened or run.
 
-            What to write: --markdown, --text, --figures, --tables, --notes, --refs, --attachments, --scripts.
-            Where and which pages: -o, --page.
+            What to write, at least one of: --markdown, --text, --figures, --tables, --notes, --refs, \
+            --attachments, --scripts.
+            Where: -o. Only some pages, for --markdown and --text alone: --page.
             Locked PDFs and output: --password-stdin, --json.
 
             Examples:

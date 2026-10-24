@@ -16,7 +16,7 @@ struct SearchCommand: ParsableCommand {
             Examples:
               pdf search paper.pdf dropout ablation
               pdf search dropout
-              pdf search paper.pdf --regex 'Table [0-9]+' --top 5
+              pdf search paper.pdf --regex 'Table.[0-9]+' --top 5
             """
     )
 

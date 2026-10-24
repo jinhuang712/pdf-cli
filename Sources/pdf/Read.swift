@@ -20,7 +20,7 @@ struct ReadCommand: ParsableCommand {
             Examples:
               pdf read paper.pdf --section Method
               pdf read paper.pdf --page 3-5 --notes inline
-              pdf read paper.pdf --full --budget all --format text
+              pdf read paper.pdf --budget all --format text
             """
     )
 
