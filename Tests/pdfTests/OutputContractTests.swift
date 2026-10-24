@@ -167,16 +167,22 @@ import Testing
         #expect(ReadCommand.shown(["raw,"]) == nil && ReadCommand.shown(["all"]) == nil && ReadCommand.shown(["Raw"]) == nil)
         let home = try Self.freshHome()
         let file = Self.fixture
-        let unknown = try Self.pdf(["read", file, "--show", "raw,all"], home: home)
-        #expect(unknown.status == 64 && unknown.errors.contains("raw, hidden or headers"), "\(unknown.errors.prefix(200))")
+        let unknown = try Self.pdf(["read", file, "--show", "Hidden"], home: home)
+        #expect(unknown.status == 64 && unknown.errors.contains("--show: 'Hidden' is not raw, hidden or headers"), "\(unknown.errors.prefix(200))")
         for (old, new) in [("--raw", "--show raw"), ("--include-hidden", "--show hidden"), ("--headers", "--show headers")] {
             let run = try Self.pdf(["read", file, old], home: home)
             #expect(run.status == 64 && run.errors.contains("`\(old)` is now `\(new)`"), "\(old): \(run.errors.prefix(200))")
         }
-        // A repeated and a listed --show read the same.
-        let listed = try Self.pdf(["read", file, "--page", "1", "--show", "raw,hidden"], home: home)
-        let repeated = try Self.pdf(["read", file, "--page", "1", "--show", "hidden", "--show", "raw"], home: home)
-        #expect(listed.status == 0 && listed.output == repeated.output, "\(listed.output.prefix(200))")
+        // Only hidden shows hidden words, however --show is spelled (hidden-color.pdf has one hidden run).
+        let hidden = Self.root.appendingPathComponent("testdata/safety/hidden-color.pdf").path
+        for (shows, expected) in [
+            (["hidden"], true), (["raw", "--show", "hidden"], true), (["hidden,raw"], true),
+            (["raw,headers"], false), ([], false),
+        ] {
+            let arguments = ["read", hidden, "--budget", "all"] + (shows.isEmpty ? [] : ["--show"] + shows)
+            let run = try Self.pdf(arguments, home: home)
+            #expect(run.status == 0 && run.output.contains("[hidden, ") == expected, "\(shows): \(run.output.prefix(300))")
+        }
     }
 
     /// A found note and a found entry, in JSON, on two smoke files (M2.16's review, L6).

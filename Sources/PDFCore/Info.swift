@@ -514,7 +514,7 @@ public struct Info: Encodable, Sendable {
             }
             lines.append(
                 "running headers and footers, set aside by pdf read: " + shown.joined(separator: ", ")
-                    + (runningHeaders.count > 6 ? ", and \(runningHeaders.count - 6) more" : ""))
+                    + (runningHeaders.count > 6 ? ", and \(runningHeaders.count - 6) more" : "") + " (pdf read --show headers)")
         }
 
         var counts: [String] = []

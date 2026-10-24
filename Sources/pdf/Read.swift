@@ -54,7 +54,7 @@ struct ReadCommand: ParsableCommand {
     @Option(
         name: .customLong("show"),
         help: ArgumentHelp(
-            "Show what is set aside, in place and labelled: raw (text set aside as doubtful), hidden (the words of text a reader cannot see) and headers (running headers, footers, page numbers, publisher stamps). A comma list, such as raw,hidden; the flag can repeat.",
+            "Show what is set aside, in place and labelled: raw (text set aside: doubtful, inside figures and tables, old OCR), hidden (the words of text a reader cannot see) and headers (running headers, footers, page numbers, publisher stamps). A comma list, such as raw,hidden; the flag can repeat.",
             valueName: "raw|hidden|headers"))
     var shows: [String] = []
     @Option(
@@ -90,6 +90,11 @@ struct ReadCommand: ParsableCommand {
         }
         return found
     }
+    /// The first value of a `--show` that is none of the three.
+    static func badShown(_ specs: [String]) -> String? {
+        specs.flatMap { $0.split(separator: ",", omittingEmptySubsequences: false) }
+            .map { $0.trimmingCharacters(in: .whitespaces) }.first { !shownValues.contains($0) }
+    }
     var raw: Bool { Self.shown(shows)?.contains("raw") ?? false }
     var includeHidden: Bool { Self.shown(shows)?.contains("hidden") ?? false }
     var headers: Bool { Self.shown(shows)?.contains("headers") ?? false }
@@ -100,8 +105,8 @@ struct ReadCommand: ParsableCommand {
         if removedRaw { throw ValidationError("`--raw` is now `--show raw`") }
         if removedIncludeHidden { throw ValidationError("`--include-hidden` is now `--show hidden`") }
         if removedHeaders { throw ValidationError("`--headers` is now `--show headers`") }
-        guard Self.shown(shows) != nil else {
-            throw ValidationError("--show takes raw, hidden or headers, or a comma list such as raw,hidden")
+        if let bad = Self.badShown(shows) {
+            throw ValidationError("--show: '\(bad)' is not raw, hidden or headers")
         }
         guard Self.tokens(budget) != nil else { throw ValidationError("--budget takes a number of tokens, or all") }
         if let from, Self.place(from) == nil {

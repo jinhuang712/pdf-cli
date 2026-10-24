@@ -37,3 +37,4 @@ The spike's reports (M0) are in [spike/](../spike/README.md).
 | M2.14 `--help` that teaches | 2026-10-25 | 0 high; 9 fixed, 1 kept, 2 to M2.15 | [M2.14](M2.14-help.md) |
 | M2.15 One output contract | 2026-10-25 | 1 high, 6 medium, 7 low; 8 fixed, 6 kept | [M2.15](M2.15-contract.md) |
 | M2.16 `pdf note` and `pdf ref` | 2026-10-25 | 0 high, 1 medium, 6 low; 7 fixed | [M2.16](M2.16-note-ref.md) |
+| M2.17 `--show raw,hidden,headers` | 2026-10-25 | 0 high, 0 medium; 6 fixed, 3 kept | [M2.17](M2.17-show.md) |

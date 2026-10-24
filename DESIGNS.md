@@ -669,7 +669,7 @@ Cost: the tool has no outside users yet (version 0.0.0), so no exit code needs t
 `pdf read` has 15 options in five jobs: choose the range, choose the format, choose what to show, look up one thing, and set the cost. The review of 2026-10-25 moves two of them out and joins three:
 
 - `pdf note <pdf> 7` and `pdf ref <pdf> 12` replace `pdf read --footnote 7` and `--ref 12`. They look one thing up, are not paged and not held to the budget, and take `--json`. `read` keeps `--notes` and `--refs`, which choose where the notes and references the text cites show.
-- `--show raw,hidden,headers` replaces `--raw`, `--include-hidden` and `--headers`: one option for "show what normal output set aside", in the order the summary line names it. The summary line and the failure blocks name `--show raw` where they named `--raw`. Built in M2.17: `--show` takes a comma list or repeats, another value ends 64 and lists the three, and the three old flags stay as hidden stubs that end 64 with a pointer (`--raw` is now `--show raw`) and run nothing; they are no aliases.
+- `--show raw,hidden,headers` replaces `--raw`, `--include-hidden` and `--headers`: one option for "show what normal output set aside", in the order the `next:` lines print it. The summary line and the failure blocks name `--show raw` where they named `--raw`. Built in M2.17: `--show` takes a comma list or repeats, another value ends 64 and lists the three, and the three old flags stay as hidden stubs that end 64 with a pointer (`--raw` is now `--show raw`) and run nothing; they are no aliases.
 - `pdf doctor` (F12) takes over `pdf gc`. Cleaning the cache is a maintenance job beside showing its size, and it gets `--dry-run`.
 
 | Option | For | Against |
