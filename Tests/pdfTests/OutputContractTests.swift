@@ -66,7 +66,7 @@ import Testing
         ("info", ["$"], ""), ("read", ["$"], ""), ("search", ["$", "word"], ""), ("crop", ["$", "--page", "1"], ""),
         ("dump", ["$", "--text"], ""), ("pick", ["$", "p1.1", "a"], ""),
         ("transcribe", ["$", "--page", "1", "--equation", "1"], "x\n"), ("add", ["$"], ""),
-        ("note", ["$", "1"], ""), ("ref", ["$", "1"], ""),
+        ("note", ["$", "1"], ""), ("ref", ["$", "1"], ""), ("reparse", ["$"], ""),
     ]
 
     @Test func everyCommandPrintsJSONUnderDashDashJSON() throws {
@@ -76,7 +76,8 @@ import Testing
         let file = Self.fixture
         // Each command with the exit codes it may end with on this file, and a key its object holds.
         let commands: [(arguments: [String], codes: Set<Int32>, key: String)] = [
-            (["add", file], [0, 2], "files"), (["ls"], [0], "documents"), (["info", file], [0, 2], "pageCount"),
+            (["add", file], [0, 2], "files"), (["reparse", file], [0, 2], "reparsed"), (["ls"], [0], "documents"),
+            (["info", file], [0, 2], "pageCount"),
             (["read", file], [0, 2], "blocks"), (["search", file, "words"], [0], "hits"), (["search", "words"], [0], "hits"),
             (["crop", file, "--page", "1"], [0], "image"), (["dump", file, "--markdown", "-o", folder], [0, 2], "written"),
             // These two fail on this file (it has no unsure words and no equation): the failure is the JSON.

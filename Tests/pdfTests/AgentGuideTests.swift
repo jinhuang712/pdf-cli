@@ -15,7 +15,10 @@ import Testing
     /// Flags a command has that the guide leaves out, on purpose: `--full` reads as a read with
     /// no page flag does, `--password` shows the password to every user of the Mac, and `dump`'s
     /// `--page` and `--password-stdin` work as they do for the other commands.
-    static let leftOut: [String: Set<String>] = ["read": ["--full"], "add": ["--password"], "dump": ["--page", "--password-stdin"]]
+    static let leftOut: [String: Set<String>] = [
+        "read": ["--full"], "add": ["--password"], "dump": ["--page", "--password-stdin"],
+        "reparse": ["--password", "--password-stdin"],
+    ]
     /// `--json` is on every command (FEATURES.md → F7), and the guide says so once, in its line
     /// about exit codes, instead of beside each command; `OutputContractTests` holds each command to it.
     /// `--dry-run` is on `pick`, `transcribe` and `rm` alike, and the guide names it once, with them.

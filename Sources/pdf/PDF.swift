@@ -15,6 +15,7 @@ struct PDF: AsyncParsableCommand {
               pdf crop <pdf> --figure 4      see a figure, table or equation
               pdf dump <pdf> --markdown --figures  write them to files
               pdf pick, pdf transcribe       keep what you read
+              pdf reparse <pdf> --page 7     read pages again, or with --step ocr by OCR
               pdf add, ls, rm, gc            the library: add, list, remove, clean
               pdf agent-guide                the guide that teaches an agent
 
@@ -23,7 +24,7 @@ struct PDF: AsyncParsableCommand {
               pdf read paper.pdf --section Method
               pdf crop paper.pdf --table 2
 
-            Every command takes --json. It ends 0 ok; 2 pages flagged, from read, add and dump only (info, \
+            Every command takes --json. It ends 0 ok; 2 pages flagged, from read, add, reparse and dump only (info, \
             search and crop end 0 and name the flagged pages); 3 the file failed, or read found no page \
             with text; 1 it could not run (a missing file); 64 used wrongly. A failure reads \
             <path>: failed: <reason>.

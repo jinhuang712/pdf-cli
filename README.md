@@ -32,10 +32,11 @@ The first four work today, built from source, and so does cropping a page or a r
 | Find a passage across every PDF | `pdf search "dropout ablation"` |
 | Look at a chart | `pdf crop paper.pdf --figure 4` |
 | Read a footnote, or a cited reference | `pdf note paper.pdf 7` or `pdf ref paper.pdf 12` |
+| Read a page again, as a scan with OCR | `pdf reparse scan.pdf --page 3 --step ocr` |
 
 ## Known limits
 
-- Only `pdf add`, `pdf info`, `pdf read`, `pdf search`, `pdf crop`, `pdf pick`, `pdf transcribe`, `pdf ls`, `pdf rm`, `pdf gc` and `pdf agent-guide` are built so far, from source, and every target in [GOALS.md](GOALS.md) is still unmeasured.
+- Only `pdf add`, `pdf info`, `pdf read`, `pdf search`, `pdf crop`, `pdf pick`, `pdf transcribe`, `pdf reparse`, `pdf ls`, `pdf rm`, `pdf gc` and `pdf agent-guide` are built so far, from source, and every target in [GOALS.md](GOALS.md) is still unmeasured.
 - It supports macOS 11 and newer, and no other platform.
 - The document structure of scanned pages needs macOS 26.
 - Scanned pages in Japanese or Korean need macOS 13.

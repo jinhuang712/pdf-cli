@@ -799,3 +799,16 @@ Options it beat:
 - **Parse during the dry run.** It writes results, the index and a library entry, starts runners and can take minutes: not a dry run.
 - **Parse in memory, write nothing.** It costs a full parse and adds a second code path that can drift from the real one.
 - **Answer "unknown" with exit 0.** An agent cannot tell a yes from a can't-say.
+
+## Decision: a reparse keeps the page's key and replaces results in one transaction — 2026-10-25
+
+`pdf reparse` (M2.10) reads pages again in a runner of its own, through the shared pool, and the cache replaces their results in one transaction once every new reading is in. The page keeps its key, which holds what the page draws, so a transcript, kept by that key, shows again beside the new reading, and the file's index and its document ID do not change. `--step ocr` runs the worker's OCR path for every page asked for and stores the result under the same key. A pick is the agent's choice between two readings the old parse offered, so a reparse clears the picks on its pages, after the replacement; a command killed between the two leaves picks that no longer apply, since a pick shows only while the page offers the same readings. The runner holds its own lock, `reparse:<path>`, not the file's, so a runner that parses the rest of the file may go on: a result is never missing while it is replaced, and an `INSERT OR IGNORE` of an old reading finds the row there. The runner ends when its command goes (its parent changes), and the command starts it in its own process group, so Ctrl-C stops both: nothing is left parsing, and nothing is half replaced. A new reading that failed never replaces one that read well.
+
+It follows "Same file, same answer" and "Failure is loud": a page the new method cannot read keeps what it had, and the output names it.
+
+| Option | For | Against |
+|---|---|---|
+| **Same key, replace in one transaction** | Transcripts stay at once; atomic; the library, the index and the document ID are untouched. | A copy of the file, or another file with an identical page, shares the new result and loses its picks. `--step ocr` stores OCR under the key of a page with a text layer. |
+| A new key for an OCR reading (`PageKeys.ocr`), and a new document | Another copy is not touched; the method is in the key. | The document ID changes, so the library entry, `pdf ls` IDs and every page's transcripts move with it; transcripts are keyed by the old key and vanish. |
+| Delete the old results, then parse | One path, as a normal parse. | A crash or a Ctrl-C leaves pages with no result, or a failure in place of one that read well. |
+| Parse in the command's process | No runner. | PDFKit opens the file in the command, which the tool never does: a hostile PDF could stop it (DESIGNS.md → Principles → Safety). |

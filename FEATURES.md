@@ -3,7 +3,7 @@
 
 ✅ built · 🚧 built with a gap · ⬜ planned
 
-F1 and F11 are ✅ built, F2, F3, F4, F5, F7, F8, F9, F13 and F14 are 🚧 built with a gap, and every other feature is ⬜ planned. The commands and output samples show the intended behavior.
+F1 and F11 are ✅ built, F2, F3, F4, F5, F7, F8, F9, F10, F13 and F14 are 🚧 built with a gap, and every other feature is ⬜ planned. The commands and output samples show the intended behavior.
 
 ## F1 — Add ✅
 
@@ -286,7 +286,7 @@ Every command follows the same rules, so an agent learns them once.
 - Every block shows its page and its number on the page: a heading such as `## p.12` starts each page, and `¶3` starts its third block. `--json` gives each block's position on the page too, such as `0.10,0.40,0.80,0.30`, and every doubt comes with the command that crops it. The page is its position in the file. When the number printed on the page differs, the page's heading says so, as in `## p.12 (printed 237)`.
 - Superscripts and subscripts keep a mark, as in `10^{-5}` and `x_{2}`. Footnote markers and citation numbers have their own marks (see F14 and F15).
 - A word that a hyphen splits across two lines comes back whole when the page or macOS's word list knows it. Otherwise the hyphen stays, as in `self-attention`.
-- Every command accepts `--json`, and ends with the exit codes of F8. A failure has one shape, `<path>: failed: <reason>`, or `{"file": …, "failed": …}` under `--json`; `path` is the file, or what the command was given (`pdf rm`'s target, `pdf add`'s own path inside its `files` list); a command with no file puts its own name there: `pdf ls`, `pdf gc`, `pdf agent-guide`, `pdf add` and a library-wide `pdf search`. The commands that write say what they did under `--json`: `pdf pick` gives `file`, `page`, `block`, `picked` and `text`; `pdf transcribe` gives `file`, `page`, `kind`, `number` and `kept`, or `removed` with `--clear`, and `sameNumber` when the page numbers several the same; `pdf rm` gives `removed`, `files` and `cachedPages`; `pdf gc` gives `removed` (counts), `freedBytes` and `compacted`; `pdf ls` gives `documents`; `pdf add` gives `files`, one object for each path, with `id`, `title`, `pages` and `flagged` or, in the failure shape, `failed`, and the counts `added`, `flagged` and `failed`; `pdf agent-guide` gives `guide`, or with `--install` `file`, `installed` and `warnings`. The commands that change what is kept (`pick`, `transcribe`, `rm`) take `--dry-run` (DESIGNS.md → Decision: a dry run answers from what is kept and never parses): the text starts `dry run: `, the object holds the real run's keys and `"dryRun": true`, and the exit code is the real run's. It changes no row, schema or file content of either database, the cache's log included; it opens both read-only, and SQLite may still create or touch the cache's shared-memory index (`-shm`), which holds no data. It parses nothing and starts no runner, so it answers only from what the cache holds: for a file or page not cached for this version of the file and of `pdf` it fails, exit 1, naming the `pdf read` to run (the one case where its exit code differs from the real run's); a cache from an older schema, or one SQLite cannot open read-only, fails the same way in one sentence. Besides the real keys, a dry run's object holds, always, `replaces`: `pdf pick` gives the letter of the pick it would replace (the same letter when it is picked again), `pdf transcribe` the day of the reading it would replace, each null when there is none, and `characters` (the size) when it keeps; `pdf rm` gives `picksKept`, `transcriptsKept` and `sharedWith` (the other files whose results stay).
+- Every command accepts `--json`, and ends with the exit codes of F8. A failure has one shape, `<path>: failed: <reason>`, or `{"file": …, "failed": …}` under `--json`; `path` is the file, or what the command was given (`pdf rm`'s target, `pdf add`'s own path inside its `files` list); a command with no file puts its own name there: `pdf ls`, `pdf gc`, `pdf agent-guide`, `pdf add` and a library-wide `pdf search`. The commands that write say what they did under `--json`: `pdf pick` gives `file`, `page`, `block`, `picked` and `text`; `pdf transcribe` gives `file`, `page`, `kind`, `number` and `kept`, or `removed` with `--clear`, and `sameNumber` when the page numbers several the same; `pdf rm` gives `removed`, `files` and `cachedPages`; `pdf gc` gives `removed` (counts), `freedBytes` and `compacted`; `pdf ls` gives `documents`; `pdf add` gives `files`, one object for each path, with `id`, `title`, `pages` and `flagged` or, in the failure shape, `failed`, and the counts `added`, `flagged` and `failed`; `pdf reparse` gives what F10 lists; `pdf agent-guide` gives `guide`, or with `--install` `file`, `installed` and `warnings`. The commands that change what is kept (`pick`, `transcribe`, `rm`) take `--dry-run` (DESIGNS.md → Decision: a dry run answers from what is kept and never parses): the text starts `dry run: `, the object holds the real run's keys and `"dryRun": true`, and the exit code is the real run's. It changes no row, schema or file content of either database, the cache's log included; it opens both read-only, and SQLite may still create or touch the cache's shared-memory index (`-shm`), which holds no data. It parses nothing and starts no runner, so it answers only from what the cache holds: for a file or page not cached for this version of the file and of `pdf` it fails, exit 1, naming the `pdf read` to run (the one case where its exit code differs from the real run's); a cache from an older schema, or one SQLite cannot open read-only, fails the same way in one sentence. Besides the real keys, a dry run's object holds, always, `replaces`: `pdf pick` gives the letter of the pick it would replace (the same letter when it is picked again), `pdf transcribe` the day of the reading it would replace, each null when there is none, and `characters` (the size) when it keeps; `pdf rm` gives `picksKept`, `transcriptsKept` and `sharedWith` (the other files whose results stay).
 - Output starts with a one-line summary: the pages read, the pages flagged and what normal output set aside.
 - A file that macOS Preview or another app saved through PDFKit carries a warning in its summary line: such a save can damage the text, and an earlier copy may read better.
 - Nothing is dropped without a trace. What normal output sets aside leaves a marker in place, or a count in the summary line, with the flag that shows it: `--show raw` for doubtful text, `--show hidden` for hidden text and `--show headers` for running headers, footers and publisher stamps.
@@ -334,7 +334,7 @@ When two readings of a word differ in where its words break, the paragraph keeps
 
 Reading [a] is the text layer's. Reading [b] breaks the words where Apple OCR does, or splits letters that both readers run together into common English words, as in "single dataset per condition". English words run together that no reading splits, as when a line-end break cut one, get an unsure block with their one reading and a `look:` crop. Names from code and web addresses, such as `SpaceRepairRelocate`, stay as they are.
 
-`pdf pick paper.pdf p2.5 b` saves the agent's choice for page 2, paragraph 5. Later reads show the chosen words in place, labelled `[picked 2026-10-15]`, and `pdf reparse` clears every pick on the page. `--dry-run` says what the pick would keep, and whether it replaces an earlier one, and keeps nothing. A pick takes only one of the readings shown, for every unsure word of its paragraph. When two readings differ in digits, table cells or formulas, the passage comes as a failure block with a crop, because the text alone cannot show which reading is right. `--show raw` shows both readings.
+`pdf pick paper.pdf p2.5 b` saves the agent's choice for page 2, paragraph 5. Later reads show the chosen words in place, labelled `[picked 2026-10-15]`, and `pdf reparse` clears every pick on the page it reads again. `--dry-run` says what the pick would keep, and whether it replaces an earlier one, and keeps nothing. A pick takes only one of the readings shown, for every unsure word of its paragraph. When two readings differ in digits, table cells or formulas, the passage comes as a failure block with a crop, because the text alone cannot show which reading is right. `--show raw` shows both readings.
 
 - The summary line at the top counts every flagged page, with its status: `failed`, `low-quality` or `unsure`. It also counts what normal output set aside, such as doubtful blocks and a scan's replaced text layer, with the flag that shows them.
 - A low-quality page is flagged the same way as a failed one, with its reason and its score.
@@ -345,14 +345,14 @@ Reading [a] is the text layer's. Reading [b] breaks the words where Apple OCR do
 |---|---|
 | 0 | Every requested page read well. `info`, `search`, `crop` and `dump` of a file with flagged pages also end 0 and name the pages in their output. |
 | 1 | The command could not run, such as on a file that does not exist (every command: `<path>: failed: no such file`), or when it could not write what it was asked to. |
-| 2 | Some pages failed, are low-quality or hold unsure words. The rest of the output is valid. Only `read`, `add` and `dump` (when the document it writes has flagged pages) end with it. |
+| 2 | Some pages failed, are low-quality or hold unsure words. The rest of the output is valid. Only `read`, `add`, `reparse` and `dump` (when the document it writes has flagged pages) end with it. |
 | 3 | The file failed to open (not a PDF, locked, damaged), on every command that takes a file, or no requested page holds text to show: each one failed or is in doubt as a whole. |
 | 64 | The command was used wrongly, such as with an unknown flag. The parser ends with it, and prints the usage. |
 
 `pdf add` of several paths ends 2 when some failed or some pages are flagged, 3 when every path failed and one of them failed to open, and 1 when none could be tried (every path missing). `pdf dump` ends 1 when it could not write to its folder (a link in the way, also for figures, tables and attachments), else 3 when its `read` of the document failed, else 2 when the document has flagged pages; the files it did write stay, and its output lists them with a note for each that was not written. A look-up that matches nothing (`pdf read --section`, `--printed-page`, `pdf note`, `pdf ref`) is a failure in the one shape, exit 1, listing what exists (M2.16).
 
 Gap:
-- The blocks reach the agent once `pdf read` is built (M1.7). Until then, the hidden `pdf debug-read` shows them. Their crop commands work once `pdf crop` is built (M1.9), and `pdf reparse` comes later (F10).
+- The blocks reach the agent once `pdf read` is built (M1.7). Until then, the hidden `pdf debug-read` shows them. Their crop commands work once `pdf crop` is built (M1.9), and `pdf reparse` reads a page again (F10).
 - An uncertain reading order is not checked yet: the check and its threshold wait for the final wrap-up, with M2.12's tuning.
 - The word lists that back second readings are English, so words in other languages get none.
 
@@ -391,14 +391,27 @@ Gap:
 
 Settings: none.
 
-## F10 — Reparse ⬜
+## F10 — Reparse 🚧
 
 Reads pages again, with the usual method on the running macOS or with a stronger one.
 
 | Command | What happens |
 |---|---|
-| `pdf reparse <path>` | Reads every page again with the usual method, and replaces the cached results. `--page 7` limits it to one page. |
-| `pdf reparse <path> --page 7 --step ocr` | Reads page 7 again with the Mac's OCR, and replaces the cached result. |
+| `pdf reparse <path>` | Reads every page again with the usual method, and replaces the cached results. `--page 7` limits it (`3`, `3-5`, `3,7-9`, as `pdf read` takes them). |
+| `pdf reparse <path> --page 7 --step ocr` | Reads page 7 again with the Mac's OCR, and replaces the cached result. `--step` takes `ocr` only; without `--page` it reads every page by OCR, about a second a page. |
+| `pdf reparse <path> --password-stdin` | Opens a locked PDF, as `pdf add` does (`--password` too). |
+
+It prints one summary line, the pages read again, how many are flagged now, how many changed status, the picks it cleared and the file, then the flagged pages and the pages that changed, `p.7: low-quality -> ok` or `p.4: ok, text changed`, at most 20 of each, ending `and N more`. `--json` gives `file`, `id`, `step` (`usual` or `ocr`), `reparsed`, `pages`, `flagged`, `flaggedPages`, `changes` (all of them: `page`, `before`, `after`, `textChanged`), `kept`, `picksCleared`, and `neverRead` or `changedSinceRead` when they hold. It ends 0, 2 when a page it read is flagged, 3 when none of them reads, 1 for a missing file or a page past the end, and 64 for a wrong flag or an unknown `--step` (the exit codes of F8).
+
+- **Picks go, transcripts stay.** The picks on every page read again are cleared (F8). A transcript (F3) is kept by the page's key, which a reparse does not change, so it shows again at once, beside the new reading.
+- **Replaced all at once.** The old results stay until every new one is in, then all are replaced in one step, with the keyword index (F4) following. A command that is stopped, or a Mac that loses power, half way leaves the old results. A page whose new reading fails keeps its old result, which reads well, and the output says so; a page with no good result takes the failure.
+- **Gentle.** It reads through the shared pool of workers, as `pdf add` does, and leaves nothing parsing when it returns: a file never read has only the pages asked for parsed.
+- A file never read is just parsed, and the line says so. A file changed since it was read is read in its current version. A file that failed to open is tried again.
+
+Gap:
+- A page's key stays, so a copy of the file, or another file with a page that draws the same, shares the new result and loses its picks too. `--step ocr` on a page that has a text layer stores the OCR reading under that key; the layer's reading comes back with a plain `pdf reparse`.
+- It reads pages only: the file's facts (outline, links, annotations) and the sample check that decides whether a scan is read by OCR stay as the first read left them.
+- Pages are read in the order of the file, not by how soon a command waits: a long reparse takes the foreground slots of the pool until it ends.
 
 Settings: none.
 
