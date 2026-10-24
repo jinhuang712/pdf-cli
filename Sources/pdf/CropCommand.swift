@@ -13,6 +13,11 @@ struct CropCommand: ParsableCommand {
             the warnings in pdf read give them. --grid draws lines labelled in the same fractions. --figure, \
             --table and --equation take the number their caption gives, as pdf read and pdf info show it; \
             --page picks one where two share a number. Images stay in the cache folder for 7 days.
+
+            Examples:
+              pdf crop paper.pdf --figure 4
+              pdf crop paper.pdf --page 3 --bbox 0.1,0.4,0.8,0.3
+              pdf crop paper.pdf --page 3 --grid
             """
     )
 

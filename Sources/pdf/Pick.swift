@@ -8,7 +8,13 @@ struct PickCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "pick",
         abstract: "Pick one of the two readings that an unsure block shows.",
-        discussion: "Later reads show the picked words in place, labelled [picked] with the date."
+        discussion: """
+            Later reads show the picked words in place, labelled [picked] with the date.
+
+            Examples:
+              pdf pick paper.pdf p2.3 a
+              pdf pick paper.pdf p7.1 b
+            """
     )
 
     @Argument(help: "Path to a PDF file.") var path: String

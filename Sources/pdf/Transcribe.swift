@@ -14,6 +14,17 @@ struct TranscribeCommand: ParsableCommand {
             EOF on a line of its own. The quotes around EOF keep backslashes and dollar signs as written. Later reads show \
             it in the block, labelled transcribed with the day. Another transcribe replaces it; --clear removes it. At most \
             4,000 characters for an equation, 12,000 for a table.
+
+            Examples:
+              pdf transcribe paper.pdf --page 4 --equation 5 <<'EOF'
+              \\frac{a}{b} = c
+              EOF
+              pdf transcribe paper.pdf --page 6 --table 2 <<'EOF'
+              | model | score |
+              |---|---|
+              | A | 0.91 |
+              EOF
+              pdf transcribe paper.pdf --page 4 --equation 5 --clear
             """
     )
 

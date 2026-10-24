@@ -11,6 +11,16 @@ struct ReadCommand: ParsableCommand {
         discussion: """
             Without --page, reading starts at the first page. Output stops at about 5,000 tokens and ends with \
             the command that goes on from there; --budget all turns the limit off.
+
+            Which part: --page, --printed-page, --section, --full, --from.
+            How much and in what form: --budget, --format, --json.
+            Set-aside text, shown on request: --raw, --include-hidden, --headers.
+            Notes and references: --notes, --footnote, --refs, --ref.
+
+            Examples:
+              pdf read paper.pdf --section Method
+              pdf read paper.pdf --page 3-5 --notes inline
+              pdf read paper.pdf --full --budget all --format text
             """
     )
 

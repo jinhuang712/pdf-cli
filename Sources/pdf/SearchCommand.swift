@@ -12,6 +12,11 @@ struct SearchCommand: ParsableCommand {
             pdf search paper.pdf dropout ablation searches one PDF; pdf search dropout searches the library. \
             Hits come best first, each with its page, paragraph, section and the words around it. Output stops \
             at about 5,000 tokens and ends with the command that goes on.
+
+            Examples:
+              pdf search paper.pdf dropout ablation
+              pdf search dropout
+              pdf search paper.pdf --regex 'Table [0-9]+' --top 5
             """
     )
 

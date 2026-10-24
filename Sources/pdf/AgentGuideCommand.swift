@@ -11,6 +11,10 @@ struct AgentGuideCommand: ParsableCommand {
         discussion: """
             --install claude-code writes the guide to ~/.claude/skills/pdf-cli/SKILL.md, or under CLAUDE_CONFIG_DIR \
             when that is set, and replaces an earlier version there.
+
+            Examples:
+              pdf agent-guide
+              pdf agent-guide --install claude-code
             """
     )
 

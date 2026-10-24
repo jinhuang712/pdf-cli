@@ -8,7 +8,14 @@ struct AddCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "add",
         abstract: "Parse PDFs once, so every later command reads them from the cache.",
-        discussion: "Accepts files, folders and glob patterns. A folder adds every PDF in it and in its subfolders."
+        discussion: """
+            Accepts files, folders and glob patterns. A folder adds every PDF in it and in its subfolders.
+
+            Examples:
+              pdf add paper.pdf
+              pdf add ~/papers
+              pdf add "papers/*.pdf" -j 2
+            """
     )
 
     @Argument(help: "PDF files, folders or glob patterns.") var paths: [String]
@@ -109,7 +116,11 @@ struct AddCommand: ParsableCommand {
 struct ListCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "ls",
-        abstract: "List every PDF in the library, with its ID, title, page count and flagged pages."
+        abstract: "List every PDF in the library, with its ID, title, page count and flagged pages.",
+        discussion: """
+            Examples:
+              pdf ls
+            """
     )
 
     func run() throws {
@@ -153,7 +164,13 @@ struct RemoveCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "rm",
         abstract: "Remove a PDF from the library, and its results from the cache.",
-        discussion: "Picks stay, so a PDF added again shows them again."
+        discussion: """
+            Picks stay, so a PDF added again shows them again.
+
+            Examples:
+              pdf rm paper.pdf
+              pdf rm 1f9472ae
+            """
     )
 
     @Argument(help: "The PDF's path, or its ID as pdf ls shows it.") var target: String
@@ -199,7 +216,11 @@ struct RemoveCommand: ParsableCommand {
 struct GCCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "gc",
-        abstract: "Remove cached results for files that no longer exist, and for old parser versions."
+        abstract: "Remove cached results for files that no longer exist, and for old parser versions.",
+        discussion: """
+            Examples:
+              pdf gc
+            """
     )
 
     func run() throws {

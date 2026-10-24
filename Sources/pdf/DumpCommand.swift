@@ -13,6 +13,15 @@ struct DumpCommand: ParsableCommand {
             the PDF, in the current folder. A file already there is never overwritten: run again with another -o. \
             Attachments are saved as they are, with no execute permission, and scripts as text; neither is \
             ever opened or run.
+
+            What to write: --markdown, --text, --figures, --tables, --notes, --refs, --attachments, --scripts.
+            Where and which pages: -o, --page.
+            Locked PDFs and output: --password-stdin, --json.
+
+            Examples:
+              pdf dump paper.pdf --markdown --figures
+              pdf dump paper.pdf --text --page 2-5 -o paper-text
+              pdf dump paper.pdf --tables --notes --refs --json
             """
     )
 

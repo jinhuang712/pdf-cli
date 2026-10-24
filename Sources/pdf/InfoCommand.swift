@@ -7,7 +7,12 @@ import PDFCore
 struct InfoCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "info",
-        abstract: "Give a first look at a PDF: its title, size, sections, flagged pages, comments, attachments and scripts."
+        abstract: "Give a first look at a PDF: its title, size, sections, flagged pages, comments, attachments and scripts.",
+        discussion: """
+            Examples:
+              pdf info paper.pdf
+              pdf info paper.pdf --json
+            """
     )
 
     @Argument(help: "Path to a PDF file.") var path: String
