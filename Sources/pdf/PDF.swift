@@ -31,8 +31,11 @@ struct PDF: AsyncParsableCommand {
             Run pdf <command> --help for a command's options and examples.
             """,
         version: "0.0.0-spike",
-        subcommands: [AddCommand.self, InfoCommand.self, ReadCommand.self, NoteCommand.self, RefCommand.self, SearchCommand.self, CropCommand.self, DumpCommand.self, PickCommand.self, TranscribeCommand.self,
-                      ListCommand.self, RemoveCommand.self,
-                      GCCommand.self, AgentGuideCommand.self, Spike.self, DebugPages.self, DebugOCR.self, RunnerCommand.self, WorkerCommand.self]
+        subcommands: [
+            AddCommand.self, ReparseCommand.self, InfoCommand.self, ReadCommand.self, NoteCommand.self, RefCommand.self, SearchCommand.self,
+            CropCommand.self, DumpCommand.self, PickCommand.self, TranscribeCommand.self,
+            ListCommand.self, RemoveCommand.self,
+            GCCommand.self, AgentGuideCommand.self, Spike.self, DebugPages.self, DebugOCR.self, RunnerCommand.self, WorkerCommand.self,
+        ]
     )
 }

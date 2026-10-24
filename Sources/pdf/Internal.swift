@@ -59,9 +59,18 @@ struct RunnerCommand: ParsableCommand {
     @Argument var path: String
     @Option(help: "The pages, counted from 0, that the command waits on, or \"all\".") var pages = ""
     @Option(help: "How many workers to run at once, from pdf add -j.") var workers: Int?
+    @Flag(name: .customLong("index-only"), help: "Index the file and stop (pdf reparse).") var indexOnly = false
+    @Option(help: "Read these pages again, counted from 0, or \"all\", and replace their results (pdf reparse).")
+    var reparse: String?
+    @Flag(help: "With --reparse: read by OCR.") var ocr = false
 
     func run() throws {
         let store = try Store()
+        if let reparse {
+            let pages = reparse == "all" ? nil : reparse.split(separator: ",").compactMap { Int($0) }
+            throw ExitCode(Runner(path: path, store: store, workers: workers, job: .reparse(pages: pages, ocr: ocr)).run())
+        }
+        if indexOnly { throw ExitCode(Runner(path: path, store: store, workers: workers, job: .indexOnly).run()) }
         let waited: Runner.Waited = pages == "all"
             ? .all
             : .pages(pages.split(separator: ",").compactMap { Int($0) })

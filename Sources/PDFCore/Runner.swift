@@ -31,14 +31,36 @@ public final class Runner: @unchecked Sendable {
         case pages([Int])
     }
 
+    /// What the runner is for (ROADMAP.md → M2.10).
+    public enum Job: Sendable {
+        /// Index the file if needed, and parse every page that has no result.
+        case parse
+        /// Index the file and stop, as `pdf reparse` needs a file's page keys first.
+        case indexOnly
+        /// Read these pages again (nil: every page) with the usual method, or with OCR, and
+        /// replace their cached results in one transaction at the end.
+        case reparse(pages: [Int]?, ocr: Bool)
+    }
+
+    /// Exit codes of a `reparse` or `indexOnly` job, which its command reads.
+    public static let exitBusy: Int32 = 10
+    public static let exitStale: Int32 = 11
+
     let waited: Waited
+    let job: Job
     /// The worker slots this runner may use: the shared pool's, or more when `pdf add -j` asks.
     let poolSize: Int
+    /// The process that started the runner. A reparse runner ends when it goes, so a command that
+    /// was killed leaves nothing parsing and the old results in place.
+    private let parent = getppid()
+    /// The results a reparse has read so far, by page key. Nothing is stored until all are in.
+    private var reparsed: [String: PageResult] = [:]
 
-    public init(path: String, store: Store, waited: Waited = .pages([]), workers: Int? = nil) {
+    public init(path: String, store: Store, waited: Waited = .pages([]), workers: Int? = nil, job: Job = .parse) {
         self.path = path
         self.store = store
         self.waited = waited
+        self.job = job
         self.poolSize = max(1, workers ?? Env.workerCount)
     }
 
@@ -47,6 +69,7 @@ public final class Runner: @unchecked Sendable {
     }
 
     public func run() -> Int32 {
+        if case .reparse(let pages, let ocr) = job { return reparse(pages: pages, ocr: ocr) }
         let pathLock = "path:" + path
         guard (try? store.acquireLock(pathLock)) == true else { return 0 }
         hold(pathLock)
@@ -57,6 +80,7 @@ public final class Runner: @unchecked Sendable {
         }
         for _ in 0..<3 {
             guard case .document(let docID, let stat) = index() else { return 0 }
+            if case .indexOnly = job { return 0 }
             let docLock = "doc:" + docID
             // Another runner already parses the same document from another copy of the file.
             guard (try? store.acquireLock(docLock)) == true else { return 0 }
@@ -79,6 +103,41 @@ public final class Runner: @unchecked Sendable {
                 try? store.releaseLock(docLock)
             }
         }
+        return 0
+    }
+
+    // MARK: Reparse
+
+    /// Reads pages again and replaces their results (DESIGNS.md → Decision: a reparse reads in
+    /// the pool, keeps the page's key and replaces results in one transaction). It takes a lock of
+    /// its own, not the path's or the document's: a runner that parses the rest of the file may
+    /// go on, since a result is never missing while it is replaced. It never indexes: a file the
+    /// cache has no current entry for is `exitStale`, and its command indexes the file first.
+    func reparse(pages wanted: [Int]?, ocr: Bool) -> Int32 {
+        let lock = "reparse:" + path
+        guard (try? store.acquireLock(lock)) == true else { return Runner.exitBusy }
+        hold(lock)
+        startHeartbeat()
+        defer {
+            mutex.locked { stopped = true }
+            for key in mutex.locked({ heldLocks }) { try? store.releaseLock(key) }
+        }
+        guard let stat = FileStat(path: path), case .document(let docID)? = try? store.entry(path: path, stat: stat),
+            let keys = try? store.pageKeys(docID: docID), !keys.isEmpty
+        else { return Runner.exitStale }
+        let pages = wanted ?? Array(keys.indices)
+        guard pages.allSatisfy(keys.indices.contains) else { return Runner.exitStale }
+        guard case .done = parse(docID: docID, stat: stat, reparse: (pages, ocr)),
+            FileStat(path: path) == stat
+        else { return Runner.exitStale }
+        // One transaction: a runner that dies before this line leaves every old result.
+        guard let kept = try? store.replaceResults(reparsed) else { return Runner.exitStale }
+        // The command reads what it kept: a page whose new reading failed keeps its old result.
+        for index in pages.sorted() {
+            guard let reason = kept[keys[index]] else { continue }
+            print("kept\t\(index)\t" + reason.replacingOccurrences(of: "\n", with: " "))
+        }
+        fflush(stdout)
         return 0
     }
 
@@ -291,15 +350,27 @@ public final class Runner: @unchecked Sendable {
 
     /// Parses every page that has no cached result yet. Pages that a command asked for go
     /// first. Pages that share a key, such as blank pages, are parsed once.
-    func parse(docID: String, stat: FileStat) -> ParseOutcome {
+    func parse(docID: String, stat: FileStat, reparse: (pages: [Int], ocr: Bool)? = nil) -> ParseOutcome {
         guard let keys = try? store.pageKeys(docID: docID), !keys.isEmpty else { return .done }
-        let cached = (try? store.results(keys: keys)) ?? [:]
+        let cached = reparse == nil ? ((try? store.results(keys: keys)) ?? [:]) : [:]
         var firstIndex: [String: Int] = [:]
         var pending: [Int] = []
-        for (index, key) in keys.enumerated() where firstIndex[key] == nil {
-            firstIndex[key] = index
-            if cached[key] == nil { pending.append(index) }
+        if let reparse {
+            // The pages asked for, a page once for each key it shares with another: every one
+            // is parsed, cached or not.
+            for index in reparse.pages where keys.indices.contains(index) && firstIndex[keys[index]] == nil {
+                firstIndex[keys[index]] = index
+                pending.append(index)
+            }
+        } else {
+            for (index, key) in keys.enumerated() where firstIndex[key] == nil {
+                firstIndex[key] = index
+                if cached[key] == nil { pending.append(index) }
+            }
         }
+        // A reparse's command waits on all its pages, so they all run at the speed of work the
+        // user started.
+        let waitedOn = reparse == nil ? [] : pending
         var alone: [Int] = []
         var triedAlone: Set<Int> = []
         // Pages whose background worker hit a time limit. A throttled worker may hit it through no
@@ -311,7 +382,7 @@ public final class Runner: @unchecked Sendable {
         var locked: String?
         var failedSpawns = 0
         let capacity = poolSize
-        let readAllByOCR = (try? store.needsOCR(docID: docID)) ?? false
+        let readAllByOCR = reparse?.ocr == true || ((try? store.needsOCR(docID: docID)) ?? false)
         let repair = !readAllByOCR && ((try? store.spacesAtRisk(docID: docID)) ?? false)
         let parseArguments = readAllByOCR ? ["--read-all-by-ocr"] : repair ? ["--repair-spaces"] : []
         // A page through OCR takes about 0.7 s, so batches shrink once pages turn out slow, as
@@ -327,7 +398,11 @@ public final class Runner: @unchecked Sendable {
                 changed = true
                 return
             }
-            try? store.saveResult(key: keys[page], result)
+            if reparse != nil {
+                reparsed[keys[page]] = result
+            } else {
+                try? store.saveResult(key: keys[page], result)
+            }
         }
 
         /// A crash may come from the machine, not the page, so a page gets a second try.
@@ -337,6 +412,12 @@ public final class Runner: @unchecked Sendable {
         }
 
         while !changed && (!pending.isEmpty || !alone.isEmpty || !workers.isEmpty) {
+            if reparse != nil && getppid() != parent {
+                // The command that asked is gone: nothing is stored, and the old results stay.
+                workers.forEach { stop($0, reason: "the command ended", kind: .runner) }
+                while workers.contains(where: { !$0.finished }) { step(workers) { _, _ in } }
+                return .aborted
+            }
             if mutex.locked({ lostLock }) {
                 // Another runner took over this file. It finishes the work.
                 workers.forEach { stop($0, reason: "another runner took over", kind: .runner) }
@@ -345,7 +426,9 @@ public final class Runner: @unchecked Sendable {
             }
 
             // Pages a command waits on, and pages owed a try at full speed, run in the foreground.
-            let requested = requestedPages(docID: docID, keys: keys, firstIndex: firstIndex) + fullSpeed.sorted()
+            let requested =
+                (reparse == nil ? requestedPages(docID: docID, keys: keys, firstIndex: firstIndex) : waitedOn)
+                + fullSpeed.sorted()
             promote(workers, requested: requested)
             var waitingForSlot = false
             while workers.count < capacity, !(pending.isEmpty && alone.isEmpty) {

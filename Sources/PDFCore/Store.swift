@@ -522,6 +522,32 @@ public final class Store: Sendable {
         try write { db in try Store.insertResult(db, key: key, result) }
     }
 
+    /// Replaces the cached results of these page keys with new ones, all in one transaction, so a
+    /// reader sees every old result or every new one, and a page is never without a result. The
+    /// keyword index follows through the table's trigger and `insertResult`. A new result that
+    /// failed never replaces one that read well: that page keeps its old result, and the reason
+    /// comes back under its key. A key with no result yet gets the new one, failed or not.
+    @discardableResult
+    public func replaceResults(_ results: [String: PageResult]) throws -> [String: String] {
+        try write { db in
+            var kept: [String: String] = [:]
+            for (key, result) in results.sorted(by: { $0.key < $1.key }) {
+                let old = try String.fetchOne(
+                    db, sql: "SELECT status FROM page_result WHERE page_key = ? AND parser_version = ?",
+                    arguments: [key, Env.parserVersion])
+                if result.status == .failed, old == PageResult.Status.ok.rawValue {
+                    kept[key] = result.reason
+                    continue
+                }
+                try db.execute(
+                    sql: "DELETE FROM page_result WHERE page_key = ? AND parser_version = ?",
+                    arguments: [key, Env.parserVersion])
+                try Store.insertResult(db, key: key, result)
+            }
+            return kept
+        }
+    }
+
     static func insertResult(_ db: Database, key: String, _ result: PageResult) throws {
         try db.execute(sql: """
             INSERT OR IGNORE INTO page_result

@@ -31,6 +31,28 @@ public enum ReadOutcome: Sendable {
     case pages(docID: String, pageCount: Int, results: [(page: Int, result: PageResult)])
 }
 
+/// What `pdf reparse` did to a file (ROADMAP.md → M2.10).
+public struct Reparsed: Sendable {
+    public var docID: String
+    public var pageCount: Int
+    /// The pages read again, counted from 0, in order.
+    public var pages: [Int]
+    /// Each page's result before and after, by page; a page with no cached result before is absent
+    /// from `before`.
+    public var before: [Int: PageResult]
+    public var after: [Int: PageResult]
+    /// Pages whose new reading failed, so that their old result stayed, with the reason.
+    public var kept: [Int: String]
+    /// The cache had never seen the file, or only another version of it.
+    public var neverRead: Bool
+    public var changedSinceRead: Bool
+}
+
+public enum ReparseOutcome: Sendable {
+    case fileFailed(reason: String)
+    case done(Reparsed)
+}
+
 /// The command side of the cache. It never opens PDF content: it reads the cache, and starts
 /// a runner when pages are missing (DESIGNS.md → Principles → Safety).
 public final class Reader: Sendable {
@@ -161,5 +183,124 @@ public final class Reader: Sendable {
             Thread.sleep(forTimeInterval: pause)
             pause = min(pause * 1.5, 0.05)
         }
+    }
+
+    // MARK: Reparse
+
+    /// Reads pages again and replaces their cached results (nil: every page; `ocr`: with Apple's
+    /// OCR instead of the usual method). The file is indexed first if the cache has no current entry
+    /// for it. A file that failed to open is tried again. The reading runs in a runner of its own
+    /// that stops with this command, and leaves nothing behind that parses other pages.
+    public func reparse(
+        path rawPath: String, pages wanted: [Int]?, ocr: Bool, workers: Int? = nil,
+        password: String? = nil
+    ) throws -> ReparseOutcome {
+        let path = Reader.resolve(rawPath)
+        guard let first = FileStat(path: path) else { throw ReadError.notFound(rawPath) }
+        let before = try store.entry(path: path, stat: first)
+        let known = try store.knows(path: path)
+        let neverRead = before == nil && !known
+        let changedSinceRead = before == nil && !neverRead
+        var retriedFailure = false
+        var failures = 0
+        while failures < 3 {
+            guard let stat = FileStat(path: path) else { throw ReadError.notFound(rawPath) }
+            let docID: String
+            switch try store.entry(path: path, stat: stat) {
+            case .failed(let reason)?:
+                // A failure the cache holds is tried again once, as the command asks to read the file
+                // again; a locked file without its password cannot be.
+                if retriedFailure || (reason.hasPrefix(OpenFailure.locked) && password == nil) {
+                    return .fileFailed(reason: reason)
+                }
+                retriedFailure = true
+                if try store.isLockAlive("path:" + path) { Thread.sleep(forTimeInterval: 0.05) } else { try store.forgetEntry(path: path) }
+                continue
+            case nil:
+                try index(path: path, password: password)
+                if case .failed(let reason)? = try FileStat(path: path).flatMap({ try store.entry(path: path, stat: $0) }) {
+                    return .fileFailed(reason: reason)
+                }
+                continue
+            case .document(let id)?:
+                docID = id
+            }
+            let keys = try store.pageKeys(docID: docID)
+            let pages = Array(Set(wanted ?? Array(keys.indices))).sorted()
+            if let bad = pages.first(where: { !keys.indices.contains($0) }) {
+                throw ReadError.pageOutOfRange(page: bad, pageCount: keys.count)
+            }
+            let old = try store.results(keys: pages.map { keys[$0] })
+            let run = try runReparse(path: path, pages: wanted == nil ? nil : pages, ocr: ocr, workers: workers, password: password)
+            switch run.status {
+            case 0:
+                let new = try store.results(keys: pages.map { keys[$0] })
+                if let library {
+                    try library.register(
+                        path: path, docID: docID, title: try store.documentInfo(docID: docID)?.title ?? "",
+                        pageCount: keys.count)
+                }
+                var kept: [Int: String] = [:]
+                for line in run.output.split(separator: "\n") {
+                    let parts = line.split(separator: "\t", maxSplits: 2, omittingEmptySubsequences: false)
+                    if parts.count == 3, parts[0] == "kept", let page = Int(parts[1]) { kept[page] = String(parts[2]) }
+                }
+                return .done(
+                    Reparsed(
+                        docID: docID, pageCount: keys.count, pages: pages,
+                        before: Dictionary(uniqueKeysWithValues: pages.compactMap { page in old[keys[page]].map { (page, $0) } }),
+                        after: Dictionary(uniqueKeysWithValues: pages.compactMap { page in new[keys[page]].map { (page, $0) } }),
+                        kept: kept, neverRead: neverRead, changedSinceRead: changedSinceRead))
+            case Runner.exitBusy:
+                // Another reparse of this file runs: it goes first.
+                while try store.isLockAlive("reparse:" + path) { Thread.sleep(forTimeInterval: 0.05) }
+            default:
+                // The file changed, or the runner stopped: the entry is looked at again.
+                failures += 1
+            }
+        }
+        throw ReadError.runnerFailed
+    }
+
+    /// Starts a runner that indexes the file and stops, and waits for it. Another runner that holds
+    /// the file's lock is waited for instead, until the file has an entry.
+    private func index(path: String, password: String?) throws {
+        var spawns = 0
+        while true {
+            guard let stat = FileStat(path: path) else { throw ReadError.notFound(path) }
+            if try store.entry(path: path, stat: stat) != nil { return }
+            if try store.isLockAlive("path:" + path) {
+                Thread.sleep(forTimeInterval: 0.05)
+                continue
+            }
+            guard spawns < 3 else { throw ReadError.runnerFailed }
+            spawns += 1
+            _ = try Reader.run(["__runner", path, "--index-only"], password: password)
+        }
+    }
+
+    private func runReparse(
+        path: String, pages: [Int]?, ocr: Bool, workers: Int?,
+        password: String?
+    ) throws -> (status: Int32, output: String) {
+        let list = pages.map { $0.map(String.init).joined(separator: ",") } ?? "all"
+        return try Reader.run(
+            ["__runner", path, "--reparse=" + list] + (ocr ? ["--ocr"] : [])
+                + (workers.map { ["--workers=\($0)"] } ?? []), password: password)
+    }
+
+    /// Runs `pdf` with these arguments in this command's process group, so Ctrl-C stops it, and
+    /// waits for it. Returns its exit code (128 and the signal when a signal ended it) and what it
+    /// printed.
+    private static func run(_ arguments: [String], password: String?) throws -> (status: Int32, output: String) {
+        let (pid, output) = try Processes.spawn(
+            Env.executablePath, arguments, detached: false, captureOutput: true,
+            environment: password.map { [Env.passwordVariable: $0] } ?? [:])
+        var data = Data()
+        if let output { data = FileHandle(fileDescriptor: output, closeOnDealloc: true).readDataToEndOfFile() }
+        var status: Int32 = 0
+        while waitpid(pid, &status, 0) < 0 && errno == EINTR {}
+        let code = (status & 0x7f) == 0 ? (status >> 8) & 0xff : 128 + (status & 0x7f)
+        return (code, String(decoding: data, as: UTF8.self))
     }
 }

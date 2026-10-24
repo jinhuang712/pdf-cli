@@ -69,6 +69,21 @@ public final class Picks: Sendable {
         }
     }
 
+    /// Removes every pick on these pages, and says how many there were (`pdf reparse`).
+    public func clear(keys: [String]) throws -> Int {
+        guard !keys.isEmpty else { return 0 }
+        return try queue.write { db in
+            guard try db.tableExists("pick") else { return 0 }
+            var removed = 0
+            for chunk in stride(from: 0, to: keys.count, by: 500).map({ Array(keys[$0..<min($0 + 500, keys.count)]) }) {
+                let marks = Array(repeating: "?", count: chunk.count).joined(separator: ",")
+                try db.execute(sql: "DELETE FROM pick WHERE page_key IN (\(marks))", arguments: StatementArguments(chunk))
+                removed += db.changesCount
+            }
+            return removed
+        }
+    }
+
     /// Every pick on these pages, by page key.
     public func picks(keys: [String]) throws -> [String: [Pick]] {
         guard !keys.isEmpty else { return [:] }
