@@ -270,10 +270,11 @@ Writes a PDF's content to files and prints their paths.
 | `--scripts` | The PDF's scripts, as text files that never run, each headed by what starts it |
 | `-o <folder>` | The output folder. The default is a folder named after the PDF, in the current folder. |
 
-`--json` lists what was written. A file is never overwritten: a second dump into the same folder stops, so use another `-o`. An attachment is saved by the last part of its name alone, with no leading dot and no execute permission, and a name taken gets a number. `--password-stdin` opens a locked PDF for everything but `--markdown` and `--text`.
+`--json` lists what was written. A file is never overwritten: a name taken gets a number. Attachments keep the PDF's quarantine mark. An attachment is saved by the last part of its name alone, with no leading dot and no execute permission, and a name taken gets a number. `--password-stdin` opens a locked PDF for everything but `--markdown` and `--text`.
 
 Gap:
-- `--html` and `--embedded-images` are not built. A table's PNG carries no notes below it (as F5's gap says). Attachments and scripts are read in the command's own process, not in a worker, so a file that crashes the reader crashes the dump; a stream may decode to at most 256 MB, and a larger one is left out and said so.
+- `--html` and `--embedded-images` are not built. A table's PNG carries no notes below it (as F5's gap says). The words of `notes.json` and `references.json` are the text as parsed, with no marker for hidden words. Two figures that share a number on one page give the first one's image twice.
+- Attachments and scripts are read by a worker under the usual time and memory limits, so a file that exhausts them loses its attachments and scripts, said so in the output. A stream with stacked filters, or one over 256 MB decoded, is left out and said so; a dump writes at most 1,000 files and 1 GB, and a stream shared by many places is saved once. A launch action is written as a note on what it names, never started. A link in the way of the output folder or its `attachments` and `scripts` folders stops the writing there.
 
 Settings: none.
 

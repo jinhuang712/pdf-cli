@@ -127,6 +127,10 @@ final class FactReader {
     private(set) var facts = FileFacts()
     /// Given each attachment and script as the walk meets it, for `pdf dump`; nil for the facts.
     var sink: ((Payload) -> Void)?
+    /// What the sink wants; the rest is never decoded.
+    var wantAttachments = true, wantScripts = true
+    /// Streams and actions already handed to the sink, so one shared by many places is saved once.
+    private var handed = Set<OpaquePointer>()
     private var visits = 0
     /// Tree nodes, file specifications and form fields: each counts once in the file.
     private var seen = Set<OpaquePointer>()
@@ -146,9 +150,12 @@ final class FactReader {
     private var layersOff = Set<OpaquePointer>()
 
     /// Reads every fact of `document`. The outline comes from PDFKit, which opens the file again.
-    static func read(_ document: CGPDFDocument, url: URL, sink: ((Payload) -> Void)? = nil) -> FileFacts {
+    static func read(_ document: CGPDFDocument, url: URL, attachments: Bool = true, scripts: Bool = true,
+                     sink: ((Payload) -> Void)? = nil) -> FileFacts {
         let reader = FactReader()
         reader.sink = sink
+        reader.wantAttachments = attachments
+        reader.wantScripts = scripts
         reader.readDocument(document)
         // The page tree is walked once: asking for each page by its number takes longer the
         // longer the file, 27 s for 30,000 pages.
@@ -821,7 +828,7 @@ final class FactReader {
     /// is its compressed size, so it is no answer.
     func attachment(_ spec: CGPDFDictionaryRef, fallback: String, page: Int?) {
         guard visit(spec) else { return }
-        if let sink { sink(Self.payload(of: spec, fallback: fallback, page: page)) }
+        if let sink, wantAttachments, let payload = payload(of: spec, fallback: fallback, page: page) { sink(payload) }
         guard facts.attachments.count < Self.maxListed else {
             facts.moreAttachments += 1
             return
@@ -848,7 +855,9 @@ final class FactReader {
         var found: FileFacts.Script?
         switch Self.name(action, "S") ?? "" {
         case "JavaScript":
-            if let sink { sink(Self.payload(of: action, trigger: trigger, page: page)) }
+            if let sink, wantScripts, handed.insert(Self.identity(action)).inserted {
+                sink(Self.payload(of: action, trigger: trigger, page: page))
+            }
             var stream: CGPDFStreamRef?
             func characters(_ count: Int) -> String { "\(count) character\(count == 1 ? "" : "s")" }
             var detail = Self.string(action, "JS").map { characters($0.count) } ?? "a script"
@@ -864,6 +873,10 @@ final class FactReader {
             let target = Self.string(action, "F")
                 ?? ((CGPDFDictionaryGetDictionary(action, "F", &spec)) ? spec.flatMap { Self.string($0, "UF") ?? Self.string($0, "F") } : nil)
             found = FileFacts.Script(trigger: trigger, kind: "Launch", page: page, detail: target ?? "a program")
+            if let sink, wantScripts, handed.insert(Self.identity(action)).inserted {
+                sink(.script(trigger: trigger, kind: "Launch", page: page,
+                             text: "The file names this program or file to start: \(target ?? "a program")\nIt was not started.", skipped: nil))
+            }
         default:
             break
         }
@@ -908,11 +921,18 @@ extension FactReader {
     /// The most one attachment or script may decode to; a stream that decodes past it is skipped.
     static let maxPayload = 256 << 20
 
-    /// The decoded bytes of a stream, or why they were left.
+    /// The decoded bytes of a stream, or why they were left. A stream with stacked filters is left
+    /// at once: each layer can multiply its size by a thousand, and the decoder builds the whole
+    /// result before it can be measured.
     static func bytes(_ stream: CGPDFStreamRef) -> (data: Data?, skipped: String?) {
         if let info = CGPDFStreamGetDictionary(stream) {
+            var filters: CGPDFArrayRef?
+            if CGPDFDictionaryGetArray(info, "Filter", &filters), let filters, CGPDFArrayGetCount(filters) > 1 {
+                return (nil, "the stream stacks \(CGPDFArrayGetCount(filters)) filters")
+            }
             var length: CGPDFInteger = 0
-            if CGPDFDictionaryGetInteger(info, "Length", &length), length > maxPayload / 4 {
+            let limit = has(info, "Filter") ? maxPayload / 4 : maxPayload
+            if CGPDFDictionaryGetInteger(info, "Length", &length), length > limit {
                 return (nil, "stored size \(length) bytes is over the limit")
             }
         }
@@ -922,14 +942,16 @@ extension FactReader {
         return data.count > maxPayload ? (nil, "decoded size \(data.count) bytes is over the limit") : (data, nil)
     }
 
-    static func payload(of spec: CGPDFDictionaryRef, fallback: String, page: Int?) -> Payload {
-        let name = string(spec, "UF") ?? string(spec, "F") ?? fallback
+    func payload(of spec: CGPDFDictionaryRef, fallback: String, page: Int?) -> Payload? {
+        let name = Self.string(spec, "UF") ?? Self.string(spec, "F") ?? fallback
         var files: CGPDFDictionaryRef?
         var stream: CGPDFStreamRef?
         guard CGPDFDictionaryGetDictionary(spec, "EF", &files), let files, CGPDFDictionaryGetStream(files, "F", &stream), let stream else {
             return .attachment(name: name, page: page, data: nil, skipped: "the file specification holds no embedded file")
         }
-        let read = bytes(stream)
+        // Many specifications may name one stream: it is saved once.
+        guard handed.insert(unsafeBitCast(stream, to: OpaquePointer.self)).inserted else { return nil }
+        let read = Self.bytes(stream)
         return .attachment(name: name, page: page, data: read.data, skipped: read.skipped)
     }
 

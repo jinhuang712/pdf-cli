@@ -935,6 +935,12 @@ public struct ReferenceIndex {
         }.map { $0.index + 1 }.sorted()
     }
 
+    /// Every entry of the lists, cited or not, in list order.
+    public mutating func allEntries(notes: [Int: PageNotes]) -> [ReferenceEntry] {
+        if judged == nil { judged = References.resolve(digests: digests, notes: notes, outline: outline) }
+        return judged!.entries.map { ReferenceEntry($0) }
+    }
+
     /// How many entries the lists hold, and on which pages they start, counted from 1.
     public mutating func lists(notes: [Int: PageNotes]) -> [(entries: Int, page: Int)] {
         if judged == nil { judged = References.resolve(digests: digests, notes: notes, outline: outline) }

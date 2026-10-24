@@ -52,35 +52,46 @@ struct DumpCommand: ParsableCommand {
         var written: [Written] = []
         var notices: [String] = []
 
+        // The file opens first, so a locked, broken or missing file writes nothing.
+        let store = try Store()
+        let reader = Reader(store: store, library: try Library())
+        let docID: String
+        let pageCount: Int
+        switch try reader.read(path: path, pages: markdown || text || figures || tables || notes || refs ? nil : [0], password: password) {
+        case .fileFailed(let reason):
+            print(json ? ReadCommand.failureJSON(path, reason) : "\(path): failed: \(reason)")
+            throw ExitCode(3)
+        case .pages(let id, let count, _):
+            docID = id
+            pageCount = count
+        }
+
         for (wanted, format, name) in [(markdown, "md", "document.md"), (text, "text", "document.txt")] where wanted {
+            var arguments = ["--format", format, "--budget", "all"]
+            arguments += pages.map { ["--page", $0] } ?? ["--full"]
+            arguments += ["--", path]
+            let (target, handle) = try Self.create(name, in: folder)
             do {
-                let target = try Dump.write(Data(), as: name, in: folder)
-                var arguments = [path, "--full", "--budget", "all", "--format", format]
-                if let pages { arguments += ["--page", pages] }
-                let flagged = try Self.capture(arguments, into: target)
-                written.append(Written(kind: format == "md" ? "markdown" : "text", path: target.path, page: nil, note: flagged ? "some pages are flagged; read the file's summary line" : nil))
-            } catch let error as DumpError {
-                print("\(path): failed: \(error.description)")
-                throw ExitCode(1)
+                let exit = try Self.capture(arguments, into: handle)
+                if exit == 3 || exit == 1 || exit == 64 {
+                    try? FileManager.default.removeItem(at: target)
+                    notices.append("\(name) was not written: pdf read exited \(exit)")
+                    continue
+                }
+                written.append(Written(kind: format == "md" ? "markdown" : "text", path: target.path, page: nil,
+                                       note: exit == 2 ? "some pages are flagged; the file's first line says which" : nil))
+            } catch {
+                try? FileManager.default.removeItem(at: target)
+                throw error
             }
         }
 
         if figures || tables || notes || refs {
-            let store = try Store()
-            let reader = Reader(store: store, library: try Library())
-            let docID: String
-            let pageCount: Int
-            switch try reader.read(path: path, pages: nil, password: password) {
-            case .fileFailed(let reason):
-                print(json ? ReadCommand.failureJSON(path, reason) : "\(path): failed: \(reason)")
-                throw ExitCode(3)
-            case .pages(let id, let count, _):
-                docID = id
-                pageCount = count
-            }
             if figures || tables {
                 let info = try InfoCommand.info(path: path, docID: docID, pageCount: pageCount, store: store)
                 var names = Set<String>()
+                if figures, !info.figures.contains(where: { $0.kind == "figure" }) { notices.append("no figure was found") }
+                if tables, !info.figures.contains(where: { $0.kind == "table" }) { notices.append("no table was found") }
                 for found in info.figures where (found.kind == "figure" ? figures : tables) {
                     let kind: Region.Kind = found.kind == "figure" ? .figure : .table
                     do {
@@ -118,47 +129,41 @@ struct DumpCommand: ParsableCommand {
                         }
                     }
                     let target = try Self.writeJSON(list, as: "notes.json", in: folder)
-                    written.append(Written(kind: "notes", path: target.path, page: nil, note: "\(list.count) notes"))
+                    written.append(Written(kind: "notes", path: target.path, page: nil, note: "\(list.count) note\(list.count == 1 ? "" : "s")"))
                 }
                 if refs {
                     var index = ReferenceIndex(outline: facts?.outline ?? [])
                     try index.refresh(keys: keys, store: store)
-                    let cited = index.resolve(pages: Array(0..<pageCount), notes: judged)
                     struct Entry: Encodable {
                         var id: String
                         var page: Int
                         var text: String
                         var doi: String?
                     }
-                    var seen = Set<String>()
-                    var list: [Entry] = []
-                    for page in cited.keys.sorted() {
-                        for entry in cited[page]!.entries.values.sorted(by: { $0.id.localizedStandardCompare($1.id) == .orderedAscending })
-                        where seen.insert("\(entry.page)/\(entry.id)").inserted {
-                            list.append(Entry(id: entry.id, page: entry.page + 1, text: entry.text, doi: entry.doi))
-                        }
-                    }
+                    let list = index.allEntries(notes: judged).map { Entry(id: $0.id, page: $0.page + 1, text: $0.text, doi: $0.doi) }
                     let target = try Self.writeJSON(list, as: "references.json", in: folder)
-                    written.append(Written(kind: "references", path: target.path, page: nil, note: "\(list.count) entries"))
+                    written.append(Written(kind: "references", path: target.path, page: nil, note: "\(list.count) entr\(list.count == 1 ? "y" : "ies"), cited or not, in the list's order"))
                 }
             }
         }
 
         if attachments || scripts {
+            let items: [Dump.Item]
             do {
-                for item in try Dump.payloads(path: path, folder: folder, attachments: attachments, scripts: scripts, password: password) {
-                    if let skipped = item.skipped {
-                        notices.append("\(item.kind) \(item.detail) was not saved: \(skipped)")
-                    } else {
-                        written.append(Written(kind: item.kind, path: item.path, page: item.page.map { $0 + 1 }, note: item.detail))
-                    }
-                }
+                items = try Dump.supervised(path: path, folder: folder, attachments: attachments, scripts: scripts, password: password)
             } catch let error as DumpError {
                 print(json ? ReadCommand.failureJSON(path, error.description) : "\(path): failed: \(error.description)")
                 throw ExitCode(3)
             }
-            if attachments, !written.contains(where: { $0.kind == "attachment" }) { notices.append("the file carries no attachment") }
-            if scripts, !written.contains(where: { $0.kind == "script" }) { notices.append("the file carries no script") }
+            for item in items {
+                if let skipped = item.skipped {
+                    notices.append("\(item.kind) \(item.detail) was not saved: \(skipped)")
+                } else {
+                    written.append(Written(kind: item.kind, path: item.path, page: item.page.map { $0 + 1 }, note: item.detail))
+                }
+            }
+            if attachments, !items.contains(where: { $0.kind == "attachment" || $0.kind == "dump" }) { notices.append("the file carries no attachment") }
+            if scripts, !items.contains(where: { $0.kind == "script" || $0.kind == "dump" }) { notices.append("the file carries no script") }
         }
 
         if json {
@@ -188,30 +193,40 @@ struct DumpCommand: ParsableCommand {
     }
 
     func defaultFolder() -> String {
-        let stem = ((path as NSString).lastPathComponent as NSString).deletingPathExtension
-        return FileManager.default.currentDirectoryPath + "/" + (stem.isEmpty ? "dump" : stem)
+        var stem = ((path as NSString).lastPathComponent as NSString).deletingPathExtension
+        stem = String(stem.drop { $0 == "." })
+        let folder = FileManager.default.currentDirectoryPath + "/" + (stem.isEmpty ? "dump" : stem)
+        return folder == URL(fileURLWithPath: path).standardizedFileURL.path ? folder + "-dump" : folder
     }
 
-    /// Runs `pdf read` with these arguments and writes what it prints to `target`. True when it
-    /// ended with an exit code that flags pages.
-    static func capture(_ arguments: [String], into target: URL) throws -> Bool {
+    static func create(_ name: String, in folder: URL) throws -> (url: URL, handle: FileHandle) {
+        do {
+            return try Dump.create(name, in: folder)
+        } catch let error as DumpError {
+            print("failed: \(error.description)")
+            throw ExitCode(1)
+        }
+    }
+
+    /// Runs `pdf read` with these arguments and writes what it prints to `handle`, which the caller
+    /// made. Returns the exit code `pdf read` ended with.
+    static func capture(_ arguments: [String], into handle: FileHandle) throws -> Int32 {
         var command = try ReadCommand.parse(arguments)
         fflush(stdout)
         let saved = dup(1)
-        guard saved >= 0, let sink = FileHandle(forWritingAtPath: target.path) else { throw DumpError(description: "\(target.path) could not be opened") }
-        dup2(sink.fileDescriptor, 1)
-        var flagged = false
+        guard saved >= 0 else { throw DumpError(description: "standard output could not be saved") }
+        dup2(handle.fileDescriptor, 1)
         defer {
             fflush(stdout)
             dup2(saved, 1)
             close(saved)
-            try? sink.close()
+            try? handle.close()
         }
         do {
             try command.run()
         } catch let code as ExitCode {
-            flagged = code.rawValue != 0
+            return code.rawValue
         }
-        return flagged
+        return 0
     }
 }

@@ -15,88 +15,179 @@ public enum Dump {
         public var skipped: String?
     }
 
-    /// A name safe to use in `folder`: the PDF's name cut to its last component, with control
-    /// characters, a leading dot and anything past 120 characters dropped, and a number added
-    /// when the name is taken.
+    /// The most files and bytes one dump writes, and the memory and time its reader may take.
+    static let maxFiles = 1_000
+    static let maxBytes = 1 << 30
+
+    /// A name safe to use in a folder: the PDF's name cut to its last component, with control and
+    /// format characters, leading dots and spaces, and anything past 200 bytes of UTF-8 dropped, and a
+    /// number added when the name is taken (APFS treats names alike that differ in case or form).
     public static func safeName(_ name: String, fallback: String, taken: inout Set<String>) -> String {
         var base = name.split(whereSeparator: { $0 == "/" || $0 == "\\" || $0 == ":" }).last.map(String.init) ?? ""
-        base = String(base.unicodeScalars.filter { $0.value >= 32 && $0.value != 127 })
-        while base.hasPrefix(".") { base.removeFirst() }
+        let unsafe: Set<Unicode.GeneralCategory> = [.control, .format, .lineSeparator, .paragraphSeparator, .surrogate, .privateUse, .unassigned]
+        base = String(base.unicodeScalars.filter { !unsafe.contains($0.properties.generalCategory) })
+        base = String(base.drop { $0 == "." || $0.isWhitespace })
         base = base.trimmingCharacters(in: .whitespaces)
         if base.isEmpty { base = fallback }
-        if base.count > 120 {
-            let ext = (base as NSString).pathExtension
-            let stem = String(base.prefix(100))
-            base = ext.count <= 12 && !ext.isEmpty ? stem + "." + ext : stem
+        let ext = (base as NSString).pathExtension
+        let suffix = ext.utf8.count <= 12 && !ext.isEmpty ? "." + ext : ""
+        var stem = suffix.isEmpty ? base : String(base.dropLast(suffix.count))
+        func fit(_ stem: String, _ number: String) -> String {
+            var stem = stem
+            while (stem + number + suffix).utf8.count > 200, !stem.isEmpty { stem.removeLast() }
+            return (stem.isEmpty ? "file" : stem) + number + suffix
         }
-        var candidate = base
+        stem = String(stem)
+        var candidate = fit(stem, "")
         var number = 2
-        while taken.contains(candidate.lowercased()) {
-            let ext = (base as NSString).pathExtension
-            let stem = ext.isEmpty ? base : String(base.dropLast(ext.count + 1))
-            candidate = "\(stem)-\(number)" + (ext.isEmpty ? "" : "." + ext)
+        func key(_ name: String) -> String { name.precomposedStringWithCanonicalMapping.lowercased() }
+        while taken.contains(key(candidate)) {
+            candidate = fit(stem, "-\(number)")
             number += 1
         }
-        taken.insert(candidate.lowercased())
+        taken.insert(key(candidate))
         return candidate
     }
 
     /// Saves the attachments and the scripts of the file into `folder/attachments` and
-    /// `folder/scripts`. Only what was asked for is written.
-    public static func payloads(path: String, folder: URL, attachments: Bool, scripts: Bool, password: String? = nil) throws -> [Item] {
+    /// `folder/scripts`, in this process. Only what was asked for is decoded or written. `pdf dump`
+    /// runs it in a worker (`supervised`), which a file that exhausts memory cannot take down with it.
+    public static func payloads(path: String, folder: URL, attachments: Bool, scripts: Bool) throws -> [Item] {
         let url = URL(fileURLWithPath: path)
         guard let document = CGPDFDocument(url as CFURL) else { throw DumpError(description: OpenFailure.classify(url: url)) }
         if document.isEncrypted && !document.isUnlocked {
-            _ = document.unlockWithPassword("") || document.unlockWithPassword(password ?? "")
+            _ = document.unlockWithPassword("") || document.unlockWithPassword(Env.password)
         }
         guard document.isUnlocked else { throw DumpError(description: OpenFailure.locked) }
         var items: [Item] = []
-        var failure: Error?
         var names = (attachments: Set<String>(), scripts: Set<String>())
-        _ = FactReader.read(document, url: url) { payload in
-            guard failure == nil else { return }
+        var files = 0, bytes = 0
+        var capped = false
+        let quarantine = readQuarantine(of: url)
+        _ = FactReader.read(document, url: url, attachments: attachments, scripts: scripts) { payload in
+            guard !capped else { return }
+            let kind: String, name: String, sub: String, page: Int?, data: Data?, skipped: String?, detail: String
+            switch payload {
+            case .attachment(let n, let p, let d, let s):
+                kind = "attachment"; sub = "attachments"; page = p; data = d; skipped = s
+                name = safeName(n, fallback: "attachment", taken: &names.attachments); detail = name
+            case .script(let trigger, let k, let p, let text, let s):
+                let stem = "\(k.lowercased())-\(names.scripts.count + 1)"
+                kind = "script"; sub = "scripts"; page = p; skipped = s; detail = trigger
+                name = safeName(stem + (k == "JavaScript" ? ".js.txt" : ".txt"), fallback: stem, taken: &names.scripts)
+                let header = "// \(k) on \(trigger)" + (p.map { ", p.\($0 + 1)" } ?? "") + "; saved as text by pdf dump, never run\n"
+                data = text.map { Data((header + $0).utf8) }
+            }
+            guard let data else {
+                items.append(Item(kind: kind, path: nil, page: page, detail: detail, skipped: skipped))
+                return
+            }
+            if files >= maxFiles || bytes + data.count > maxBytes {
+                capped = true
+                items.append(Item(kind: kind, path: nil, page: page, detail: detail,
+                                  skipped: "the dump reached its limit of \(maxFiles) files or \(maxBytes >> 20) MB; the rest was left"))
+                return
+            }
             do {
-                switch payload {
-                case .attachment(let name, let page, let data, let skipped):
-                    guard attachments else { return }
-                    let file = safeName(name, fallback: "attachment", taken: &names.attachments)
-                    guard let data else {
-                        items.append(Item(kind: "attachment", path: nil, page: page, detail: file, skipped: skipped))
-                        return
-                    }
-                    let target = try write(data, as: file, in: folder.appendingPathComponent("attachments"))
-                    items.append(Item(kind: "attachment", path: target.path, page: page, detail: "\(data.count) bytes", skipped: nil))
-                case .script(let trigger, let kind, let page, let text, let skipped):
-                    guard scripts else { return }
-                    let stem = "\(kind.lowercased())-\(names.scripts.count + 1)"
-                    let file = safeName(stem + (kind == "JavaScript" ? ".js.txt" : ".txt"), fallback: stem, taken: &names.scripts)
-                    guard let text else {
-                        items.append(Item(kind: "script", path: nil, page: page, detail: trigger, skipped: skipped))
-                        return
-                    }
-                    let header = "// \(kind) on \(trigger)" + (page.map { ", p.\($0 + 1)" } ?? "") + "; saved as text by pdf dump, never run\n"
-                    let target = try write(Data((header + text).utf8), as: file, in: folder.appendingPathComponent("scripts"))
-                    items.append(Item(kind: "script", path: target.path, page: page, detail: trigger, skipped: nil))
-                }
+                let target = try write(data, as: name, in: folder, sub: sub, quarantine: quarantine)
+                files += 1
+                bytes += data.count
+                items.append(Item(kind: kind, path: target.path, page: page, detail: kind == "attachment" ? "\(data.count) bytes" : detail, skipped: nil))
             } catch {
-                failure = error
+                items.append(Item(kind: kind, path: nil, page: page, detail: detail, skipped: "\(error)"))
             }
         }
-        if let failure { throw failure }
         return items
     }
 
-    /// Writes `data` as a new file, never over one, with no execute permission.
-    public static func write(_ data: Data, as name: String, in folder: URL) throws -> URL {
+    /// Runs `payloads` in a worker, within the pool's time and memory limits. Items the worker
+    /// wrote before it was stopped are found in the folder and listed with the reason it stopped.
+    public static func supervised(path: String, folder: URL, attachments: Bool, scripts: Bool, password: String?) throws -> [Item] {
+        var arguments = ["__worker", "dump", path, "--out", folder.path]
+        if attachments { arguments.append("--attachments") }
+        if scripts { arguments.append("--scripts") }
+        do {
+            let event = try Crop.runWorker(arguments, environment: password.map { [Env.passwordVariable: $0] } ?? [:])
+            if let reason = event?.reason { throw DumpError(description: reason) }
+            guard let text = event?.text, let items = try? JSONDecoder().decode([Item].self, from: Data(text.utf8)) else {
+                throw DumpError(description: "the reader stopped before it reported")
+            }
+            return items
+        } catch let error as CropError {
+            var items: [Item] = []
+            for sub in ["attachments", "scripts"] {
+                let found = (try? FileManager.default.contentsOfDirectory(atPath: folder.appendingPathComponent(sub).path)) ?? []
+                for file in found.sorted() {
+                    items.append(Item(kind: sub == "scripts" ? "script" : "attachment", path: folder.appendingPathComponent(sub).appendingPathComponent(file).path,
+                                      page: nil, detail: "written before the reader stopped", skipped: nil))
+                }
+            }
+            items.append(Item(kind: "dump", path: nil, page: nil, detail: "attachments and scripts", skipped: error.description + "; the rest was left"))
+            return items
+        }
+    }
+
+    /// The Gatekeeper quarantine mark of the PDF, which its attachments inherit as they would from
+    /// an archive that was downloaded.
+    static func readQuarantine(of url: URL) -> Data? {
+        let size = getxattr(url.path, "com.apple.quarantine", nil, 0, 0, 0)
+        guard size > 0 else { return nil }
+        var value = [UInt8](repeating: 0, count: size)
+        guard getxattr(url.path, "com.apple.quarantine", &value, size, 0, 0) == size else { return nil }
+        return Data(value)
+    }
+
+    /// Makes `folder` and `sub` inside it, refusing a symbolic link in the way: a link there could
+    /// send files anywhere.
+    static func directory(_ folder: URL, sub: String?) throws -> URL {
+        func plain(_ url: URL) throws {
+            var info = stat()
+            if lstat(url.path, &info) == 0 {
+                guard info.st_mode & S_IFMT == S_IFDIR else {
+                    throw DumpError(description: "\(url.path) is \(info.st_mode & S_IFMT == S_IFLNK ? "a link" : "not a folder"), so nothing is written there")
+                }
+            }
+        }
+        try plain(folder)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let target = folder.appendingPathComponent(name)
+        guard let sub else { return folder }
+        let inner = folder.appendingPathComponent(sub, isDirectory: true)
+        try plain(inner)
+        if !FileManager.default.fileExists(atPath: inner.path) {
+            try FileManager.default.createDirectory(at: inner, withIntermediateDirectories: false)
+        }
+        return inner
+    }
+
+    /// Creates a new file, never over one and never through a link, with no execute permission.
+    public static func create(_ name: String, in folder: URL, sub: String? = nil) throws -> (url: URL, handle: FileHandle) {
+        let directory = try Dump.directory(folder, sub: sub)
+        let target = directory.appendingPathComponent(name)
         let descriptor = open(target.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0o644)
         guard descriptor >= 0 else {
             throw DumpError(description: "\(target.path) could not be created: \(String(cString: strerror(errno)))")
         }
-        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
-        try handle.write(contentsOf: data)
-        return target
+        return (target, FileHandle(fileDescriptor: descriptor, closeOnDealloc: true))
+    }
+
+    /// Writes `data` as a new file; a name that is taken gets a number.
+    public static func write(_ data: Data, as name: String, in folder: URL, sub: String? = nil, quarantine: Data? = nil) throws -> URL {
+        var attempt = 1
+        var candidate = name
+        while true {
+            do {
+                let (url, handle) = try create(candidate, in: folder, sub: sub)
+                try handle.write(contentsOf: data)
+                try handle.close()
+                if let quarantine { _ = quarantine.withUnsafeBytes { setxattr(url.path, "com.apple.quarantine", $0.baseAddress, $0.count, 0, 0) } }
+                return url
+            } catch let error as DumpError where error.description.hasSuffix("File exists") && attempt < 50 {
+                attempt += 1
+                let ext = (name as NSString).pathExtension
+                let stem = ext.isEmpty ? name : String(name.dropLast(ext.count + 1))
+                candidate = "\(stem)-\(attempt)" + (ext.isEmpty ? "" : "." + ext)
+            }
+        }
     }
 }
 

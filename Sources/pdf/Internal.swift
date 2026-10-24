@@ -77,7 +77,7 @@ struct WorkerCommand: AsyncParsableCommand {
         shouldDisplay: false
     )
 
-    enum Mode: String, ExpressibleByArgument { case index, sample, facts, parse, crop }
+    enum Mode: String, ExpressibleByArgument { case index, sample, facts, parse, crop, dump }
 
     @Argument var mode: Mode
     @Argument var path: String
@@ -89,6 +89,8 @@ struct WorkerCommand: AsyncParsableCommand {
     @Option var out: String?
     @Option var bbox: String?
     @Flag var grid = false
+    @Flag var attachments = false
+    @Flag var scripts = false
 
     func run() async throws {
         if background { Worker.startInBackground() }
@@ -105,6 +107,9 @@ struct WorkerCommand: AsyncParsableCommand {
         case .crop:
             guard let page = pages.first, let out else { throw ExitCode(64) }
             throw ExitCode(Worker.crop(path: path, page: page, bbox: bbox, grid: grid, out: out))
+        case .dump:
+            guard let out else { throw ExitCode(64) }
+            throw ExitCode(Worker.dump(path: path, out: out, attachments: attachments, scripts: scripts))
         }
     }
 }

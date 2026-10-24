@@ -33,3 +33,4 @@ The spike's reports (M0) are in [spike/](../spike/README.md).
 | M2.13 The agent's LaTeX and Markdown kept for later reads | 2026-10-18 | 1 high, 4 medium, 4 low, and 1 in M2.6; all fixed | [M2.13](M2.13-transcribe.md) |
 | M2.7 Footnotes, endnotes, headnotes, margin notes and author notes | 2026-10-18 | 4 high, 9 medium, 7 low; 13 fixed, 5 in part, 2 kept | [M2.7](M2.7-notes.md) |
 | M2.8 Citations, references and cross-references | 2026-10-25 | 3 high, 4 medium, 5 low; 5 fixed, 7 kept | [M2.8](M2.8-citations.md) |
+| M2.9 `pdf dump` | 2026-10-25 | 4 high, 6 medium, 8 low; 14 fixed, 4 kept | [M2.9](M2.9-dump.md) |

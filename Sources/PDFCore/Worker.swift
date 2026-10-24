@@ -133,6 +133,19 @@ public enum Worker {
         return 0
     }
 
+    /// Saves the file's attachments and scripts into `out` and reports the items written. The
+    /// dump runs it in a worker so that a stream that decodes into too much memory costs the worker.
+    public static func dump(path: String, out: String, attachments: Bool, scripts: Bool) -> Int32 {
+        watchParent()
+        do {
+            let items = try Dump.payloads(path: path, folder: URL(fileURLWithPath: out), attachments: attachments, scripts: scripts)
+            emit(WorkerEvent(kind: .result, text: String(decoding: try JSONEncoder().encode(items), as: UTF8.self)))
+        } catch {
+            emit(WorkerEvent(kind: .result, reason: "\((error as? DumpError)?.description ?? "\(error)")"))
+        }
+        return 0
+    }
+
     /// Reports the file's sample check. The runner runs it in a worker of its own, beside the
     /// index, so a new file waits for the slower of the two, not for both.
     public static func sample(path: String) async -> Int32 {
