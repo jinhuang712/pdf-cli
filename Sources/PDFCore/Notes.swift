@@ -63,7 +63,7 @@ public struct PageNotes: Equatable, Sendable {
     public var isEmpty: Bool { entries.isEmpty }
 }
 
-enum Notes {
+public enum Notes {
     // MARK: Finding notes on a page
 
     struct Found {
@@ -883,7 +883,7 @@ enum Notes {
         return texts.joined(separator: " ")
     }
 
-    static func text(of entry: PageNotes.Entry, in layer: PageText) -> String {
+    public static func text(of entry: PageNotes.Entry, in layer: PageText) -> String {
         entry.text ?? text(of: entry.kind, blocks: entry.blocks, in: layer)
     }
 }

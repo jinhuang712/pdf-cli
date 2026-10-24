@@ -125,6 +125,8 @@ final class FactReader {
     static let annotationSeconds = 3.0
 
     private(set) var facts = FileFacts()
+    /// Given each attachment and script as the walk meets it, for `pdf dump`; nil for the facts.
+    var sink: ((Payload) -> Void)?
     private var visits = 0
     /// Tree nodes, file specifications and form fields: each counts once in the file.
     private var seen = Set<OpaquePointer>()
@@ -144,8 +146,9 @@ final class FactReader {
     private var layersOff = Set<OpaquePointer>()
 
     /// Reads every fact of `document`. The outline comes from PDFKit, which opens the file again.
-    static func read(_ document: CGPDFDocument, url: URL) -> FileFacts {
+    static func read(_ document: CGPDFDocument, url: URL, sink: ((Payload) -> Void)? = nil) -> FileFacts {
         let reader = FactReader()
+        reader.sink = sink
         reader.readDocument(document)
         // The page tree is walked once: asking for each page by its number takes longer the
         // longer the file, 27 s for 30,000 pages.
@@ -818,6 +821,7 @@ final class FactReader {
     /// is its compressed size, so it is no answer.
     func attachment(_ spec: CGPDFDictionaryRef, fallback: String, page: Int?) {
         guard visit(spec) else { return }
+        if let sink { sink(Self.payload(of: spec, fallback: fallback, page: page)) }
         guard facts.attachments.count < Self.maxListed else {
             facts.moreAttachments += 1
             return
@@ -844,6 +848,7 @@ final class FactReader {
         var found: FileFacts.Script?
         switch Self.name(action, "S") ?? "" {
         case "JavaScript":
+            if let sink { sink(Self.payload(of: action, trigger: trigger, page: page)) }
             var stream: CGPDFStreamRef?
             func characters(_ count: Int) -> String { "\(count) character\(count == 1 ? "" : "s")" }
             var detail = Self.string(action, "JS").map { characters($0.count) } ?? "a script"
@@ -887,5 +892,62 @@ final class FactReader {
             guard CGPDFDictionaryGetDictionary(actions, key, &action), let action else { continue }
             scripts(in: action, trigger: triggers[key]!, page: page)
         }
+    }
+}
+
+// MARK: What `pdf dump` saves
+
+/// An attached file or a script, as the walk of the file meets it. The bytes are only copied
+/// out of their streams, never opened, run or launched.
+public enum Payload: Sendable {
+    case attachment(name: String, page: Int?, data: Data?, skipped: String?)
+    case script(trigger: String, kind: String, page: Int?, text: String?, skipped: String?)
+}
+
+extension FactReader {
+    /// The most one attachment or script may decode to; a stream that decodes past it is skipped.
+    static let maxPayload = 256 << 20
+
+    /// The decoded bytes of a stream, or why they were left.
+    static func bytes(_ stream: CGPDFStreamRef) -> (data: Data?, skipped: String?) {
+        if let info = CGPDFStreamGetDictionary(stream) {
+            var length: CGPDFInteger = 0
+            if CGPDFDictionaryGetInteger(info, "Length", &length), length > maxPayload / 4 {
+                return (nil, "stored size \(length) bytes is over the limit")
+            }
+        }
+        var format = CGPDFDataFormat.raw
+        guard let copy = CGPDFStreamCopyData(stream, &format) else { return (nil, "the stream could not be decoded") }
+        let data = copy as Data
+        return data.count > maxPayload ? (nil, "decoded size \(data.count) bytes is over the limit") : (data, nil)
+    }
+
+    static func payload(of spec: CGPDFDictionaryRef, fallback: String, page: Int?) -> Payload {
+        let name = string(spec, "UF") ?? string(spec, "F") ?? fallback
+        var files: CGPDFDictionaryRef?
+        var stream: CGPDFStreamRef?
+        guard CGPDFDictionaryGetDictionary(spec, "EF", &files), let files, CGPDFDictionaryGetStream(files, "F", &stream), let stream else {
+            return .attachment(name: name, page: page, data: nil, skipped: "the file specification holds no embedded file")
+        }
+        let read = bytes(stream)
+        return .attachment(name: name, page: page, data: read.data, skipped: read.skipped)
+    }
+
+    static func payload(of action: CGPDFDictionaryRef, trigger: String, page: Int?) -> Payload {
+        var stream: CGPDFStreamRef?
+        if CGPDFDictionaryGetStream(action, "JS", &stream), let stream {
+            let read = bytes(stream)
+            return .script(trigger: trigger, kind: "JavaScript", page: page, text: read.data.map(decode), skipped: read.skipped)
+        }
+        guard let text = string(action, "JS") else {
+            return .script(trigger: trigger, kind: "JavaScript", page: page, text: nil, skipped: "the action holds no script text")
+        }
+        return .script(trigger: trigger, kind: "JavaScript", page: page, text: text, skipped: nil)
+    }
+
+    /// A script's bytes as text: UTF-16 when a byte order mark says so, else UTF-8, else Latin-1.
+    static func decode(_ data: Data) -> String {
+        if data.starts(with: [0xFE, 0xFF]) || data.starts(with: [0xFF, 0xFE]), let text = String(data: data, encoding: .utf16) { return text }
+        return String(data: data, encoding: .utf8) ?? String(decoding: data, as: UTF8.self)
     }
 }

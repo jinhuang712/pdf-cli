@@ -1,4 +1,4 @@
-<!-- what-we-build: drafted 2026-10-19 -->
+<!-- what-we-build: drafted 2026-10-25 -->
 # Features
 
 ✅ built · 🚧 built with a gap · ⬜ planned
@@ -255,21 +255,25 @@ Gap:
 
 Settings: none.
 
-## F6 — Dump ⬜
+## F6 — Dump 🚧
 
 Writes a PDF's content to files and prints their paths.
 
 | Flag | What it writes |
 |---|---|
-| `--markdown`, `--text`, `--html` | The document, or the pages given with `--page` |
+| `--markdown`, `--text` | The document as `pdf read` gives it, `document.md` or `document.txt`, or the pages given with `--page` |
 | `--figures` | Every figure as a PNG, vector charts included |
-| `--embedded-images` | The image objects stored in the file, such as photos and scans |
-| `--tables` | Every table as a PNG, with its caption and notes |
-| `--notes` | Footnotes, endnotes and other notes, as JSON |
-| `--refs` | The reference list, as JSON |
+| `--tables` | Every table as a PNG |
+| `--notes` | Footnotes, endnotes and other notes, as `notes.json` |
+| `--refs` | The reference list, as `references.json` |
 | `--attachments` | The files attached to the PDF, saved without being opened |
-| `--scripts` | The PDF's scripts, as text files that never run |
+| `--scripts` | The PDF's scripts, as text files that never run, each headed by what starts it |
 | `-o <folder>` | The output folder. The default is a folder named after the PDF, in the current folder. |
+
+`--json` lists what was written. A file is never overwritten: a second dump into the same folder stops, so use another `-o`. An attachment is saved by the last part of its name alone, with no leading dot and no execute permission, and a name taken gets a number. `--password-stdin` opens a locked PDF for everything but `--markdown` and `--text`.
+
+Gap:
+- `--html` and `--embedded-images` are not built. A table's PNG carries no notes below it (as F5's gap says). Attachments and scripts are read in the command's own process, not in a worker, so a file that crashes the reader crashes the dump; a stream may decode to at most 256 MB, and a larger one is left out and said so.
 
 Settings: none.
 

@@ -1,4 +1,4 @@
-<!-- what-we-build: drafted 2026-10-19 -->
+<!-- what-we-build: drafted 2026-10-25 -->
 # Roadmap
 
 **Current milestone:** M2. M1's tasks are all built; its exit criteria, the goals measured and a week of daily use, wait for the final wrap-up, as every milestone's do (the user, 2026-10-17).
@@ -82,7 +82,7 @@ The spike shipped no features. It answered the riskiest questions.
 - **Citations and references** (F15)
   - [x] M2.8 Citations, references and cross-references, found by rules and judged at read time against the pages parsed so far, as notes are. Printed citations stay as printed, a raised one that cites the list shows as `[12]`, `pdf read --ref 12` shows an entry with its DOI and the places that cite it, `--refs end` lists the entries the output cites, and "Fig. 4", "Eq. (5)" or "Section 3.2" links to its page, `[Fig. 4](#p.7)`; `pdf crop --figure 4` says where the text mentions it, and `pdf info` counts the entries. A hanging indent starts a block, parser version 18. See DESIGNS.md → "Decision: citations judged at read time by rules; cross-references as links to a page".
 - **Dump** (F6)
-  - [ ] M2.9 `pdf dump`, with attachments saved and scripts written as text, never opened or run
+  - [x] M2.9 `pdf dump`, with attachments saved and scripts written as text, never opened or run. Also text, figures, tables, notes and references; `--html` and `--embedded-images` are left (FEATURES.md → F6 Gap).
 - **Reparse** (F10)
   - [ ] M2.10 `pdf reparse`, plain and with `--step ocr`
 - **Setup and doctor** (F12)

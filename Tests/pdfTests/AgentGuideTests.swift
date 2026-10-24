@@ -13,8 +13,9 @@ import Testing
         .map { ($0._commandName, $0) })
 
     /// Flags a command has that the guide leaves out, on purpose: `--full` reads as a read with
-    /// no page flag does, and `--password` shows the password to every user of the Mac.
-    static let leftOut: [String: Set<String>] = ["read": ["--full"], "add": ["--password"]]
+    /// no page flag does, `--password` shows the password to every user of the Mac, and `dump`'s
+    /// `--page`, `--json` and `--password-stdin` work as they do for the other commands.
+    static let leftOut: [String: Set<String>] = ["read": ["--full"], "add": ["--password"], "dump": ["--page", "--json", "--password-stdin"]]
     static let everywhere: Set<String> = ["-h", "--help", "--version"]
 
     /// A command or a flag the guide names: `pdf read`, or `--raw` and `-j`, in any case, with
