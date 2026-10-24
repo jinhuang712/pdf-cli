@@ -402,7 +402,7 @@ public enum Output {
             // A page's notes take about 4,000 tokens at most and one note 800, as a paragraph's
             // annotations are held to 1,000: a page of thousands of small blocks that start with a
             // number must not run a read over its budget. What is left out is counted, and
-            // `--footnote` shows any note whole.
+            // `pdf note` shows any note whole.
             var leftOut = 0
             var firstLeftOut: String?
             var spent = 0
@@ -411,7 +411,7 @@ public enum Output {
             for position in noteOrder {
                 var note = noteBlocks[position]!
                 if tokens(note.text ?? "") > Output.noteTokens {
-                    note.text = prefix(note.text ?? "", tokens: Output.noteTokens) + "… (whole: pdf read \(path) --footnote \(note.id ?? ""))"
+                    note.text = prefix(note.text ?? "", tokens: Output.noteTokens) + "… (whole: pdf note \(path) \(note.id ?? ""))"
                     noteBlocks[position] = note
                 }
                 let cost = tokens(render(note, style: .md, raw: false))
@@ -645,7 +645,7 @@ public enum Output {
                 ? nil
                 : Block(
                     kind: .annotation, page: number,
-                    text: "\(leftOut) more note\(leftOut == 1 ? "" : "s") on this page, not shown: pdf read \(path) --footnote \(firstLeftOut ?? "")",
+                    text: "\(leftOut) more note\(leftOut == 1 ? "" : "s") on this page, not shown: pdf note \(path) \(firstLeftOut ?? "")",
                     status: "more")
             if notesMode == .inline, let more { inlineLeft.append(more) }
             if !inlineLeft.isEmpty {
@@ -1080,7 +1080,7 @@ public enum Output {
                 guard let entry = page.citations.entries[id] else { continue }
                 var text = entry.text
                 if tokens(text) > Output.noteTokens {
-                    text = prefix(text, tokens: Output.noteTokens) + "… (whole: pdf read \(path) --ref \(quoted(id)))"
+                    text = prefix(text, tokens: Output.noteTokens) + "… (whole: pdf ref \(path) \(quoted(id)))"
                 }
                 var block = Block(kind: .reference, page: entry.page + 1, block: (entry.blocks.first ?? 0) + 1, text: text)
                 block.id = id
@@ -1098,7 +1098,7 @@ public enum Output {
                 blocks.append(
                     Block(
                         kind: .annotation, page: page.index + 1, block: unit.blocks.first?.block,
-                        text: "\(count) more entr\(count == 1 ? "y" : "ies") cited here, not listed: pdf read \(path) --ref \(quoted(first))",
+                        text: "\(count) more entr\(count == 1 ? "y" : "ies") cited here, not listed: pdf ref \(path) \(quoted(first))",
                         status: "more"))
             }
             return blocks

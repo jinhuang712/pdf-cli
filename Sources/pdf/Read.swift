@@ -15,7 +15,7 @@ struct ReadCommand: ParsableCommand {
             Which part: --page, --printed-page, --section, --full, --from.
             How much and in what form: --budget, --format, --json.
             Set-aside text, shown on request: --raw, --include-hidden, --headers.
-            Notes and references: --notes, --footnote, --refs, --ref.
+            Notes and references: --notes, --refs. To look up one note or entry: pdf note, pdf ref.
 
             Examples:
               pdf read paper.pdf --section Method
@@ -61,19 +61,9 @@ struct ReadCommand: ParsableCommand {
     var notes: NotesOption = .end
     @Option(
         help: ArgumentHelp(
-            "Show one footnote or endnote, as 7 or 3.7 where numbering restarts, with the places that refer to it.",
-            valueName: "id"))
-    var footnote: String?
-    @Option(
-        help: ArgumentHelp(
             "List the entries of the reference list that the text shown cites, after it, or not (the default).",
             valueName: "end|off"))
     var refs: RefsOption = .off
-    @Option(
-        help: ArgumentHelp(
-            "Show one entry of the reference list, as 12, BK06 or Smith2020, with its DOI and the places that cite it.",
-            valueName: "id"))
-    var ref: String?
     @Flag(help: "Print JSON.") var json = false
 
     func validate() throws {
@@ -86,26 +76,6 @@ struct ReadCommand: ParsableCommand {
         }
         let scopes = [!pageSpecs.isEmpty, printedPage != nil, section != nil, full].filter { $0 }.count
         if scopes > 1 { throw ValidationError("choose one of --page, --printed-page, --section and --full") }
-        if footnote != nil, scopes > 0 || from != nil {
-            throw ValidationError("--footnote reads the whole document for the note: it takes no --page, --printed-page, --section, --full or --from")
-        }
-        if footnote != nil, notes != .end || budget != "5000" || raw || headers || includeHidden || format != .md {
-            throw ValidationError("--footnote shows one note whole: it takes only --json")
-        }
-        if let footnote, footnote.trimmingCharacters(in: .whitespaces).isEmpty {
-            throw ValidationError("--footnote takes a note's id, such as 7, 3.7 or *")
-        }
-        if ref != nil, footnote != nil { throw ValidationError("choose one of --footnote and --ref") }
-        if ref != nil, scopes > 0 || from != nil {
-            throw ValidationError("--ref reads the whole document for the entry: it takes no --page, --printed-page, --section, --full or --from")
-        }
-        if ref != nil, notes != .end || refs != .off || budget != "5000" || raw || headers || includeHidden || format != .md {
-            throw ValidationError("--ref shows one entry whole: it takes only --json")
-        }
-        if footnote != nil, refs != .off { throw ValidationError("--footnote shows one note whole: it takes only --json") }
-        if let ref, ref.trimmingCharacters(in: CharacterSet(charactersIn: " []")).isEmpty {
-            throw ValidationError("--ref takes an entry's id, such as 12, BK06 or Smith2020")
-        }
     }
 
     func run() throws {
@@ -115,8 +85,6 @@ struct ReadCommand: ParsableCommand {
     func read() throws {
         let store = try Store()
         let reader = Reader(store: store, library: try Library())
-        if let footnote { return try self.footnote(footnote) }
-        if let ref { return try self.reference(ref) }
         let resume = from.flatMap(Self.place)
         var wanted: [Int] = []
         for number in pageSpecs.flatMap({ Self.pages($0)! }) where !wanted.contains(number) { wanted.append(number) }
@@ -135,11 +103,11 @@ struct ReadCommand: ParsableCommand {
         var until: (page: Int, block: Int)?
         var scope = ""
         if let printedPage {
-            wanted = [try Self.printed(printedPage, path: path, pageCount: pageCount, store: store)]
+            wanted = [try Self.printed(printedPage, path: path, pageCount: pageCount, store: store, json: json)]
             scope = " --printed-page " + Output.quoted(printedPage)
         } else if let section {
             let (found, end) = try Self.section(section, path: path, docID: docID, pageCount: pageCount, store: store,
-                                                reader: reader)
+                                                reader: reader, json: json)
             let last = end.map { $0.block <= 1 ? max($0.page - 1, found.page) : $0.page } ?? pageCount
             wanted = Array(found.page...max(last, found.page))
             until = end
@@ -235,126 +203,22 @@ struct ReadCommand: ParsableCommand {
         if report.exitCode != 0 { throw ExitCode(report.exitCode) }
     }
 
-    /// One footnote or endnote by its id, with the places that refer to it, from the whole
-    /// document: every page is parsed first, as a section's end needs.
-    func footnote(_ id: String) throws {
-        let store = try Store()
-        let reader = Reader(store: store, library: try Library())
-        let docID: String
-        let pageCount: Int
-        switch try reader.read(path: path, pages: [0]) {
-        case .fileFailed(let reason):
-            throw Contract.fail(file: path, reason: reason, json: json)
-        case .pages(let id, let count, _):
-            docID = id
-            pageCount = count
-        }
-        _ = try reader.read(path: path, pages: nil)
-        let keys = try store.pageKeys(docID: docID)
-        // Pages alike share a key, so the pages parsed are counted by page, as a read counts them.
-        let cached = try store.cachedKeys(keys)
-        let parsed = keys.filter { cached.contains($0) }.count
-        var index = NoteIndex()
-        let outcome = try index.lookup(id, keys: keys, store: store)
-        let provisional = parsed < pageCount ? " · provisional: \(parsed) of \(pageCount) pages parsed" : ""
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.withoutEscapingSlashes, .sortedKeys]
-        switch outcome {
-        case .found(var note):
-            if json {
-                if parsed < pageCount { note.provisional = true }
-                print(String(decoding: try encoder.encode(note), as: UTF8.self))
-                return
-            }
-            var lines = ["\(path) · \(note.kind) \(note.id) · p.\(note.page)\(provisional)", "[^\(note.id)] \(note.text)"]
-            if note.references.isEmpty {
-                lines.append("referenced: no raised marker of this number was found in the text")
-            } else {
-                lines.append("referenced:")
-                lines += note.references.map { "  p.\($0.page) ¶\($0.block): \($0.excerpt)" }
-            }
-            print(lines.joined(separator: "\n\n").replacingOccurrences(of: "\n\nreferenced:\n\n", with: "\n\nreferenced:\n"))
-        case .missing(let ids):
-            throw ValidationError(
-                "no footnote or endnote is \(id)"
-                    + (ids.isEmpty
-                        ? "; the file has none"
-                        : "; it has " + ids.prefix(12).joined(separator: ", ") + (ids.count > 12 ? ", and \(ids.count - 12) more" : "")))
-        case .ambiguous(let ids):
-            throw ValidationError("\(id) names notes in several series of numbering; use one of " + ids.joined(separator: ", "))
-        }
-    }
-
-    /// One entry of the list of references by its id, with its DOI and the places that cite it,
-    /// from the whole document: every page is parsed first, as for a note.
-    func reference(_ id: String) throws {
-        let store = try Store()
-        let reader = Reader(store: store, library: try Library())
-        let docID: String
-        let pageCount: Int
-        switch try reader.read(path: path, pages: [0]) {
-        case .fileFailed(let reason):
-            throw Contract.fail(file: path, reason: reason, json: json)
-        case .pages(let id, let count, _):
-            docID = id
-            pageCount = count
-        }
-        _ = try reader.read(path: path, pages: nil)
-        let keys = try store.pageKeys(docID: docID)
-        let cached = try store.cachedKeys(keys)
-        let parsed = keys.filter { cached.contains($0) }.count
-        let resolved = Reader.resolve(path)
-        let facts = try FileStat(path: resolved).flatMap { try store.facts(path: resolved, stat: $0) }
-        var notes = NoteIndex()
-        let judged = try notes.resolve(pages: Array(0..<pageCount), keys: keys, store: store)
-        var index = ReferenceIndex(outline: facts?.outline ?? [])
-        try index.refresh(keys: keys, store: store)
-        let outcome = try index.lookup(id, notes: judged, keys: keys, store: store, links: facts?.annotations ?? [])
-        let provisional = parsed < pageCount ? " · provisional: \(parsed) of \(pageCount) pages parsed" : ""
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.withoutEscapingSlashes, .sortedKeys]
-        switch outcome {
-        case .found(var entry):
-            if json {
-                if parsed < pageCount { entry.provisional = true }
-                print(String(decoding: try encoder.encode(entry), as: UTF8.self))
-                return
-            }
-            var lines = ["\(path) · reference \(entry.id) · p.\(entry.page)\(provisional)", "[\(entry.id)] \(entry.text)"]
-            if let doi = entry.doi { lines.append("doi: \(doi)") }
-            if entry.citations.isEmpty {
-                lines.append("cited: no citation of it was found in the text")
-            } else {
-                lines.append("cited:\n" + entry.citations.map { "  p.\($0.page) ¶\($0.block): \($0.excerpt)" }.joined(separator: "\n"))
-            }
-            print(lines.joined(separator: "\n\n"))
-        case .missing(let ids):
-            throw ValidationError(
-                "no entry of the reference list is \(id)"
-                    + (ids.isEmpty
-                        ? "; the file has no list of references found so far"
-                        : "; it has " + ids.prefix(12).joined(separator: ", ") + (ids.count > 12 ? ", and \(ids.count - 12) more" : "")))
-        case .ambiguous(let ids):
-            throw ValidationError("\(id) names several entries; use one of " + ids.prefix(20).joined(separator: ", "))
-        }
-    }
-
     /// The page, counted from 1, that bears a printed number, from the file's page labels. A file
     /// without labels prints each page's position.
-    static func printed(_ label: String, path: String, pageCount: Int, store: Store) throws -> Int {
+    static func printed(_ label: String, path: String, pageCount: Int, store: Store, json: Bool) throws -> Int {
         let resolved = Reader.resolve(path)
         let labels = try FileStat(path: resolved).flatMap { try store.facts(path: resolved, stat: $0) }?.labels
         if let labels, let index = labels.firstIndex(where: { $0.caseInsensitiveCompare(label) == .orderedSame }) {
             return index + 1
         }
         if labels == nil, let number = Int(label), (1...pageCount).contains(number) { return number }
-        throw ValidationError("no page is printed \(label)" + (labels == nil ? "; the file has no page labels" : ""))
+        throw Contract.fail(path, "no page is printed \(label)" + (labels == nil ? "; the file has no page labels" : ""), json: json)
     }
 
     /// The section a `--section` value names, and where the next section at its level or above
     /// starts. Bookmarks name sections at once; headings in the text need every page parsed.
     static func section(_ query: String, path: String, docID: String, pageCount: Int, store: Store,
-                        reader: Reader) throws -> (Section, (page: Int, block: Int)?) {
+                        reader: Reader, json: Bool) throws -> (Section, (page: Int, block: Int)?) {
         func look() throws -> Info { try InfoCommand.info(path: path, docID: docID, pageCount: pageCount, store: store) }
         var info = try look()
         if info.sectionsFrom != "bookmarks" && info.pagesParsed < pageCount {
@@ -370,8 +234,8 @@ struct ReadCommand: ParsableCommand {
         }
         guard var found = Info.find(query, in: sections) else {
             let known = sections.filter { $0.level <= 2 }.prefix(12).map(\.title)
-            throw ValidationError("no section matches \(query)" + (known.isEmpty ? "; the file has no bookmarks or numbered headings"
-                : "; sections: " + known.joined(separator: ", ")))
+            throw Contract.fail(path, "no section matches \(query)" + (known.isEmpty ? "; the file has no bookmarks or numbered headings"
+                : "; sections: " + known.joined(separator: ", ")), json: json)
         }
         // A bookmark's block shows once its page is parsed, and so does the next section's.
         var needed = found.block == nil ? [found.page - 1] : []

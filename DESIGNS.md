@@ -341,7 +341,7 @@ M2.7 finds footnotes, endnotes, a headnote and margin notes with rules, as M2.5 
 
 | Option | For | Against |
 |---|---|---|
-| **Rules on size, marker and position; texts after the output** | Nothing to download; the body reads whole; one `[^7]` leads to the words, on the page or by `--footnote`. A note costs tokens once, where the agent chooses. | A footnote set in the body's size is missed; a marker the text does not raise is no reference. IDs come from the pages parsed so far, so they can change while a file parses. |
+| **Rules on size, marker and position; texts after the output** | Nothing to download; the body reads whole; one `[^7]` leads to the words, on the page or by `pdf note`. A note costs tokens once, where the agent chooses. | A footnote set in the body's size is missed; a marker the text does not raise is no reference. IDs come from the pages parsed so far, so they can change while a file parses. |
 | A layout model that labels footnotes (egret-medium) | Labels footnotes, headers and captions in one pass, whatever their size. | A download, unmeasured on our own pages, and M2.4 builds it only if a goal fails with rules alone. |
 | Footnotes left in the text, in their place | Nothing found, nothing wrong. | A footnote in the middle of a paragraph's page breaks the sentence it follows, and goal G7 asks for 95% kept out of the body. |
 | Each page's notes at the end of its page | The note stays near its reference. | A read of three pages repeats a heading three times, and an endnote or a series that crosses pages has no page. |

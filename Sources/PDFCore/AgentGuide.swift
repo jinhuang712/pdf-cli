@@ -26,7 +26,8 @@ public enum AgentGuide {
         | Command | What it does |
         |---|---|
         | `pdf info <pdf>` | A first look. `--json` lists every section, at every level. |
-        | `pdf read <pdf>` | Text from page 1, or from `--page 3-5,8`, `--section 2.1`, `--section Method`, `--printed-page iv` or `--from p4.7`. Also `--budget N` or `--budget all`, `--raw`, `--include-hidden`, `--headers`, `--notes inline` or `--notes off`, `--footnote 7`, `--ref 12`, `--refs end`, `--format text`. |
+        | `pdf read <pdf>` | Text from page 1, or from `--page 3-5,8`, `--section 2.1`, `--section Method`, `--printed-page iv` or `--from p4.7`. Also `--budget N` or `--budget all`, `--raw`, `--include-hidden`, `--headers`, `--notes inline` or `--notes off`, `--refs end`, `--format text`. |
+        | `pdf note <pdf> 7`, `pdf ref <pdf> 12` | One footnote (`3.7` where numbering restarts), or one reference (`Smith2020`), whole, with the places that cite it and a DOI. |
         | `pdf search [<pdf>] <words>` | The paragraphs that hold every word, best first; else those that hold some, as it says. `--regex <pattern>` matches across lines, columns and pages. `--top N`, `--from N`, `--budget N`. |
         | `pdf crop <pdf> --page N` | A PNG of the page, or of a region with `--bbox x,y,width,height` in fractions of the page from its top left, or of `--figure 4`, `--table 2` or `--equation 5`. `--grid` draws lines labelled with those fractions. It prints the image's path and cost, at most about 1,600 image tokens. |
         | `pdf dump <pdf> --markdown` | Writes files, prints their paths: `--markdown`, `--text`, `--figures`, `--tables`, `--notes`, `--refs`, `--attachments`, `--scripts` (never opened or run), `-o <folder>`. |
@@ -51,9 +52,9 @@ public enum AgentGuide {
 
         A figure, a table or a numbered equation is one block, `¶5 [table 2] <caption>` with its `crop:` command, in place of its text: read a table's cells and an equation from the image. `--raw` shows their flat text. Once read, keep it: `pdf transcribe paper.pdf --page 4 --equation 5 <<'EOF'`, its LaTeX, then `EOF`, or a table's Markdown with `--table 2`; later reads show it in place.
 
-        A footnote or endnote is `[^7]` in the text, its words under `## Notes`; `--notes inline` puts each by its paragraph, `--notes off` drops them. `--footnote 7` shows one and its citations (`3.7` where numbering restarts). `[margin]`, `[headnote]`: a margin note, a chapter's summary.
+        A footnote or endnote is `[^7]` in the text, its words under `## Notes`; `--notes inline` puts each by its paragraph, `--notes off` drops them. `[margin]`, `[headnote]`: a margin note, a chapter's summary.
 
-        A citation reads as printed, `[12]` or `(Smith, 2020)`, a raised one as `[12]`. `--ref 12` or `--ref Smith2020` shows its entry, DOI and citations; `--refs end` lists the cited entries under `## References`. `Fig. 4` or `Section 3.2` links to its page: `[Fig. 4](#p.7)`.
+        A citation reads as printed, `[12]` or `(Smith, 2020)`, a raised one as `[12]`. `--refs end` lists the cited entries under `## References`. `Fig. 4` or `Section 3.2` links to its page: `[Fig. 4](#p.7)`.
 
         Other pictures, after their block: `[image] crop: pdf crop …` and `[drawing] crop: …`; `[stamp] Approved`, `[ink]`, `[shape]`: drawn by a reader.
 

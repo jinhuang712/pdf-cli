@@ -280,7 +280,7 @@ import Testing
         var document = Output.Document(file: "paper.pdf", pageCount: 2, refs: .end)
         _ = document.add(try outputPage(0, text, judged))
         let report = document.report().text
-        #expect(report.contains("more entries cited here, not listed: pdf read paper.pdf --ref "))
+        #expect(report.contains("more entries cited here, not listed: pdf ref paper.pdf "))
         #expect(Output.tokens(report) < 2_000)
     }
 }

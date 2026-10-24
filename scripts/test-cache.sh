@@ -445,7 +445,6 @@ check "--notes off counts them in the summary" "footnotes and endnotes: [0-9]* s
 check "--notes inline puts the note by its paragraph" "^\[\^4\] Open-Source Track: " "$(run $pdf read $notes --page 2 --budget all --notes inline)"
 check "a read from a search hit inside a note shows the note" "^\[\^3\] (p.2) Source-Limited Track: " "$(run $pdf read $notes --from p2.16)"
 check "a section's read shows the notes of its blocks" "^\[\^2\] (p.2) EgoVis: " "$(run $pdf read $notes --section Introduction --budget all)"
-check "--footnote takes no flag of a read's output" "--footnote shows one note whole: it takes only --json" "$(run $pdf read $notes --footnote 3 --notes off)"
 # The M2.7 review's made pages (testdata/notes). Notes are judged against the pages parsed so
 # far, so the whole file is read first, in a home kept.
 kept $pdf read testdata/notes/two-chapters.pdf --budget all > /dev/null
@@ -465,20 +464,19 @@ if [ "${#flood}" -ge 4000 ]; then
     echo "FAIL  a read of a margin flood at --budget 300 is ${#flood} bytes"
     failures=$((failures + 1))
 fi
-check "--footnote shows a note and the places that cite it" "p.2 ¶[0-9]*: .*Track\[\^3\]" "$(run $pdf read $notes --footnote 3)"
-check "an unknown footnote fails, naming those found" "no footnote or endnote is 99; it has \*, 1, 2" "$(run $pdf read $notes --footnote 99)"
+check "pdf note shows a note and the places that cite it" "p.2 ¶[0-9]*: .*Track\[\^3\]" "$(run $pdf note $notes 3)"
+check "an unknown footnote fails in the contract shape, naming those found" "^$notes: failed: no footnote or endnote is 99; it has \*, 1, 2" "$(run $pdf note $notes 99)"
 check "pdf info lists the author notes" "^author notes: \[\^\*\] " "$(run $pdf info $notes)"
 
 # Citations and references (M2.8): an entry by its number or by its author and year, with the
 # places that cite it, the entries a read cites under References, and a figure's mention linked
 # to its page.
 refs=testdata/smoke/arxiv-2608.26848.pdf
-read=$(run $pdf read $refs --ref 15)
-check "--ref shows an entry" "^\[15\] Xuehai He, Yichen Zhang" "$read"
+read=$(run $pdf ref $refs 15)
+check "pdf ref shows an entry" "^\[15\] Xuehai He, Yichen Zhang" "$read"
 check "with the places that cite it" "^  p.6 ¶[0-9]*: .*PathVQA \[15\]" "$read"
-check "an author-year entry by its author and year" "^  p.1 ¶[0-9]*: .*Chen et al., 2024b" "$(run $pdf read testdata/smoke/arxiv-2608.16011.pdf --ref Chen2024b)"
-check "an unknown entry fails, naming those found" "no entry of the reference list is 999; it has 1, 2, 3" "$(run $pdf read $refs --ref 999)"
-check "--ref takes no flag of a read's output" "--ref shows one entry whole: it takes only --json" "$(run $pdf read $refs --ref 15 --budget 100)"
+check "an author-year entry by its author and year" "^  p.1 ¶[0-9]*: .*Chen et al., 2024b" "$(run $pdf ref testdata/smoke/arxiv-2608.16011.pdf Chen2024b)"
+check "an unknown entry fails in the contract shape, naming those found" "^$refs: failed: no entry of the reference list is 999; it has 1, 2, 3" "$(run $pdf ref $refs 999)"
 # Citations are judged against the pages parsed so far, as notes are: the whole file first.
 kept $pdf read $refs --budget all > /dev/null
 read=$(kept $pdf read $refs --page 2 --refs end --budget all)

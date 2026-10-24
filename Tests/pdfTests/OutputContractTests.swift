@@ -59,6 +59,7 @@ import Testing
         ("info", ["$"], ""), ("read", ["$"], ""), ("search", ["$", "word"], ""), ("crop", ["$", "--page", "1"], ""),
         ("dump", ["$", "--text"], ""), ("pick", ["$", "p1.1", "a"], ""),
         ("transcribe", ["$", "--page", "1", "--equation", "1"], "x\n"), ("add", ["$"], ""),
+        ("note", ["$", "1"], ""), ("ref", ["$", "1"], ""),
     ]
 
     @Test func everyCommandPrintsJSONUnderDashDashJSON() throws {
@@ -73,6 +74,7 @@ import Testing
             (["crop", file, "--page", "1"], [0], "image"), (["dump", file, "--markdown", "-o", folder], [0, 2], "written"),
             // These two fail on this file (it has no unsure words and no equation): the failure is the JSON.
             (["pick", file, "p1.1", "a"], [1], "failed"), (["transcribe", file, "--page", "1", "--equation", "1"], [1], "failed"),
+            (["note", file, "1"], [1], "failed"), (["ref", file, "1"], [1], "failed"),
             (["agent-guide"], [0], "guide"), (["agent-guide", "--install", "claude-code"], [0], "installed"),
             (["rm", file], [0], "removed"), (["gc"], [0], "removed"),
         ]
@@ -116,6 +118,34 @@ import Testing
         for name in ["ls", "rm", "gc", "agent-guide"] {
             #expect(try Self.pdf([name, "--no-such-flag"], home: home).status == 64, "pdf \(name) --no-such-flag")
         }
+    }
+
+    /// A look-up that matches nothing is a run-time failure in the one shape, exit 1, with the
+    /// reason on standard output, not a usage error (M2.15's review, M4).
+    @Test func aLookUpThatMatchesNothingFailsInTheOneShape() throws {
+        let home = try Self.freshHome()
+        let file = Self.fixture
+        let misses: [(arguments: [String], reason: String)] = [
+            (["note", file, "99"], "no footnote or endnote is 99"), (["ref", file, "99"], "no entry of the reference list is 99"),
+            (["read", file, "--section", "Nonesuch"], "no section matches Nonesuch"),
+            (["read", file, "--printed-page", "zz"], "no page is printed zz"),
+        ]
+        for miss in misses {
+            let label = "pdf " + miss.arguments.joined(separator: " ")
+            let plain = try Self.pdf(miss.arguments, home: home)
+            #expect(plain.status == 1, "\(label) ended with \(plain.status): \(plain.output.prefix(200))")
+            #expect(plain.output.hasPrefix("\(file): failed: \(miss.reason)"), "\(label): \(plain.output.prefix(200))")
+            let json = try Self.pdf(miss.arguments + ["--json"], home: home)
+            #expect(json.status == 1, "\(label) --json ended with \(json.status)")
+            #expect(json.json?["file"] as? String == file, "\(label) --json: \(json.output.prefix(200))")
+            #expect((json.json?["failed"] as? String)?.hasPrefix(miss.reason) == true, "\(label) --json: \(json.output.prefix(200))")
+        }
+        // An empty id is a wrong use: 64.
+        #expect(try Self.pdf(["note", file, ""], home: home).status == 64)
+        #expect(try Self.pdf(["ref", file, " "], home: home).status == 64)
+        // The old flags are gone.
+        #expect(try Self.pdf(["read", file, "--footnote", "1"], home: home).status == 64)
+        #expect(try Self.pdf(["read", file, "--ref", "1"], home: home).status == 64)
     }
 
     @Test func aFailingInnerReadKeepsItsExitCodeAndReason() throws {

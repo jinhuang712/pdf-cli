@@ -410,8 +410,8 @@ import Testing
         let notes = Notes.resolve(pages: [0], digests: [0: Notes.digest(layer, index: 0)])
         let page = try outputPage(0, layer, notes: notes[0] ?? PageNotes())
         let text = Output.render(file: "paper.pdf", pageCount: 1, pages: [page]).text
-        // Each note is cut at 800 tokens, whole by --footnote; the page holds about 4,000 in all.
-        #expect(text.contains("(whole: pdf read paper.pdf --footnote 1)"))
+        // Each note is cut at 800 tokens, whole by pdf note; the page holds about 4,000 in all.
+        #expect(text.contains("(whole: pdf note paper.pdf 1)"))
         #expect(text.contains("more note"))
         #expect(Output.tokens(text) < 5_500)
     }

@@ -1,4 +1,4 @@
-<!-- what-we-build: approved 2026-10-19 -->
+<!-- what-we-build: drafted 2026-10-25 -->
 # pdf-cli
 
 > A PDF CLI tool that lets you read fast, cheap and accurately.
@@ -23,7 +23,7 @@ Not available yet. The spike is done, and the first usable version is milestone 
 
 ## Use
 
-The first four work today, built from source, and so does cropping a page or a region of it with `pdf crop paper.pdf --page 7 --bbox 0.1,0.4,0.8,0.3`. So does reading footnotes and endnotes, with `pdf read paper.pdf --footnote 7`; references are planned (ROADMAP.md, M2.8). `pdf agent-guide --install claude-code` teaches Claude Code the tool, as a skill.
+The first four work today, built from source, and so does cropping a page or a region of it with `pdf crop paper.pdf --page 7 --bbox 0.1,0.4,0.8,0.3`. So does reading footnotes and endnotes, with `pdf note paper.pdf 7`; references are planned (ROADMAP.md, M2.8). `pdf agent-guide --install claude-code` teaches Claude Code the tool, as a skill.
 
 | When the agent wants to | It runs |
 |---|---|
@@ -31,7 +31,7 @@ The first four work today, built from source, and so does cropping a page or a r
 | Read one section | `pdf read paper.pdf --section Experiments` |
 | Find a passage across every PDF | `pdf search "dropout ablation"` |
 | Look at a chart | `pdf crop paper.pdf --figure 4` |
-| Read a footnote, or a cited reference | `pdf read paper.pdf --footnote 7` or `pdf read paper.pdf --ref 12` |
+| Read a footnote, or a cited reference | `pdf note paper.pdf 7` or `pdf ref paper.pdf 12` |
 
 ## Known limits
 
