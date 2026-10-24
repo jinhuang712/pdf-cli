@@ -1079,7 +1079,9 @@ public enum Output {
             for id in unit.cites where !refsShown.contains(id) && !left.contains(id) {
                 guard let entry = page.citations.entries[id] else { continue }
                 var text = entry.text
-                if tokens(text) > Output.noteTokens { text = prefix(text, tokens: Output.noteTokens) + "… (whole: pdf read \(path) --ref \(id))" }
+                if tokens(text) > Output.noteTokens {
+                    text = prefix(text, tokens: Output.noteTokens) + "… (whole: pdf read \(path) --ref \(quoted(id)))"
+                }
                 var block = Block(kind: .reference, page: entry.page + 1, block: (entry.blocks.first ?? 0) + 1, text: text)
                 block.id = id
                 block.place = "p.\(entry.page + 1)"
@@ -1096,7 +1098,7 @@ public enum Output {
                 blocks.append(
                     Block(
                         kind: .annotation, page: page.index + 1, block: unit.blocks.first?.block,
-                        text: "\(count) more entr\(count == 1 ? "y" : "ies") cited here, not listed: pdf read \(path) --ref \(first)",
+                        text: "\(count) more entr\(count == 1 ? "y" : "ies") cited here, not listed: pdf read \(path) --ref \(quoted(first))",
                         status: "more"))
             }
             return blocks

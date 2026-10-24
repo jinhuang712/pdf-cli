@@ -499,7 +499,8 @@ public struct Info: Encodable, Sendable {
             let lists =
                 referenceLists.count == 1
                 ? "the list on p.\(referenceLists[0].page)"
-                : "\(referenceLists.count) lists, on " + referenceLists.map { "p.\($0.page)" }.joined(separator: ", ")
+                : "\(referenceLists.count) lists, on " + referenceLists.prefix(6).map { "p.\($0.page)" }.joined(separator: ", ")
+                    + (referenceLists.count > 6 ? ", and \(referenceLists.count - 6) more" : "")
             lines.append("references: \(entries) entr\(entries == 1 ? "y" : "ies"), \(lists) (pdf read: `--ref ID`, `--refs end`)")
         }
         if !runningHeaders.isEmpty {

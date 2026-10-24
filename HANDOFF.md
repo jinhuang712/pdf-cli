@@ -1,14 +1,14 @@
-# Handoff — 2026-10-19
+# Handoff — 2026-10-25
 
 For whoever picks up pdf-cli next, a person or a new Claude Code session. Read this file first: it says where the project stands, what waits on the user, the direction the user has set, what to build next and how. The other docs hold the detail; `README.md` lists them.
 
 ## Where things stand
 
-- **Built and on `main`** (pushed): milestone M0; every task of M1, M1.1–M1.15; and M2.5, M2.6, M2.7 and M2.13 of M2.
-- **Half-done, on a branch:** M2.8, citations and references, on `claude/m2-8-citations`, pushed to origin and not on `main`. It is built and committed, and the unit tests and `scripts/test-cache.sh` pass; the sweep, the review, the report and the landing are left. Its edits to DESIGNS.md, FEATURES.md and ROADMAP.md are on the branch, marked `drafted`.
+- **Built and on `main`** (pushed): milestone M0; every task of M1, M1.1–M1.15; and M2.5, M2.6, M2.7, M2.8 and M2.13 of M2.
 - **Not met yet:** the exit criteria of M1 and M2. They need the goals measured, and every goal in GOALS.md is still unmeasured: the measuring waits for the final wrap-up (the user, 2026-10-17).
 - **Docs:** all seven core docs on `main` are approved: the user approved them on 2026-10-18 with the direction below, M2.13's edits the same day, and M2.7's on 2026-10-19.
-- **Waiting on the user:** nothing. Next is the rest of M2.8, below.
+- **Waiting on the user:** the approval of M2.8's edits to DESIGNS.md, FEATURES.md and ROADMAP.md, marked `drafted`.
+- **This machine reads differently since 2026-10-25:** two unit tests and five `scripts/test-cache.sh` checks fail on `main` too (PDFKit and Apple's OCR); see TODO.md. They are not M2.8's.
 
 ## The user's direction
 
@@ -38,14 +38,11 @@ Read this before designing anything. Each line points to where it is written dow
 | `pdf transcribe` | M2.13 | The LaTeX of an equation, or the Markdown of a table, that the agent read from its crop, kept so later reads show it |
 | `pdf agent-guide` | M1.11 | The guide that teaches an agent the tool; `--install claude-code` writes it as a Claude Code skill |
 
-Under them: worker processes with time and memory limits and one pool of slots (M1.1, M1.15); the text layer with the space repair (M1.2); quality checks with failure and unsure blocks (M1.3); Apple OCR for scans (M1.4); the hidden-text check (M1.10); annotations (M1.13); images and drawings marked in place (M1.14); reading order across columns and running headers (M2.5); figures, tables and equations (M2.6); footnotes, endnotes, headnotes and margin notes (M2.7). Parser version 17, page key 2, index checks 10, cache schema 8: raise the parser version when the parse's output changes, the page key's when what it hashes changes, and the index checks when the index's checks change.
+Under them: worker processes with time and memory limits and one pool of slots (M1.1, M1.15); the text layer with the space repair (M1.2); quality checks with failure and unsure blocks (M1.3); Apple OCR for scans (M1.4); the hidden-text check (M1.10); annotations (M1.13); images and drawings marked in place (M1.14); reading order across columns and running headers (M2.5); figures, tables and equations (M2.6); footnotes, endnotes, headnotes and margin notes (M2.7). Parser version 18, page key 2, index checks 10, cache schema 8: raise the parser version when the parse's output changes, the page key's when what it hashes changes, and the index checks when the index's checks change.
 
 ## What comes next
 
-1. **Finish M2.8** on its branch, from step 3 of "How to work" below. The branch's `reports/M2.8-citations.md`, a draft, says what is built, what was checked and what is left.
-   - Work in a worktree of the branch: `git worktree add .claude/worktrees/m2-8 claude/m2-8-citations`, or the one it was built in, `.claude/worktrees/pdf-cli-work-36ac3a`, if it is still there.
-   - Sweep `private/testset/` with the release build, against `main`'s build in a scratch worktree. The notes must not move, since the parse changed: a hanging indent now starts a block. Count the lists, entries, citations and links found, and time the books.
-   - Then the review on Opus, the fixes, the report finished and listed in `reports/README.md`, this file's rows for M2.8 (where things stand, what is built: `--ref`, `--refs`, parser version 18, the landed tasks), and the landing. This note is on `main` and the branch sits on it, so `merge --ff-only` works.
+1. **M2.9 `pdf dump`,** the first of the rest of M2 below.
 2. **The rest of M2,** in ROADMAP's order, which is the order of building; a task's ID is its name, not its place, so M2.13, added last, was built before M2.7: M2.9 `pdf dump`, M2.10 `pdf reparse`, which clears the picks of the pages it parses again but should keep their transcripts, read from the image, which a parse leaves as it is, M2.11 `pdf setup` and `pdf doctor`. M2.4, a layout model, comes only if a goal fails with rules alone.
 3. **M3:** M3.1 search by meaning, M3.2 tables across pages, M3.5 the Homebrew release.
 4. **The final wrap-up:** the open test set, the question set and the scorer (M2.1–M2.3), the quality thresholds (M2.12), the question set run in Claude Code (M3.6), the workers' memory, and every goal measured.
@@ -108,3 +105,4 @@ Each report holds the measurements, the review's findings and the tests.
 | M2.13 The agent's LaTeX and Markdown kept | 2026-10-18 | `pdf transcribe` keeps what the agent read from a crop, beside the picks, by page key and the number the page gives; each line goes out four spaces in, so none forges the output's structure. Its review found 9 problems, all fixed, and one in M2.6's equation numbers, as "(A.1)", fixed too: parser version 16. | `M2.13-transcribe.md` |
 | M2.6 Figures, tables and equations | 2026-10-18 | Found by rules from numbered captions, pictures and drawn shapes, rules, and an equation's number set apart. 64 figures, 77 tables and 84 equations on the smoke papers. A region never takes running text; a block with hidden text is never set aside. Its review found 12 problems: 9 fixed, 2 in part, 1 kept. | `M2.6-figures-tables-equations.md` |
 | M2.7 Notes | 2026-10-18 | Found by rules from a size per line, markers and positions; which pages are lists, the references and the IDs are judged at read time against the pages parsed so far. Endnotes find their references all at once, the longest common subsequence of their markers before their lists, so a chapter whose markers are lost costs only its own links; a list the text never cites is none. A note counts against the budget where the read takes it. Its review found 20 problems: 13 fixed, 5 in part, 2 kept. | `M2.7-notes.md` |
+| M2.8 Citations and references | 2026-10-25 | Lists of references, entries and citations found by rules at read time: `pdf read --ref ID`, `--refs end`, links such as `[Fig. 4](#p.7)`, `pdf info`'s count; a hanging indent starts a block (parser version 18). Its review found 12 problems: 5 fixed, 7 kept, among them citations written `(4,5)`, a column of labels that does not match, and `--refs end` empty before the list's pages are parsed. 65 of 132 test files have a list found, 6,715 entries. | `M2.8-citations.md` |

@@ -178,6 +178,36 @@ import Testing
 
     // MARK: Cross-references
 
+    @Test func aSquareAfterABracketAndAFewAffiliationMarkersAreNoCitations() {
+        let text = page([
+            body(0.1, "We set a(r) = sin(r+1)^{2} and e^{-x}[0,1]^{2}. Tan^{2}, Jasperse^{1} wrote it. " + sentence)
+        ])
+        let judged = judge([text, list((1...12).map { "[\($0)] A. Author\($0). A title of work \($0). 2020." })])
+        #expect(judged.pages[0]?.raised.isEmpty != false)
+    }
+
+    @Test func aRunningHeaderOfTheListsOwnNameDoesNotCutItInTwo() {
+        let first = list((1...3).map { "[\($0)] A. Author\($0). A title of work \($0). In Proceedings, 2020." })
+        let secondPage = page(
+            [heading("References", 0.08)]
+                + (4...6).map { entry("[\($0)] A. Author\($0). A title of work \($0). In Proceedings, 2020.", 0.15 + 0.05 * Double($0 - 4)) })
+        let judged = judge([page([body(0.1, "It holds [5]. " + sentence)]), first, secondPage])
+        #expect(judged.lists.count == 1)
+        #expect(judged.entries.count == 6)
+        #expect(judged.pages[0]?.cites[0] == ["5"])
+    }
+
+    @Test func aNumberWithADotInItLinksToo() throws {
+        let text = page([body(0.1, "See Figure 3.7 and Table 2.1 for the data. " + sentence)])
+        let second = page(
+            [Item(text: "Figure 3.7: The results.", box: Box(x: 0.1, y: 0.5, width: 0.8, height: 0.02))],
+            regions: [Region(kind: .figure, number: "3.7", box: Box(x: 0.1, y: 0.3, width: 0.8, height: 0.22), caption: [0], blocks: [])])
+        let judged = judge([text, second])
+        var document = Output.Document(file: "paper.pdf", pageCount: 2)
+        _ = document.add(try outputPage(0, text, judged))
+        #expect(document.report().text.contains("See [Figure 3.7](#p.2) and Table 2.1 for"))
+    }
+
     @Test func crossReferencesLeadToThePagesThatHoldThem() throws {
         let text = page([body(0.1, "As Fig. 2 shows and Table 1 lists, by Eq. (3) in Section 2.1, the claim holds. " + sentence)])
         let second = page(

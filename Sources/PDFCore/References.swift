@@ -103,8 +103,8 @@ enum References {
     /// A mention of a figure, a table, an equation, a section or an appendix.
     /// The word in any case, the number as printed: "Fig. 4", "table 2", "equation (5)", "§3.2".
     static let mentions: [(kind: String, pattern: NSRegularExpression)] = [
-        ("figure", try! NSRegularExpression(pattern: #"\b(?i:figs?\.|figures?)\s?([0-9]{1,3}|[A-Z]\.?[0-9]{1,2})(?:[a-z]\b)?"#)),
-        ("table", try! NSRegularExpression(pattern: #"\b(?i:tables?|tabs?\.)\s?([0-9]{1,3}|[A-Z]\.?[0-9]{1,2}|[IVX]{1,5}\b)"#)),
+        ("figure", try! NSRegularExpression(pattern: #"\b(?i:figs?\.|figures?)\s?([0-9]{1,3}(?:\.[0-9]{1,3})?|[A-Z]\.?[0-9]{1,2})(?:[a-z]\b)?"#)),
+        ("table", try! NSRegularExpression(pattern: #"\b(?i:tables?|tabs?\.)\s?([0-9]{1,3}(?:\.[0-9]{1,3})?|[A-Z]\.?[0-9]{1,2}|[IVX]{1,5}\b)"#)),
         (
             "equation",
             try! NSRegularExpression(
@@ -136,11 +136,11 @@ enum References {
     }
 
     /// Whether a raised citation may follow the character before `at`: what a note's marker may
-    /// follow, or a per cent sign or a closing bracket, as "50%^{2,3}" and "[(C)RT]^{4}".
+    /// follow, or a per cent sign, as "50%^{2,3}". A closing bracket is not one: "(z+1)^{2}" is a square.
     static func follows(_ text: NSString, _ at: Int) -> Bool {
         if Notes.follows(text, at) { return true }
         guard at > 0, let scalar = Unicode.Scalar(text.character(at: at - 1)) else { return false }
-        return "%)]".unicodeScalars.contains(scalar)
+        return scalar == "%"
     }
 
     /// The years a citation names: "2019a, 2020" gives 2019a and 2020.
@@ -381,6 +381,7 @@ enum References {
         var block = start.block + 1
         var end = (page: start.page, block: digests[start.page]!.items.count)
         var sizes: [Double] = []
+        let startText = digests[start.page]!.items[start.block].text.lowercased()
         scanning: while let digest = digests[page], page - start.page < 80 {
             while block < digest.items.count {
                 let item = digest.items[block]
@@ -390,6 +391,8 @@ enum References {
                 if Furniture.pageNumber(item.text) != nil { continue }
                 if item.lines <= 2, item.box.y + item.box.height < 0.07 || item.box.y > 0.93 { continue }
                 let short = item.lines <= 2 && item.text.count <= 80 && match(yearOnly, item.text) == nil
+                // The list's own heading again at the top of a later page is a running header.
+                if short, page > start.page, block < 2, item.text.lowercased() == startText { continue }
                 if short, match(stop, item.text) != nil || match(heading, item.text) != nil {
                     end = (page, block)
                     break scanning
@@ -733,11 +736,13 @@ enum References {
         // Raised numbers cite the list only in a document that cites so more often than in
         // brackets: in a paper that cites [12], a raised 2 is a square or a note's.
         var raisedFits = 0
+        var raisedNumbers = Set<String>()
         var bracketFits = 0
         for (page, digest) in digests {
             for item in digest.raised where !inList(page, item.block) {
                 if let number = list(at: (page, item.block), labelled: true), item.numbers.allSatisfy({ byLabel[number][String($0)] != nil }) {
                     raisedFits += 1
+                    raisedNumbers.formUnion(item.numbers.map(String.init))
                 }
             }
             for item in digest.brackets where !inList(page, item.block) {
@@ -746,7 +751,8 @@ enum References {
                 }
             }
         }
-        let raisedCites = raisedFits > bracketFits
+        // And only if they name many different entries: a few markers over a title are affiliations.
+        let raisedCites = raisedFits > bracketFits && raisedNumbers.count >= min(10, max(3, entries.count / 3))
 
         var result: [Int: PageCitations] = [:]
         let entryByID = Dictionary(entries.map { ($0.id, $0) }) { first, _ in first }
