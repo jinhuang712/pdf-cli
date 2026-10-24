@@ -45,6 +45,8 @@ public final class Runner: @unchecked Sendable {
     /// Exit codes of a `reparse` or `indexOnly` job, which its command reads.
     public static let exitBusy: Int32 = 10
     public static let exitStale: Int32 = 11
+    /// The file is locked and the password given, if any, did not open it. Nothing is stored.
+    public static let exitLocked: Int32 = 12
 
     let waited: Waited
     let job: Job
@@ -55,6 +57,8 @@ public final class Runner: @unchecked Sendable {
     private let parent = getppid()
     /// The results a reparse has read so far, by page key. Nothing is stored until all are in.
     private var reparsed: [String: PageResult] = [:]
+    /// Set when a reparse found the file locked.
+    private var reparseLocked = false
 
     public init(path: String, store: Store, waited: Waited = .pages([]), workers: Int? = nil, job: Job = .parse) {
         self.path = path
@@ -127,9 +131,9 @@ public final class Runner: @unchecked Sendable {
         else { return Runner.exitStale }
         let pages = wanted ?? Array(keys.indices)
         guard pages.allSatisfy(keys.indices.contains) else { return Runner.exitStale }
-        guard case .done = parse(docID: docID, stat: stat, reparse: (pages, ocr)),
-            FileStat(path: path) == stat
-        else { return Runner.exitStale }
+        let outcome = parse(docID: docID, stat: stat, reparse: (pages, ocr))
+        if reparseLocked { return Runner.exitLocked }
+        guard case .done = outcome, FileStat(path: path) == stat else { return Runner.exitStale }
         // One transaction: a runner that dies before this line leaves every old result.
         guard let kept = try? store.replaceResults(reparsed) else { return Runner.exitStale }
         // The command reads what it kept: a page whose new reading failed keeps its old result.
@@ -440,7 +444,9 @@ public final class Runner: @unchecked Sendable {
                 func putBack() {
                     if fromAlone { alone.insert(batch.pages[0], at: 0) } else { pending.insert(contentsOf: batch.pages, at: 0) }
                 }
-                guard let slot = acquireSlot(foreground: foreground) else {
+                // A reparse runs at the speed of work the user started, but never in slot 0, which
+                // stays free for the first page of a file another command waits on.
+                guard let slot = acquireSlot(foreground: foreground && reparse == nil) else {
                     putBack()
                     waitingForSlot = true
                     break
@@ -528,7 +534,13 @@ public final class Runner: @unchecked Sendable {
                 // The command learns the file is locked, and `pdf add --password` indexes it again.
                 workers.forEach { stop($0, reason: "the file is locked", kind: .runner) }
                 while workers.contains(where: { !$0.finished }) { step(workers) { _, _ in } }
-                if unchanged() { try? store.saveFailure(path: path, stat: stat, reason: locked) }
+                // A reparse stores no failure: the file reads from the cache as it did, and the
+                // password it was given is no verdict on the file.
+                if reparse != nil {
+                    reparseLocked = true
+                } else if unchanged() {
+                    try? store.saveFailure(path: path, stat: stat, reason: locked)
+                }
                 return .aborted
             }
         }

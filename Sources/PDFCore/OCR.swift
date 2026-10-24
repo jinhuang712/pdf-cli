@@ -189,6 +189,47 @@ enum OCR {
         return read
     }
 
+    /// Puts back under their marker the lines of an OCR reading that lie over words the page's text
+    /// layer shows a reader cannot see. OCR reads PDFKit's rendering, which draws text under an
+    /// annotation and in a layer switched off, so its words are no more visible than the layer's:
+    /// they stay in the block, as a hidden run, shown only with `--show hidden` and left out of
+    /// search (FEATURES.md → F9). A block with such a line joins its lines with spaces.
+    static func markHidden(_ read: inout PageText, spots: [(box: Box, reason: HiddenReason)]) {
+        guard !spots.isEmpty else { return }
+        func share(_ line: Box, _ spot: Box) -> Double {
+            let width = min(line.x + line.width, spot.x + spot.width) - max(line.x, spot.x)
+            let height = min(line.y + line.height, spot.y + spot.height) - max(line.y, spot.y)
+            guard width > 0, height > 0 else { return 0 }
+            let smaller = min(line.width * line.height, spot.width * spot.height)
+            return smaller > 0 ? width * height / smaller : 0
+        }
+        for index in read.blocks.indices {
+            let lines = read.blocks[index].lines
+            let reasons = lines.map { line in spots.first { share(line.box, $0.box) > 0.5 }?.reason }
+            guard reasons.contains(where: { $0 != nil }) else { continue }
+            var text = ""
+            var length = 0
+            var runs: [Hidden] = []
+            for (line, reason) in zip(lines, reasons) {
+                if length > 0 {
+                    text += " "
+                    length += 1
+                }
+                if let reason {
+                    if let last = runs.last, last.reason == reason, last.offset + last.length + 1 == length {
+                        runs[runs.count - 1].length += 1 + line.text.utf16.count
+                    } else {
+                        runs.append(Hidden(offset: length, length: line.text.utf16.count, reason: reason))
+                    }
+                }
+                text += line.text
+                length += line.text.utf16.count
+            }
+            read.blocks[index].text = text
+            read.blocks[index].hidden = runs
+        }
+    }
+
     /// Below this share of a reading's words that a second reading also finds, OCR's text is in
     /// doubt. Neither engine's own confidence tracks its accuracy: on pages made blurry, coarse
     /// or noisy, the older recognizer still reported about 1.0 where half its words were wrong.

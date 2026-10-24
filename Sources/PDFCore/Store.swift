@@ -323,6 +323,18 @@ public final class Store: Sendable {
         }
     }
 
+    /// Whether the cache holds an entry for this very version of the file, whatever checks it ran:
+    /// an entry that `entry` does not return then comes from an older `pdf`, not from a changed file.
+    public func hasEntry(path: String, stat: FileStat) throws -> Bool {
+        try pool.read { db in
+            try Bool.fetchOne(
+                db,
+                sql: """
+                    SELECT 1 FROM file_entry WHERE path = ? AND size = ? AND modified_ns = ? AND inode = ? AND device = ?
+                    """, arguments: [path, stat.size, stat.modifiedNanos, stat.inode, stat.device]) ?? false
+        }
+    }
+
     /// Records a file's pages. The document's ID hashes its page keys, so two copies of one
     /// file, or one file with new highlights, share a document.
     /// `spacesAtRisk` is the font check's verdict for the whole file, `needsOCR` the sample

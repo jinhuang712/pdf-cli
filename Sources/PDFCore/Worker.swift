@@ -191,8 +191,12 @@ public enum Worker {
             var layer: PageText
             var method: String
             if readAllByOCR || OCR.needed(text: page.string ?? "", images: check.images) {
-                let textLayer = TextLayer.read(page, visibility: Visibility(page: page))
+                let spots = TextLayer.HiddenSpots()
+                let textLayer = TextLayer.read(page, visibility: Visibility(page: page), spots: spots)
                 if var read = await OCR.pageText(page, check: true), !OCR.lostText(ocr: read, layer: textLayer) {
+                    // OCR reads PDFKit's rendering, which shows what a reader cannot see: it goes
+                    // back under its marker.
+                    OCR.markHidden(&read, spots: spots.spots)
                     // The replaced layer, which `--show raw` shows, as a reader would see it: what it
                     // hides stays out.
                     let replaced = textLayer.blocks.map(\.visibleText).filter { !$0.isEmpty }.joined(separator: "\n")
@@ -214,7 +218,8 @@ public enum Worker {
                     continue
                 }
             } else {
-                (layer, method) = await readTextLayer(page, atRisk: repairSpaces || check.pageAtRisk)
+                let spots = TextLayer.HiddenSpots()
+                (layer, method) = await readTextLayer(page, atRisk: repairSpaces || check.pageAtRisk, spots: spots)
                 // A page whose drawn text PDFKit mostly left out of the page's text, as one set in
                 // Type 3 fonts with no text map, is read by OCR, as a page with no usable text
                 // layer is; the layer stays for `--show raw`. Only where OCR reads clearly more than the
@@ -222,6 +227,7 @@ public enum Worker {
                 // OCR read a page of Arabic letters worse. Otherwise the layer serves, flagged.
                 if let share = layer.unreadShare, share >= OCR.unreadShare, var read = await OCR.pageText(page, check: true),
                    OCR.readsMore(ocr: read, layer: layer) {
+                    OCR.markHidden(&read, spots: spots.spots)
                     let replaced = layer.blocks.map(\.visibleText).filter { !$0.isEmpty }.joined(separator: "\n")
                     if !replaced.isEmpty { read.replacedText = replaced }
                     read.pictures = layer.pictures
@@ -251,19 +257,19 @@ public enum Worker {
     /// certainty become unsure spans for the agent to pick from. When OCR cannot read the page,
     /// the layer serves as it is, and its run-together words get their spans from the word
     /// lists alone (see `SpaceRepair.splitSpans`).
-    static func readTextLayer(_ page: PDFPage, atRisk: Bool) async -> (PageText, String) {
+    static func readTextLayer(_ page: PDFPage, atRisk: Bool, spots: TextLayer.HiddenSpots? = nil) async -> (PageText, String) {
         let glyphs = Glyphs(page, (page.string ?? "") as NSString)
         // Drawn once, for every reading of the page: the text a reader cannot see.
         let visibility = Visibility(page: page)
-        let plain = atRisk ? nil : TextLayer.read(page, glyphs: glyphs, visibility: visibility)
+        let plain = atRisk ? nil : TextLayer.read(page, glyphs: glyphs, visibility: visibility, spots: spots)
         if let plain, plain.runTogether == 0 { return (plain, "pdfkit") }
         guard let breaks = await SpaceRepair.breaks(page) else {
-            var served = plain ?? TextLayer.read(page, glyphs: glyphs, visibility: visibility)
+            var served = plain ?? TextLayer.read(page, glyphs: glyphs, visibility: visibility, spots: spots)
             // A page whose fonts hide spaces loses them all over, so the page is in doubt.
             if atRisk { served.spacesLost = true }
             return (served, "pdfkit+ocr-failed")
         }
-        var repaired = TextLayer.read(page, spacesBefore: breaks.spaces, glyphs: glyphs, visibility: visibility)
+        var repaired = TextLayer.read(page, spacesBefore: breaks.spaces, glyphs: glyphs, visibility: visibility, spots: spots)
         if !breaks.unsure.isEmpty {
             let relaxed = TextLayer.read(page, spacesBefore: breaks.spaces.union(breaks.unsure), glyphs: glyphs,
                                          visibility: visibility)

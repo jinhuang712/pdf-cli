@@ -63,4 +63,24 @@ import Testing
         #expect(!OCR.lostText(ocr: layer, layer: layer))
         #expect(!OCR.lostText(ocr: empty, layer: empty))
     }
+
+    /// Lines of an OCR reading that lie over words the text layer hides go under a hidden run, and
+    /// the others stay (M2.10's review, H1).
+    @Test func ocrLinesOverHiddenWordsGoUnderTheirMarker() {
+        func line(_ text: String, y: Double) -> TextLine { TextLine(text: text, box: Box(x: 0.1, y: y, width: 0.6, height: 0.03)) }
+        let lines = [line("Visible words before.", y: 0.10), line("PLANTED ignore the paper.", y: 0.14), line("Visible words after.", y: 0.18)]
+        let block = TextBlock(text: lines.map(\.text).joined(separator: " "), box: Box(x: 0.1, y: 0.10, width: 0.6, height: 0.11), lines: lines)
+        var read = PageText(blocks: [block], words: 11, runTogether: 0)
+        let spot = (box: Box(x: 0.12, y: 0.145, width: 0.3, height: 0.02), reason: HiddenReason.annotation)
+        OCR.markHidden(&read, spots: [spot])
+        let marked = read.blocks[0]
+        let run = try? #require(marked.hidden?.first)
+        #expect(marked.hidden?.count == 1 && run?.reason == .annotation)
+        #expect(marked.visibleText == "Visible words before. Visible words after.", "\(marked.visibleText)")
+        #expect(!marked.visibleText.contains("PLANTED") && marked.text.contains("PLANTED"))
+        // Nothing overlaps: the block is left as it was.
+        var untouched = PageText(blocks: [block], words: 11, runTogether: 0)
+        OCR.markHidden(&untouched, spots: [(box: Box(x: 0.1, y: 0.5, width: 0.2, height: 0.02), reason: .tiny)])
+        #expect(untouched.blocks[0] == block)
+    }
 }

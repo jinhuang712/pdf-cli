@@ -305,6 +305,16 @@ enum TextLayer {
         var tag: String? = nil
         /// The font size most of its characters have, in points.
         var size: Double? = nil
+        /// Where the words a reader cannot see sit, with the reason, in the same points as `rect`.
+        /// Not stored: only a reading by OCR needs them (`OCR.markingHidden`).
+        var hiddenSpots: [(rect: CGRect, reason: HiddenReason)] = []
+    }
+
+    /// Collects where a page hides words, while its text layer is read, for a reading of the same
+    /// page by OCR: OCR reads PDFKit's rendering, which draws what a reader never sees, such as text
+    /// under an annotation and a layer switched off.
+    final class HiddenSpots {
+        var spots: [(box: Box, reason: HiddenReason)] = []
     }
 
     /// - Parameters:
@@ -314,8 +324,10 @@ enum TextLayer {
     ///     cost about 20 ms a page.
     ///   - visibility: what a reader can see of the page, which marks the text a reader cannot
     ///     see (FEATURES.md → F9). Nil reads every character as seen.
-    static func read(_ page: PDFPage, spacesBefore: Set<Int> = [], glyphs known: Glyphs? = nil,
-                     visibility: Visibility? = nil) -> PageText {
+    static func read(
+        _ page: PDFPage, spacesBefore: Set<Int> = [], glyphs known: Glyphs? = nil,
+        visibility: Visibility? = nil, spots: HiddenSpots? = nil
+    ) -> PageText {
         let raw = page.string ?? ""
         let text = raw as NSString
         let crop = page.bounds(for: .cropBox)
@@ -331,6 +343,21 @@ enum TextLayer {
                 lines.append(line)
             }
             start = end + 1
+        }
+        if let spots {
+            let width = max(crop.width, 1)
+            let height = max(crop.height, 1)
+            for line in lines {
+                for spot in line.hiddenSpots {
+                    spots.spots.append(
+                        (
+                            Box(
+                                x: Double(spot.rect.minX / width), y: Double(spot.rect.minY / height),
+                                width: Double(spot.rect.width / width), height: Double(spot.rect.height / height)),
+                            spot.reason
+                        ))
+                }
+            }
         }
         // The lines of a column go together, on a page of columns (`ReadingOrder`).
         let (order, breaks) = ReadingOrder.order(lines.map(\.rect), texts: lines.map(\.text))
@@ -704,6 +731,31 @@ enum TextLayer {
                 }
             }
         }
+        // Where each hidden word sits, for a reading by OCR; a word of under 3 letters or digits
+        // counts as seen, as `hiddenRuns` counts it.
+        var spots: [(rect: CGRect, reason: HiddenReason)] = []
+        var running: (reason: HiddenReason, rect: CGRect, count: Int)?
+        for character in characters where !character.isSpace || running != nil {
+            if let reason = hiddenStart[character.index] { running = (reason, .null, 0) }
+            if var current = running, !character.isSpace {
+                if let rect = glyphs.boxes[character.index], rect.width > 0 || rect.height > 0 {
+                    current.rect = current.rect.union(rect)
+                }
+                current.count += 1
+                running = current
+            }
+            if hiddenEnd.contains(character.index), let current = running {
+                if current.count >= 3, !current.rect.isNull {
+                    spots.append(
+                        (
+                            CGRect(
+                                x: current.rect.minX - crop.minX, y: crop.maxY - current.rect.maxY,
+                                width: current.rect.width, height: current.rect.height), current.reason
+                        ))
+                }
+                running = nil
+            }
+        }
         var piece = ""
         var open: Character?
         for character in characters {
@@ -746,7 +798,7 @@ enum TextLayer {
         return RawLine(
             text: cleaned, rect: rect, softBreak: softBreak,
             tag: tag(text, range, characters: characters.filter { !$0.isSpace }.map(\.index), glyphs: glyphs),
-            size: sizes.isEmpty ? nil : Double((median(sizes) * 100).rounded() / 100))
+            size: sizes.isEmpty ? nil : Double((median(sizes) * 100).rounded() / 100), hiddenSpots: spots)
     }
 
     /// An equation's number, as "(5)" or "(A.2)", at the end of a line.

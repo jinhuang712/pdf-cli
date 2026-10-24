@@ -13,12 +13,14 @@ public enum ReadError: Error, CustomStringConvertible {
     case notFound(String)
     case pageOutOfRange(page: Int, pageCount: Int)
     case runnerFailed
+    case reparseBusy
 
     public var description: String {
         switch self {
         case .notFound(let path): return "no such file: \(path)"
         case .pageOutOfRange(let page, let count): return "page \(page + 1) is out of range: the file has \(count) pages"
         case .runnerFailed: return "the parser stopped before it finished; run the command again"
+        case .reparseBusy: return "another reparse of this file is still running; run the command again when it has ended"
         }
     }
 }
@@ -43,9 +45,12 @@ public struct Reparsed: Sendable {
     public var after: [Int: PageResult]
     /// Pages whose new reading failed, so that their old result stayed, with the reason.
     public var kept: [Int: String]
-    /// The cache had never seen the file, or only another version of it.
+    /// The cache had never seen the file.
     public var neverRead: Bool
+    /// The file changed since it was read, or while it was read again: this is its current version.
     public var changedSinceRead: Bool
+    /// The cache held this version of the file, indexed by an older `pdf`, which indexed it again.
+    public var toolUpdated: Bool
 }
 
 public enum ReparseOutcome: Sendable {
@@ -200,7 +205,11 @@ public final class Reader: Sendable {
         let before = try store.entry(path: path, stat: first)
         let known = try store.knows(path: path)
         let neverRead = before == nil && !known
-        let changedSinceRead = before == nil && !neverRead
+        let sameVersion = before == nil && known ? try store.hasEntry(path: path, stat: first) : false
+        var changedSinceRead = before == nil && known && !sameVersion
+        let toolUpdated = sameVersion
+        var lastDocument: String?
+        var busyWaits = 0
         var retriedFailure = false
         var failures = 0
         while failures < 3 {
@@ -225,6 +234,9 @@ public final class Reader: Sendable {
             case .document(let id)?:
                 docID = id
             }
+            // The file changed while it was read again: another document, and the first is gone.
+            if let lastDocument, lastDocument != docID { changedSinceRead = true }
+            lastDocument = docID
             let keys = try store.pageKeys(docID: docID)
             let pages = Array(Set(wanted ?? Array(keys.indices))).sorted()
             if let bad = pages.first(where: { !keys.indices.contains($0) }) {
@@ -250,10 +262,19 @@ public final class Reader: Sendable {
                         docID: docID, pageCount: keys.count, pages: pages,
                         before: Dictionary(uniqueKeysWithValues: pages.compactMap { page in old[keys[page]].map { (page, $0) } }),
                         after: Dictionary(uniqueKeysWithValues: pages.compactMap { page in new[keys[page]].map { (page, $0) } }),
-                        kept: kept, neverRead: neverRead, changedSinceRead: changedSinceRead))
+                        kept: kept, neverRead: neverRead, changedSinceRead: changedSinceRead, toolUpdated: toolUpdated))
+            case Runner.exitLocked:
+                // The file's results stay as they were: a password that does not open it is no verdict on it.
+                return .fileFailed(reason: OpenFailure.lockedReason)
             case Runner.exitBusy:
-                // Another reparse of this file runs: it goes first.
-                while try store.isLockAlive("reparse:" + path) { Thread.sleep(forTimeInterval: 0.05) }
+                // Another reparse of this file runs: it goes first, for up to ten minutes and five turns.
+                busyWaits += 1
+                guard busyWaits <= 5 else { throw ReadError.reparseBusy }
+                let limit = Date().addingTimeInterval(600)
+                while try store.isLockAlive("reparse:" + path) {
+                    guard Date() < limit else { throw ReadError.reparseBusy }
+                    Thread.sleep(forTimeInterval: 0.05)
+                }
             default:
                 // The file changed, or the runner stopped: the entry is looked at again.
                 failures += 1

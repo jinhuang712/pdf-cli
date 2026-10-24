@@ -122,6 +122,17 @@ for file in testdata/safety/hidden-*.pdf testdata/hidden/hidden.pdf; do
     kept=$((kept + ${done:-0}))
 done
 
+# OCR reads PDFKit's rendering, which draws text under an annotation and in a layer switched off:
+# a page read again by OCR must keep such text under its marker (M2.10's review, H1).
+ocrpages=34,35,43-48,54,55,65,68,72,73
+cp testdata/hidden/hidden.pdf "$home/hidden-ocr.pdf"
+run reparse "$home/hidden-ocr.pdf" --page $ocrpages --step ocr >/dev/null
+output=$(run read "$home/hidden-ocr.pdf" --page $ocrpages --budget all)
+found=$(run search "$home/hidden-ocr.pdf" PLANTED)
+if printf '%s' "$output $found" | grep -q "PLANTED"; then fail "hidden.pdf read again by OCR: planted words read as text or are found by search"
+elif ! printf '%s' "$output" | grep -q "\[hidden"; then fail "hidden.pdf read again by OCR: no hidden-text marker"
+else ok "hidden.pdf read again by OCR: planted text flagged and kept out"; fi
+
 for file in testdata/safety/visible-*.pdf; do
     name=$(basename "$file" .pdf)
     output=$(run read "$file" --budget all)

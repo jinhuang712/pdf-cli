@@ -1,4 +1,5 @@
 import Foundation
+import PDFKit
 import Testing
 
 @testable import pdf
@@ -15,6 +16,32 @@ import Testing
 
     static func pdf(_ arguments: [String], home: URL, stdin: String = "") throws -> OutputContractTests.Run {
         try OutputContractTests.pdf(arguments, home: home, stdin: stdin)
+    }
+
+    /// Runs `pdf` with extra environment variables, a fresh home given, and `stdin` on standard input.
+    static func pdf(_ arguments: [String], home: URL, environment extra: [String: String], stdin: String = "") throws -> OutputContractTests.Run {
+        let process = Process()
+        process.executableURL = try #require(OutputContractTests.binary)
+        process.arguments = arguments
+        var environment = ProcessInfo.processInfo.environment
+        environment["PDF_CLI_HOME"] = home.path
+        for (key, value) in extra { environment[key] = value }
+        process.environment = environment
+        let input = Pipe()
+        let output = Pipe()
+        let errors = Pipe()
+        process.standardInput = input
+        process.standardOutput = output
+        process.standardError = errors
+        try process.run()
+        input.fileHandleForWriting.write(Data(stdin.utf8))
+        try input.fileHandleForWriting.close()
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        let errorData = errors.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        return OutputContractTests.Run(
+            status: process.terminationStatus, output: String(decoding: data, as: UTF8.self),
+            errors: String(decoding: errorData, as: UTF8.self))
     }
 
     /// Runs `statement` on one of the home's databases and returns what `sqlite3` prints.
@@ -206,5 +233,103 @@ import Testing
         }
         #expect(!alive, "a runner is still parsing after its command was killed")
         #expect(try Self.cache(home, "SELECT page_key || status || parsed_at FROM page_result ORDER BY page_key") == before, "a result changed")
+    }
+
+    /// What OCR reads of a page PDFKit draws with hidden text is no more visible than the layer's
+    /// words: text under an annotation and in a layer switched off stays under its marker
+    /// (M2.10's review, H1; goal G16).
+    @Test func readAgainByOCRKeepsHiddenTextHidden() async throws {
+        let home = try OutputContractTests.freshHome()
+        let file = try Self.copy(Self.root.appendingPathComponent("testdata/hidden/hidden.pdf").path, to: home)
+        let pages = "35,43"
+        let run = try Self.pdf(["reparse", file, "--page", pages, "--step", "ocr"], home: home)
+        #expect([0, 2].contains(run.status), "\(run.output.prefix(300))")
+        let normal = try Self.pdf(["read", file, "--page", pages, "--budget", "all"], home: home)
+        #expect(!normal.output.contains("PLANTED"), "hidden words read as text: \(normal.output.prefix(600))")
+        #expect(normal.output.contains("[hidden:"), "no marker: \(normal.output.prefix(600))")
+        #expect(normal.output.contains("hidden text: 2 places"), "\(normal.output.prefix(300))")
+        #expect(try Self.pdf(["search", file, "PLANTED"], home: home).output.contains("0 hits"))
+        let shown = try Self.pdf(["read", file, "--page", "35", "--budget", "all", "--show", "hidden"], home: home)
+        #expect(shown.output.contains("PLANTED"), "--show hidden still shows the words: \(shown.output.prefix(600))")
+        #expect(try Self.cache(home, "SELECT count(*) FROM page_result WHERE method = 'ocr'") == "2")
+        #expect(!Self.running(file))
+    }
+
+    /// A new reading that fails never replaces one that read well: the page keeps its result, the
+    /// summary counts it, the command ends 2, and `reparsed` counts replaced pages only.
+    @Test func aFailedNewReadingKeepsTheOldResultAndIsCounted() async throws {
+        let home = try OutputContractTests.freshHome()
+        let file = try Self.copy(Self.small, to: home)
+        _ = try Self.pdf(["read", file], home: home)
+        try await DryRunTests.settle(home)
+        let before = try Self.cache(home, "SELECT page_key || status || parsed_at FROM page_result")
+        let fault = ["PDF_CLI_TEST_FAULT": "crash:0"]
+        let text = try Self.pdf(["reparse", file], home: home, environment: fault)
+        #expect(text.status == 2, "\(text.output)")
+        #expect(text.output.contains("1 kept the old result") && text.output.contains("reparsed 0 pages"), "\(text.output)")
+        #expect(text.output.contains("p.1: kept the old result, the new reading failed"), "\(text.output)")
+        let json = try Self.pdf(["reparse", file, "--json"], home: home, environment: fault)
+        #expect(json.status == 2)
+        #expect(json.json?["reparsed"] as? Int == 0 && (json.json?["pages"] as? [Int]) == [])
+        let kept = try #require((json.json?["kept"] as? [[String: Any]])?.first, "\(json.output)")
+        #expect(kept["page"] as? Int == 1 && kept["reason"] is String)
+        #expect(try Self.cache(home, "SELECT page_key || status || parsed_at FROM page_result") == before)
+        // Without the fault the page is replaced, and exit 0.
+        let fine = try Self.pdf(["reparse", file], home: home)
+        #expect(fine.status == 0 && fine.output.contains("reparsed 1 page "), "\(fine.output)")
+    }
+
+    /// A locked file that reads from the cache keeps its results when the password is missing or
+    /// wrong; its failure line names `pdf reparse` (M2.10's review, M1).
+    @Test func aLockedFileKeepsItsResultsWithoutThePassword() async throws {
+        let home = try OutputContractTests.freshHome()
+        let locked = home.appendingPathComponent("locked.pdf")
+        let source = try #require(PDFDocument(url: URL(fileURLWithPath: Self.small)))
+        #expect(source.write(to: locked, withOptions: [.userPasswordOption: "pw", .ownerPasswordOption: "pw"]))
+        let file = locked.path
+        let first = try Self.pdf(["reparse", file, "--password-stdin", "--json"], home: home, stdin: "pw\n")
+        #expect(first.status == 0, "\(first.output)")
+        let rows = try Self.cache(home, "SELECT count(*) FROM page_result")
+        for (arguments, stdin) in [(["reparse", file], ""), (["reparse", file, "--password-stdin"], "wrong\n")] {
+            let run = try Self.pdf(arguments, home: home, stdin: stdin)
+            #expect(run.status == 3, "\(run.output)")
+            #expect(run.output.hasPrefix("\(file): failed: locked by a password"), "\(run.output)")
+            #expect(run.output.contains("pdf reparse \(file) --password-stdin"), "\(run.output)")
+            #expect(try Self.cache(home, "SELECT count(*) FROM page_result") == rows)
+            #expect(try Self.cache(home, "SELECT count(*) FROM file_entry WHERE doc_id IS NOT NULL") == "1", "a failure was written")
+        }
+        #expect(try Self.pdf(["ls"], home: home).output.contains("· ok ·"))
+        #expect(try Self.pdf(["read", file], home: home).status == 0, "the file still reads from the cache")
+    }
+
+    /// A reparse never takes the pool's first slot, which stays free for a new file's first page
+    /// (M2.10's review, P1).
+    @Test func aReparseKeepsSlotZeroFree() async throws {
+        let home = try OutputContractTests.freshHome()
+        let file = try Self.copy(Self.paper, to: home)
+        _ = try Self.pdf(["read", file, "--page", "1"], home: home)
+        try await DryRunTests.settle(home)
+        let log = home.appendingPathComponent("log.txt")
+        let run = try Self.pdf(["reparse", file, "--page", "1-6"], home: home, environment: ["PDF_CLI_LOG": log.path])
+        #expect([0, 2].contains(run.status), "\(run.output)")
+        let lines = (try String(contentsOf: log, encoding: .utf8)).split(separator: "\n").filter { $0.contains(": parse ") }
+        #expect(!lines.isEmpty)
+        for line in lines { #expect(!line.contains("in slot 0"), "\(line)") }
+    }
+
+    /// A first reading is no change of status, and a reparse reports what happened to the cache.
+    @Test func aFirstReadingIsNoChangeAndTheSummaryCountsOnlyReplacedPages() throws {
+        let home = try OutputContractTests.freshHome()
+        let file = try Self.copy(Self.paper, to: home)
+        let run = try Self.pdf(["reparse", file, "--page", "2", "--json"], home: home)
+        #expect(run.status == 2)
+        #expect(run.json?["neverRead"] as? Bool == true)
+        let flagged = try #require((run.json?["flaggedPages"] as? [[String: Any]])?.first)
+        #expect(flagged["page"] as? Int == 2 && flagged["status"] as? String == "unsure", "page numbers are numbers: \(run.output)")
+        let change = try #require((run.json?["changes"] as? [[String: Any]])?.first)
+        #expect(change["before"] is NSNull, "\(run.output)")
+        let text = try Self.pdf(["reparse", file, "--page", "3"], home: home)
+        #expect(text.output.contains("no page changed status"), "\(text.output)")
+        #expect(!text.output.contains("only parsed"), "\(text.output)")
     }
 }
