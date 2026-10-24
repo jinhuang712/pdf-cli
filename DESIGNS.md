@@ -1,4 +1,4 @@
-<!-- what-we-build: drafted 2026-10-19 -->
+<!-- what-we-build: drafted 2026-10-25 -->
 # Designs
 
 PDF files on the user's Mac and commands from an agent go in. Text with page addresses, PNG crops, search hits and failure reports come out, served from a local cache. In between, worker processes parse each page once, in steps that escalate only as far as the page needs, and store the result in SQLite. Behavior is in [FEATURES.md](FEATURES.md).
@@ -649,6 +649,34 @@ The skill grants no tool permission: `allowed-tools: Bash(pdf *)` would let Clau
 | **One text in the binary, printed or installed** | One source for both. The binary stays one file. A test holds the guide to the CLI. | A change to the guide needs a new build. |
 | A Markdown file shipped beside the binary | Editable without a build. | A second file to install and find, against the one-binary decision. |
 | A short skill that points to reference files | Less in context once it loads. | The guide is about 1,700 tokens, far under the docs' 500 lines, and F13 asks for one read. |
+
+## Decision: one output contract for every command — 2026-10-25
+
+Every command, the ones that only write included, takes `--json`, ends with the exit codes of F8 (0, 1, 2, 3, 64) and reports a failure in one shape: `<path>: failed: <reason>`, or the same as an object with `file` and `failed` under `--json`. The commands that change the cache (`pick`, `transcribe`, `rm`) take `--dry-run`, which says what they would do and does nothing. The review of 2026-10-25 found the contract kept by `read` alone: `dump` ended a failed file with 3 on one path and 1 on another, `ls`, `rm`, `pick` and `transcribe` had no `--json`, and an agent that parses the output of one command had to learn another's.
+
+| Option | For | Against |
+|---|---|---|
+| **The contract on every command, with a test that holds each command to it** | An agent learns the output once, and a command that breaks the contract fails a test. Shrinks the guide, which now says it for some commands and not others. | A change to every command, and exit codes that were 1 or 3 by habit change. |
+| `--json` on the commands that read, none on the ones that write | Less work. | The writes are the commands whose result an agent most needs to be sure of. |
+| Leave each command to its own | No work. | The cost falls on every agent, every time. |
+
+Cost: the tool has no outside users yet (version 0.0.0), so no exit code needs to stay as it was. Holds as: a test runs each command with `--json` and parses the output, and another checks the exit code of a missing file, a file that is not a PDF and a wrong flag against the table.
+
+## Decision: `read` reads, `note` and `ref` look up, `--show` shows what was set aside, `doctor` cleans — 2026-10-25
+
+`pdf read` has 15 options in five jobs: choose the range, choose the format, choose what to show, look up one thing, and set the cost. The review of 2026-10-25 moves two of them out and joins three:
+
+- `pdf note <pdf> 7` and `pdf ref <pdf> 12` replace `pdf read --footnote 7` and `--ref 12`. They look one thing up, are not paged and not held to the budget, and take `--json`. `read` keeps `--notes` and `--refs`, which choose where the notes and references the text cites show.
+- `--show raw,hidden,headers` replaces `--raw`, `--include-hidden` and `--headers`: one option for "show what normal output set aside", in the order the summary line names it. The summary line and the failure blocks name `--show raw` where they name `--raw` now.
+- `pdf doctor` (F12) takes over `pdf gc`. Cleaning the cache is a maintenance job beside showing its size, and it gets `--dry-run`.
+
+| Option | For | Against |
+|---|---|---|
+| **Look-ups as commands, one `--show`, `gc` into `doctor`** | A leaner `read`; each command does one thing; fewer names for an agent to hold. | The old names go, and they stand in the guide, the tests, the smoke scripts and the user's installed skill, which needs `pdf agent-guide --install claude-code` again. |
+| Keep every flag, add the commands as aliases | Nothing breaks. | Two ways to say each thing, and a guide that must teach both. |
+| Split `read` into `read`, `show`, `lookup` | Cleanest on paper. | A longer path to the common read; the review judged the gain too small. |
+
+The gain of `--show` is the smallest of the review's items, 5 of 20 on its scoring, and one flag to remember in place of three can be harder to remember; the user chose to do it all but one item (2026-10-25), so it is the last task and may be dropped. The old flags go without an alias: the tool is at version 0.0.0 and has no outside users. Cost: the rename reaches 21 files. Holds as: the guide test names every flag of every command, so a flag left behind fails it.
 
 ## Decision: a loud failure for a file PDFKit cannot open — 2026-10-15
 

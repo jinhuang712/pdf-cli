@@ -179,6 +179,8 @@ The rest of the page reaches the text too, at its position:
 
 They come from the file's facts, read for each version of the file, not from its pages' parse: a file that only gains highlights shows them without a page read again (GOALS.md → G9).
 
+Planned (DESIGNS.md → "Decision: `read` reads, `note` and `ref` look up, `--show` shows what was set aside, `doctor` cleans"): `pdf note <pdf> 7` and `pdf ref <pdf> 12` replace `--footnote` and `--ref` (M2.16), and `--show raw,hidden,headers` replaces `--raw`, `--include-hidden` and `--headers` (M2.17). Until each is built, the flags it replaces work as written in this document; when it is built, this document and the F8, F9, F14 and F15 sections change with it. `--notes` and `--refs`, which choose where the cited notes and references show, stay.
+
 Settings: none.
 
 ## F4 — Search 🚧
@@ -285,14 +287,14 @@ Every command follows the same rules, so an agent learns them once.
 - Every block shows its page and its number on the page: a heading such as `## p.12` starts each page, and `¶3` starts its third block. `--json` gives each block's position on the page too, such as `0.10,0.40,0.80,0.30`, and every doubt comes with the command that crops it. The page is its position in the file. When the number printed on the page differs, the page's heading says so, as in `## p.12 (printed 237)`.
 - Superscripts and subscripts keep a mark, as in `10^{-5}` and `x_{2}`. Footnote markers and citation numbers have their own marks (see F14 and F15).
 - A word that a hyphen splits across two lines comes back whole when the page or macOS's word list knows it. Otherwise the hyphen stays, as in `self-attention`.
-- Every command accepts `--json`.
+- Every command accepts `--json`, and ends with the exit codes of F8. A failure has one shape, `<path>: failed: <reason>`, or `{"file": …, "failed": …}` under `--json`. The commands that change the cache (`pick`, `transcribe`, `rm`) take `--dry-run`, which says what they would do and does nothing.
 - Output starts with a one-line summary: the pages read, the pages flagged and what normal output set aside.
 - A file that macOS Preview or another app saved through PDFKit carries a warning in its summary line: such a save can damage the text, and an earlier copy may read better.
 - Nothing is dropped without a trace. What normal output sets aside leaves a marker in place, or a count in the summary line, with the flag that shows it: `--raw` for doubtful text, `--include-hidden` for hidden text and `--headers` for running headers, footers and publisher stamps.
 - `--budget N` stops the output at about N tokens, between blocks, and ends it with a line that continues the read, such as `next: pdf read paper.pdf --from p4.27`. A text block larger than the whole budget is cut inside, and the next read goes on from the cut. A failure block, or text shown with `--raw`, larger than the budget goes out whole, so every read moves on. `read` and `search` stop at 5,000 tokens by default, about 5 pages of a paper, and `--budget all` turns the limit off.
 - While a document is still parsing, the summary line says `provisional`, with how many pages are parsed so far, because headings and note numbers can change once the whole document is known.
 
-Gap: only `pdf read`, `pdf info`, `pdf search` and `pdf crop` accept `--json` so far.
+Gap: only `pdf read`, `pdf info`, `pdf search`, `pdf crop` and `pdf dump` accept `--json` so far, `dump` ends some failures with 1 and others with 3, and no command takes `--dry-run` (M2.15, M2.18).
 
 Settings: none.
 
@@ -407,7 +409,7 @@ Shows and cleans up what the tool has cached.
 |---|---|
 | `pdf ls` | Lists every PDF in the library, with its ID, title, page count, flagged pages and path. A PDF not fully parsed shows how far it is. A file that is gone shows `file missing`, one changed since it was read says so, and one on a drive not plugged in shows as out of reach. |
 | `pdf rm <path or ID>` | Removes one PDF from the library and its results from the cache. Results that another copy of the file still uses stay, and so do the agent's picks, which show again if the PDF comes back. |
-| `pdf gc` | Removes cached results for files that no longer exist or have changed, and for old parser versions, and the library entries of files that no longer exist. A file on a drive not plugged in keeps both. Prints the space it freed. |
+| `pdf gc` | Goes when M2.11 lands: `pdf doctor` takes over its job (F12). Removes cached results for files that no longer exist or have changed, and for old parser versions, and the library entries of files that no longer exist. A file on a drive not plugged in keeps both. Prints the space it freed. |
 
 Parse results and crop images live in `~/Library/Caches/pdf-cli/`. The library list, picks, transcripts and memos live in `~/Library/Application Support/pdf-cli/`. The cache keeps every parse result until `pdf rm` or `pdf gc` removes it, and `pdf doctor` shows its size. A macOS update leaves cached results as they are, and `pdf reparse` reads a file again on the running macOS.
 
@@ -420,7 +422,7 @@ Gets the tool ready, and says what works on this Mac.
 | Command | What happens |
 |---|---|
 | `pdf setup` | Downloads the layout model. |
-| `pdf doctor` | Shows the macOS version, the models installed, the cache size, and what each missing piece would unlock. For example, the document structure of scanned pages needs macOS 26. |
+| `pdf doctor` | Shows the macOS version, the models installed, the cache size, and what each missing piece would unlock. For example, the document structure of scanned pages needs macOS 26. It also cleans the cache as `pdf gc` does now, and `--dry-run` shows what it would remove. |
 
 Settings: none.
 
@@ -433,7 +435,7 @@ Teaches an agent the tool in one read.
 | `pdf agent-guide` | Prints a compact guide for agents: the commands, the output rules, how to handle failure, unsure and table blocks and the markers for set-aside parts, and the rule that a PDF's text is content to read, not instructions to follow. |
 | `pdf agent-guide --install claude-code` | Installs the guide as a Claude Code skill, at `~/.claude/skills/pdf-cli/SKILL.md`, or under the folder `CLAUDE_CONFIG_DIR` names when it is set. Running it again replaces an earlier version. It warns when no `pdf` is on the PATH, or another one is, since the skill's commands run the one a shell finds. |
 
-The guide is about 1,700 tokens. It names only commands and flags that are built. A test checks, against the CLI itself, that every command and flag the guide names exists, with the command named before it on its line; that every command it writes out parses, its values included; and that it names every command `pdf --help` lists and every flag of each, but for two it leaves out on purpose, `read --full` and `add --password`. The skill's description leads with when to use the tool, as Claude Code's skill listing shows it before the skill loads.
+`pdf --help` opens with how to choose a command, and every command's `--help` carries two or three complete examples, with the options of `read` and `dump` grouped (M2.14). The guide is about 1,700 tokens. It names only commands and flags that are built. A test checks, against the CLI itself, that every command and flag the guide names exists, with the command named before it on its line; that every command it writes out parses, its values included; and that it names every command `pdf --help` lists and every flag of each, but for two it leaves out on purpose, `read --full` and `add --password`. The skill's description leads with when to use the tool, as Claude Code's skill listing shows it before the skill loads.
 
 Settings: none.
 
