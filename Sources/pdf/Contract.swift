@@ -61,7 +61,13 @@ enum Contract {
         }
     }
 
+    /// One clean sentence: a Foundation error (a file or folder that cannot be opened) gives its
+    /// localized text, the tool's own errors their description.
     static func reason(of error: Error) -> String {
-        (error as? CustomStringConvertible)?.description ?? error.localizedDescription
+        let domain = (error as NSError).domain
+        if error is CocoaError || domain.hasPrefix("NS") || domain == NSPOSIXErrorDomain {
+            return error.localizedDescription
+        }
+        return "\(error)"
     }
 }

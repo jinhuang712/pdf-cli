@@ -21,8 +21,9 @@ struct PDF: AsyncParsableCommand {
               pdf read paper.pdf --section Method
               pdf crop paper.pdf --table 2
 
-            Every command takes --json. It ends 0 ok, 2 some pages flagged, 3 the file failed or no page \
-            holds text, 1 it could not run (a missing file), 64 used wrongly; a failure reads \
+            Every command takes --json. It ends 0 ok; 2 pages flagged, from read, add and dump only (info, \
+            search and crop end 0 and name the flagged pages); 3 the file failed, or read found no page \
+            with text; 1 it could not run (a missing file); 64 used wrongly. A failure reads \
             <path>: failed: <reason>.
 
             Run pdf <command> --help for a command's options and examples.

@@ -65,6 +65,9 @@ struct DumpCommand: ParsableCommand {
         let folder = Self.canonical(URL(fileURLWithPath: output ?? defaultFolder(), isDirectory: true))
         var written: [Written] = []
         var notices: [String] = []
+        // How the run ends: 1 when something could not be written or run, else 3 when a read
+        // failed, else 2 when pages are flagged (FEATURES.md → F8).
+        var ending: [Int32] = []
 
         // The file opens first, so a locked, broken or missing file writes nothing.
         let store = try Store()
@@ -89,8 +92,10 @@ struct DumpCommand: ParsableCommand {
                 if exit == 3 || exit == 1 || exit == 64 {
                     try? FileManager.default.removeItem(at: target)
                     notices.append("\(name) was not written: pdf read exited \(exit)")
+                    ending.append(exit == 3 ? 3 : 1)
                     continue
                 }
+                if exit == 2 { ending.append(2) }
                 written.append(Written(kind: format == "md" ? "markdown" : "text", path: target.path, page: nil,
                                        note: exit == 2 ? "some pages are flagged; the file's first line says which" : nil))
             } catch {
@@ -112,9 +117,11 @@ struct DumpCommand: ParsableCommand {
                                                             docID: docID, store: store, reader: reader)
                         let made = try Crop.make(path: path, page: found.page, region: region.region.box.outward, grid: false, password: password)
                         let file = Dump.safeName("\(found.kind)-\(found.number).png", fallback: "\(found.kind).png", taken: &names)
-                        let target = try Dump.write(try Data(contentsOf: made.url), as: file, in: folder.appendingPathComponent(found.kind + "s"))
+                        let target = try Dump.write(try Data(contentsOf: made.url), as: file, in: folder, sub: found.kind + "s")
                         written.append(Written(kind: found.kind, path: target.path, page: found.page, note: nil))
                     } catch {
+                        // A folder that cannot be written (a link in the way) ends the run with 1.
+                        if error is DumpError { ending.append(1) }
                         notices.append("\(found.kind) \(found.number) (p.\(found.page)) was not written: \((error as? CropCommand.NotFound)?.description ?? "\(error)")")
                     }
                 }
@@ -194,6 +201,7 @@ struct DumpCommand: ParsableCommand {
             }
             for notice in notices { print("note: \(notice)") }
         }
+        if let code = [1, 3, 2].first(where: { ending.contains($0) }) { throw ExitCode(code) }
     }
 
     /// The folder with every link above it resolved, so that all paths a dump prints, in text and
@@ -242,7 +250,7 @@ struct DumpCommand: ParsableCommand {
     /// Runs `pdf read` with these arguments and writes what it prints to `handle`, which the caller
     /// made. Returns the exit code `pdf read` ended with.
     static func capture(_ arguments: [String], into handle: FileHandle) throws -> Int32 {
-        var command = try ReadCommand.parse(arguments)
+        let command = try ReadCommand.parse(arguments)
         fflush(stdout)
         let saved = dup(1)
         guard saved >= 0 else { throw DumpError(description: "standard output could not be saved") }
@@ -254,7 +262,8 @@ struct DumpCommand: ParsableCommand {
             try? handle.close()
         }
         do {
-            try command.run()
+            // The body, not `run()`: a read that fails keeps its own exit code and reason.
+            try command.read()
         } catch let code as ExitCode {
             return code.rawValue
         }

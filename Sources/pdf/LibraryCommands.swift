@@ -328,7 +328,7 @@ struct GCCommand: ParsableCommand {
         bytes.countStyle = .file
         bytes.allowsNonnumericFormatting = false
         // The size is what compacting the cache gave back, which includes the space that results
-        // removed earlier (by pdf rm) left behind; the counts are only what this run removed.
+        // removed earlier left behind, and the write-ahead log; the counts are only what this run removed.
         let freed = compacted ? max(0, before - store.size) : 0
         if json {
             struct Body: Encodable {
@@ -352,12 +352,11 @@ struct GCCommand: ParsableCommand {
             count(gone.count, "library entry", "library entries")
                 + " for files gone", count(crops, "crop") + " older than 7 days",
         ]
-        let nothing = removed.files + removed.documents + removed.pages + gone.count + crops == 0
         print(
             "removed " + counts.joined(separator: ", ")
                 + (compacted
                     ? " · compacted the cache, freed \(bytes.string(fromByteCount: freed))"
-                        + (nothing && freed > 0 ? ", the space that earlier pdf rm calls left" : "") : ""))
+                    : ""))
         if !compacted { print("a parse is running, so the space returns after the next pdf gc") }
     }
 }

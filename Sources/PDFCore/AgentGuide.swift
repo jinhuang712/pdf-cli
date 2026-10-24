@@ -45,7 +45,7 @@ public enum AgentGuide {
         - Columns read one after the other. Running headers, footers and page numbers are left out and counted in the first line; `--headers` shows them, as `[header] …`.
         - Output stops at about 5,000 tokens with a `next:` line: run that command as given.
         - `^{...}` and `_{...}` mark raised and lowered characters, as in `10^{-5}` and `x_{2}`.
-        - Every command takes `--json` and ends 0: done; 2: some pages are flagged, the rest is valid; 3: the file failed or no page holds text; 1: it could not run, as on a missing file; 64: used wrongly. A failure reads `<path>: failed: <reason>`, in `--json` `{"file": …, "failed": …}`.
+        - Every command takes `--json`. Exit 0 done; 2 pages flagged, rest valid (`read`, `add`, `dump` only; `info`, `search`, `crop` end 0 and name them); 3 the file failed, or `read` found no text; 1 could not run, as on a missing file; 64 used wrongly. A failure reads `<path>: failed: <reason>`, in `--json` `{"file": …, "failed": …}`.
 
         ## Beside the text
 

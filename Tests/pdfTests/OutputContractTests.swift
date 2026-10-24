@@ -117,4 +117,64 @@ import Testing
             #expect(try Self.pdf([name, "--no-such-flag"], home: home).status == 64, "pdf \(name) --no-such-flag")
         }
     }
+
+    @Test func aFailingInnerReadKeepsItsExitCodeAndReason() throws {
+        let home = try Self.freshHome()
+        let run = try Self.pdf(["dump", Self.fixture, "--text", "--page", "99", "-o", home.appendingPathComponent("d").path], home: home)
+        #expect(run.status == 1, "\(run.status): \(run.output)")
+        #expect(run.output.contains("page 99 is out of range"), "\(run.output)")
+    }
+
+    @Test func aFoundationErrorIsOneCleanSentence() throws {
+        let home = try Self.freshHome()
+        let file = home.appendingPathComponent("a-regular-file")
+        try Data().write(to: file)
+        let run = try Self.pdf(["ls", "--json"], home: file)
+        #expect(run.status == 1)
+        let reason = run.json?["failed"] as? String
+        #expect(reason != nil && !reason!.contains("Error Domain") && !reason!.contains("NSCocoa"), "\(run.output)")
+    }
+
+    @Test func aCompactingGCDoesNotBlameARemovalThatNeverHappened() throws {
+        let home = try Self.freshHome()
+        _ = try Self.pdf(["add", Self.fixture], home: home)
+        for _ in 0..<2 {
+            let run = try Self.pdf(["gc"], home: home)
+            #expect(run.status == 0 && run.output.contains("freed") && !run.output.contains("pdf rm"), "\(run.output)")
+        }
+    }
+
+    @Test func anEmptyLibraryAnswersInJSON() throws {
+        let home = try Self.freshHome()
+        #expect(((try Self.pdf(["ls", "--json"], home: home)).json?["documents"] as? [Any])?.isEmpty == true)
+        let search = try Self.pdf(["search", "words", "--json"], home: home)
+        #expect(search.status == 0 && (search.json?["hits"] as? [Any])?.isEmpty == true, "\(search.output)")
+    }
+
+    /// A folder that cannot be written ends 1; a file that cannot be read ends 3.
+    @Test func aFolderFailureIsOneAndAFileFailureIsThree() throws {
+        let home = try Self.freshHome()
+        let target = home.appendingPathComponent("target")
+        let link = home.appendingPathComponent("link")
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+        let folder = try Self.pdf(["dump", Self.fixture, "--markdown", "-o", link.path, "--json"], home: home)
+        #expect(folder.status == 1 && folder.json?["failed"] != nil, "\(folder.status): \(folder.output)")
+        let file = try Self.pdf(["dump", Self.notAPDF, "--markdown", "-o", link.path, "--json"], home: home)
+        #expect(file.status == 3, "\(file.status): \(file.output)")
+    }
+
+    /// A link where the figures folder should be is refused, and nothing is written through it.
+    @Test func aLinkInPlaceOfTheFiguresFolderIsRefused() throws {
+        let home = try Self.freshHome()
+        let out = home.appendingPathComponent("out")
+        let elsewhere = home.appendingPathComponent("elsewhere")
+        try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: elsewhere, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: out.appendingPathComponent("figures"), withDestinationURL: elsewhere)
+        let paper = Self.root.appendingPathComponent("testdata/smoke/arxiv-2608.16011.pdf").path
+        let run = try Self.pdf(["dump", paper, "--figures", "-o", out.path, "--json"], home: home)
+        #expect(run.status == 1, "\(run.status): \(run.output.prefix(300))")
+        #expect(try FileManager.default.contentsOfDirectory(atPath: elsewhere.path).isEmpty)
+    }
 }
