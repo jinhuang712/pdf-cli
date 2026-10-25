@@ -47,9 +47,28 @@ public final class Picks: Sendable {
                     reading_b TEXT NOT NULL,
                     chosen INTEGER NOT NULL,
                     picked_at REAL NOT NULL,
-                    PRIMARY KEY (page_key, block)
+                    PRIMARY KEY (page_key, block, reading_a, reading_b)
                 )
                 """)
+            // Before M2.24 the key was (page_key, block), so a pick made for other readings of the same
+            // paragraph replaced a stored one that did not apply. Rows are all kept.
+            let keyColumns = try Row.fetchAll(db, sql: "PRAGMA table_info(pick)").filter { ($0["pk"] as Int) > 0 }.count
+            if keyColumns == 2 {
+                try db.execute(sql: """
+                    CREATE TABLE pick_new (
+                        page_key TEXT NOT NULL,
+                        block INTEGER NOT NULL,
+                        reading_a TEXT NOT NULL,
+                        reading_b TEXT NOT NULL,
+                        chosen INTEGER NOT NULL,
+                        picked_at REAL NOT NULL,
+                        PRIMARY KEY (page_key, block, reading_a, reading_b)
+                    );
+                    INSERT INTO pick_new SELECT page_key, block, reading_a, reading_b, chosen, picked_at FROM pick;
+                    DROP TABLE pick;
+                    ALTER TABLE pick_new RENAME TO pick;
+                    """)
+            }
         }
     }
 

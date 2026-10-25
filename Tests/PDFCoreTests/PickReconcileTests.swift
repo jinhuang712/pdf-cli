@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 import Testing
 
 @testable import PDFCore
@@ -53,5 +54,40 @@ import Testing
     @Test func aLockedDatabaseIsOneCleanSentence() throws {
         struct Odd: Error {}
         #expect(!Picks.reason(of: Odd()).isEmpty)
+    }
+}
+
+/// The picks' table keeps a pick made for other readings of the same paragraph (M2.24 review, M1).
+@Suite struct PickKeyTests {
+    func directory() -> URL { FileManager.default.temporaryDirectory.appendingPathComponent("picks-" + UUID().uuidString) }
+
+    @Test func aPickForOtherReadingsOfTheSameBlockDoesNotReplaceTheStoredOne() throws {
+        let store = try Picks(directory: directory())
+        let now = Date()
+        try store.save(Pick(pageKey: "k", block: 2, readings: ["a b", "ab"], chosen: 0, pickedAt: now))
+        try store.save(Pick(pageKey: "k", block: 2, readings: ["c d", "cd"], chosen: 1, pickedAt: now))
+        #expect(try store.picks(keys: ["k"])["k"]?.count == 2)
+        try store.save(Pick(pageKey: "k", block: 2, readings: ["a b", "ab"], chosen: 1, pickedAt: now))
+        let kept = try #require(try store.picks(keys: ["k"])["k"])
+        #expect(kept.count == 2 && kept.first { $0.readings == ["a b", "ab"] }?.chosen == 1, "the same readings replace")
+    }
+
+    @Test func aTableWithTheOldKeyIsMigratedAndEveryRowKept() throws {
+        let dir = directory()
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let queue = try DatabaseQueue(path: dir.appendingPathComponent("library.sqlite").path)
+        try queue.write { db in
+            try db.execute(sql: """
+                CREATE TABLE pick (page_key TEXT NOT NULL, block INTEGER NOT NULL, reading_a TEXT NOT NULL,
+                    reading_b TEXT NOT NULL, chosen INTEGER NOT NULL, picked_at REAL NOT NULL, PRIMARY KEY (page_key, block));
+                INSERT INTO pick VALUES ('k', 1, 'a b', 'ab', 0, 1.0), ('k', 2, 'c d', 'cd', 1, 2.0);
+                """)
+        }
+        let store = try Picks(directory: dir)
+        try store.save(Pick(pageKey: "k", block: 1, readings: ["x y", "xy"], chosen: 0, pickedAt: Date()))
+        let all = try #require(try store.picks(keys: ["k"])["k"])
+        #expect(all.count == 3, "both old rows kept, and the new one beside the first")
+        // Opened again, nothing more happens.
+        #expect(try Picks(directory: dir).picks(keys: ["k"])["k"]?.count == 3)
     }
 }

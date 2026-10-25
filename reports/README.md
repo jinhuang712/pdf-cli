@@ -47,3 +47,4 @@ The spike's reports (M0) are in [spike/](../spike/README.md).
 | M2.21b Links past 1,000 in a table of their own | 2026-10-25 | 0 high, 3 medium, 7 low; 9 fixed, 1 recorded | [M2.21b](M2.21b-links.md) |
 | M2.22 `pdf search` leaves out running headers | 2026-10-25 | 1 high, 4 medium, 3 low; 7 fixed, cost recorded | [M2.22](M2.22-search-headers.md) |
 | M2.23 A reparse keeps picks that still apply | 2026-10-25 | 0 high, 1 medium (open design question), 9 low; 8 fixed, 1 not testable | [M2.23](M2.23-keep-picks.md) |
+| M2.24 A reparse never deletes picks | 2026-10-25 | 0 high, 3 medium, 6 low; all fixed, doctor report left in TODO | [M2.24](M2.24-picks-stay.md) |

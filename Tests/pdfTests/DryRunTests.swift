@@ -66,6 +66,8 @@ import Testing
             steady = now == last ? steady + 1 : 0
             last = now
         }
+        // Under load a runner can be quiet for 1.5 s and still alive: wait for the home's processes to go.
+        for _ in 0..<120 where ReparseTests.running(home.path) { try await Task.sleep(nanoseconds: 500_000_000) }
     }
 
     /// The keys of a dry run's object are the real run's, and the dry-run keys.
@@ -114,7 +116,8 @@ import Testing
     }
 
     /// A pick that no longer applies (the page offers other words) is no earlier pick: `read` shows the
-    /// page unpicked, and the dry run does not say it would replace one (M2.23 review, L4).
+    /// page unpicked, and neither the dry run nor the real pick replaces it: it stays stored
+    /// (M2.23 review, L4; M2.24 review, M1).
     @Test func pickDryRunIgnoresAPickThatNoLongerApplies() async throws {
         let home = try OutputContractTests.freshHome()
         let file = try ReparseTests.copy(ReparseTests.paper, to: home)
@@ -128,6 +131,10 @@ import Testing
         try ReparseTests.picksDB(home, "UPDATE pick SET reading_a = 'planted words'")
         let stale = try Self.pdf(["pick", file, address, "a", "--dry-run", "--json"], home: home)
         #expect(stale.json?["replaces"] is NSNull, "\(stale.output)")
+        // The real pick does not replace it either: a stale pick stays stored (M2.24 review, M1).
+        #expect(try Self.pdf(["pick", file, address, "a"], home: home).status == 0)
+        #expect(try ReparseTests.picksDB(home, "SELECT count(*) FROM pick") == "2")
+        #expect(try ReparseTests.picksDB(home, "SELECT count(*) FROM pick WHERE reading_a = 'planted words'") == "1")
     }
 
     @Test func transcribeDryRunSaysKeptReplacedOrRemovedAndChangesNothing() async throws {

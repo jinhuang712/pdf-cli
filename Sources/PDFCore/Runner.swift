@@ -147,7 +147,7 @@ public final class Runner: @unchecked Sendable {
         if Library.exists() {
             do {
                 let now = try store.results(keys: Array(reparsed.keys))
-                for (key, count) in try Picks().tally(results: now).sorted(by: { $0.key < $1.key }) {
+                for (key, count) in try Picks(readOnly: true).tally(results: now).sorted(by: { $0.key < $1.key }) {
                     print("picks\t\(key)\t\(count.applies)\t\(count.stale)")
                 }
             } catch {

@@ -68,6 +68,9 @@ public struct Reparsed: Sendable {
     public var picksStale = 0
     /// Why the picks could not be counted (the picks' database could not be read), if so. The reparse itself is done.
     public var picksUnknown: String?
+    /// Why the library list could not be updated after the run (its database was locked), if so. The
+    /// pages are replaced all the same; the file joins the list the next time a command reads it.
+    public var libraryFailure: String?
     /// Pages replaced in an earlier version of the file, before it changed: their picks are in the counts.
     public var earlierPages = 0
 }
@@ -391,8 +394,15 @@ public final class Reader: Sendable {
         remaining: [Int], stopped: String?, neverRead: Bool, changedSinceRead: Bool, toolUpdated: Bool,
         picks: PickTally, earlierPages: Int
     ) throws -> Reparsed {
+        // The pages are replaced by now: a library list that cannot be written (locked, the same
+        // file as the picks) must not end the command without its summary.
+        var libraryFailure: String?
         if let library {
-            try library.register(path: path, docID: docID, title: try store.documentInfo(docID: docID)?.title ?? "", pageCount: keys.count)
+            do {
+                try library.register(path: path, docID: docID, title: try store.documentInfo(docID: docID)?.title ?? "", pageCount: keys.count)
+            } catch {
+                libraryFailure = Picks.reason(of: error)
+            }
         }
         let pages = done.sorted()
         return Reparsed(
@@ -401,7 +411,7 @@ public final class Reader: Sendable {
             after: Dictionary(uniqueKeysWithValues: pages.compactMap { page in new[keys[page]].map { (page, $0) } }),
             kept: kept, neverRead: neverRead, changedSinceRead: changedSinceRead, toolUpdated: toolUpdated, remaining: remaining, stopped: stopped,
             picksApply: picks.applyCount, picksStale: picks.staleCount, picksUnknown: picks.unknown,
-            earlierPages: earlierPages)
+            libraryFailure: libraryFailure, earlierPages: earlierPages)
     }
 
     /// Starts a runner that indexes the file and stops, and waits for it. Another runner that holds

@@ -122,21 +122,31 @@ struct ReparseCommand: ParsableCommand {
         let replaced = done.pages.filter { done.kept[$0] == nil }
         let applyPicks = done.picksApply
         let stalePicks = done.picksStale
+        // Counts from some chunks only are no counts: they would read as 0.
+        let countsKnown = done.picksUnknown == nil
 
-        func status(_ result: PageResult?) -> String? { result.map { Quality.judge($0).status.rawValue } }
+        // A page is flagged as `read`, `info` and `ls` flag it: with the picks that apply taken in.
+        let pageKeys = (try? store.pageKeys(docID: done.docID)) ?? []
+        let applied: [String: [Pick]] =
+            Library.exists() ? ((try? Picks(readOnly: true).picks(keys: pageKeys)) ?? [:]) : [:]
+        func judge(_ page: Int, _ result: PageResult) -> PageQuality {
+            guard pageKeys.indices.contains(page) else { return Quality.judge(result) }
+            return Output.judge(Output.Page(index: page, result: result, key: pageKeys[page]), picks: applied).quality
+        }
+        func status(_ page: Int, _ result: PageResult?) -> String? { result.map { judge(page, $0).status.rawValue } }
         var changes: [Change] = []
         var flagged: [(page: Int, status: String)] = []
         var whole = 0
         for page in replaced {
             guard let after = done.after[page] else { continue }
-            let judged = Quality.judge(after)
+            let judged = judge(page, after)
             if judged.status != .ok { flagged.append((page + 1, judged.status.rawValue)) }
             if judged.status == .failed || judged.wholePage { whole += 1 }
             let before = done.before[page]
             let textChanged = before.map { $0.text != after.text } ?? false
             // A first reading is no change in the text: it shows in the flagged pages, if it is one.
-            if status(before) != judged.status.rawValue || textChanged {
-                changes.append(Change(page: page + 1, before: status(before), after: judged.status.rawValue, textChanged: textChanged))
+            if status(page, before) != judged.status.rawValue || textChanged {
+                changes.append(Change(page: page + 1, before: status(page, before), after: judged.status.rawValue, textChanged: textChanged))
             }
         }
         let shownChanges = changes.filter { $0.before != nil }
@@ -162,15 +172,24 @@ struct ReparseCommand: ParsableCommand {
                 var flaggedPages: [Status]
                 var changes: [Change]
                 var kept: [Kept]
-                var picksApply: Int
-                var picksStale: Int
+                var picksApply: Count
+                var picksStale: Count
                 var picksUnknown: String?
+                var libraryFailed: String?
                 var remaining: [Int]?
                 var next: String?
                 var stopped: String?
                 var neverRead: Bool?
                 var changedSinceRead: Bool?
                 var toolUpdated: Bool?
+            }
+            /// A number, or null when the picks could not be counted (all of them, or the chunks before the failure).
+            struct Count: Encodable {
+                var value: Int?
+                func encode(to encoder: Encoder) throws {
+                    var c = encoder.singleValueContainer()
+                    if let value { try c.encode(value) } else { try c.encodeNil() }
+                }
             }
             struct Status: Encodable {
                 var page: Int
@@ -186,8 +205,8 @@ struct ReparseCommand: ParsableCommand {
                         file: path, id: String(done.docID.prefix(8)), step: step?.rawValue ?? "usual", reparsed: replaced.count,
                         pages: replaced.map { $0 + 1 }, flagged: flagged.count,
                         flaggedPages: flagged.map { Status(page: $0.page, status: $0.status) }, changes: changes,
-                        kept: keptPages.map { Kept(page: $0 + 1, reason: done.kept[$0] ?? "") }, picksApply: applyPicks, picksStale: stalePicks,
-                        picksUnknown: done.picksUnknown,
+                        kept: keptPages.map { Kept(page: $0 + 1, reason: done.kept[$0] ?? "") }, picksApply: Count(value: countsKnown ? applyPicks : nil), picksStale: Count(value: countsKnown ? stalePicks : nil),
+                        picksUnknown: done.picksUnknown, libraryFailed: done.libraryFailure,
                         remaining: left.isEmpty ? nil : left, next: next, stopped: done.stopped,
                         neverRead: done.neverRead ? true : nil, changedSinceRead: done.changedSinceRead ? true : nil,
                         toolUpdated: done.toolUpdated ? true : nil)))
@@ -196,11 +215,13 @@ struct ReparseCommand: ParsableCommand {
             if !keptPages.isEmpty { parts.append("\(count(keptPages.count, "page")) kept the old result") }
             parts.append(flagged.isEmpty ? "none flagged" : "\(flagged.count) flagged")
             parts.append(statusChanges == 0 ? "no page changed status" : "\(statusChanges) changed status")
-            if applyPicks > 0 { parts.append("\(count(applyPicks, "pick")) still \(applyPicks == 1 ? "applies" : "apply")") }
-            if stalePicks > 0 {
-                parts.append("\(count(stalePicks, "pick")) no longer \(stalePicks == 1 ? "applies" : "apply") and stays stored")
+            // What the cache and the picks hold now, not what this run did: a stored pick that does not apply may be old.
+            if countsKnown && applyPicks > 0 { parts.append("\(count(applyPicks, "pick")) still \(applyPicks == 1 ? "applies" : "apply")") }
+            if countsKnown && stalePicks > 0 {
+                parts.append("\(count(stalePicks, "stored pick")) \(stalePicks == 1 ? "does" : "do") not apply")
             }
             if let unknown = done.picksUnknown { parts.append("picks not counted (\(unknown))") }
+            if let library = done.libraryFailure { parts.append("library list not updated (\(library))") }
             if let next {
                 parts.append(
                     "\(done.stopped ?? "stopped") with \(count(left.count, "page")) not read; the chunks before it are replaced; read the rest: \(next)"

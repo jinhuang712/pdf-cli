@@ -5,7 +5,7 @@ import Testing
 @testable import pdf
 
 /// `pdf reparse` (ROADMAP.md → M2.10): it replaces the cached results of the pages it reads again,
-/// keeps the picks whose readings the page still offers and clears the others (M2.23), keeps transcripts, follows the contract of M2.15, and a command that dies
+/// never deletes a pick (M2.24), keeps transcripts, follows the contract of M2.15, and a command that dies
 /// half way changes nothing. The tests run the built `pdf` with a fresh home, as an agent would.
 @Suite(.serialized) struct ReparseTests {
     static let root = OutputContractTests.root
@@ -70,6 +70,16 @@ import Testing
         return target.path
     }
 
+    /// Waits up to 30 s for the runners and workers of a file to be gone: under the load of a parallel
+    /// suite one can still be finishing when the command returns.
+    static func stopped(_ file: String) async -> Bool {
+        for _ in 0..<150 {
+            if !running(file) { return true }
+            try? await Task.sleep(nanoseconds: 200_000_000)
+        }
+        return false
+    }
+
     /// Whether a runner or worker for a file is still alive.
     static func running(_ file: String) -> Bool {
         let process = Process()
@@ -118,7 +128,7 @@ import Testing
         #expect(again.output.contains("[picked"), "\(again.output.prefix(400))")
         #expect(try Self.sql(home, "Support/library.sqlite", "SELECT count(*) FROM pick") == "1")
         // No runner is left parsing the other pages of the file.
-        #expect(!Self.running(file))
+        #expect(await Self.stopped(file))
         // The other pages were not parsed by the reparse: still planted.
         #expect(try Self.cache(home, "SELECT count(*) FROM page_result WHERE reason = 'planted'") == String((Int(cached) ?? 0) - 1))
     }
@@ -168,22 +178,41 @@ import Testing
         #expect(try Self.picksDB(home, "SELECT count(*) FROM pick") == "3")
         #expect(try Self.picksDB(home, "SELECT count(*) FROM pick WHERE reading_a = 'planted words'") == "1")
         let text = try Self.pdf(["reparse", file, "--page", String(chosen[0].page)], home: home)
-        #expect(text.output.contains("1 pick still applies") && !text.output.contains("no longer"), "\(text.output.prefix(300))")
+        #expect(text.output.contains("1 pick still applies") && !text.output.contains("does not apply"), "\(text.output.prefix(300))")
         let read = try Self.pdf(["read", file, "--page", String(chosen[0].page), "--budget", "all"], home: home)
         #expect(read.output.contains("[picked"))
         // OCR reads the page by another method: its readings are not the layer's, so the pick no longer applies, and stays.
         let ocr = try Self.pdf(["reparse", file, "--page", String(chosen[0].page), "--step", "ocr"], home: home)
         #expect(
-            ocr.output.contains("1 pick no longer applies and stays stored") && !ocr.output.contains("still applies"), "\(ocr.output.prefix(300))")
+            ocr.output.contains("1 stored pick does not apply") && !ocr.output.contains("still applies"), "\(ocr.output.prefix(300))")
         #expect(try Self.picksDB(home, "SELECT count(*) FROM pick") == "3")
         let ignored = try Self.pdf(["read", file, "--page", String(chosen[0].page), "--budget", "all"], home: home)
         #expect(!ignored.output.contains("[picked"), "a pick that does not match is ignored")
         // The round trip is lossless: the usual method brings the readings back, and the pick applies again.
         let back = try Self.pdf(["reparse", file, "--page", String(chosen[0].page)], home: home)
-        #expect(back.output.contains("1 pick still applies") && !back.output.contains("no longer"), "\(back.output.prefix(300))")
+        #expect(back.output.contains("1 pick still applies") && !back.output.contains("does not apply"), "\(back.output.prefix(300))")
         let again = try Self.pdf(["read", file, "--page", String(chosen[0].page), "--budget", "all"], home: home)
         #expect(again.output.contains("[picked"), "\(again.output.prefix(400))")
-        #expect(!Self.running(file))
+        #expect(await Self.stopped(file))
+    }
+
+    /// A page whose unsure paragraphs are all picked is not flagged by `read`, and the reparse does not
+    /// flag it either: it judges pages with the picks (M2.24 review, low 2).
+    @Test func aReparseFlagsAPageAsReadDoesWithItsPicks() async throws {
+        let home = try OutputContractTests.freshHome()
+        let file = try Self.copy(Self.paper, to: home)
+        let blocks = try Self.unsureBlocks(file, home: home)
+        try await DryRunTests.settle(home)
+        let page = try #require(blocks.first?.page, "no unsure paragraph")
+        for entry in blocks where entry.page == page {
+            #expect(try Self.pdf(["pick", file, "p\(entry.page).\(entry.block)", "b"], home: home).status == 0)
+        }
+        let read = try Self.pdf(["read", file, "--page", String(page), "--budget", "all"], home: home)
+        try #require(!read.output.contains("⚠ p.\(page) "), "the picks leave the page unflagged: \(read.output.prefix(300))")
+        let run = try Self.pdf(["reparse", file, "--page", String(page), "--json"], home: home)
+        let object = try #require(run.json, "\(run.output.prefix(300))")
+        #expect(object["flagged"] as? Int == 0 && run.status == 0, "\(run.status) \(object)")
+        #expect(await Self.stopped(file))
     }
 
     /// A page whose new reading failed keeps its old result, so it keeps its picks, and the picks are
@@ -217,7 +246,7 @@ import Testing
         holder.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
         holder.arguments = [
             "-I", "-c",
-            "import sqlite3,sys,time\nc=sqlite3.connect(sys.argv[1],isolation_level=None,timeout=30)\nc.execute('BEGIN EXCLUSIVE')\ntime.sleep(15)\n",
+            "import sqlite3,sys,time\nc=sqlite3.connect(sys.argv[1],isolation_level=None,timeout=30)\nc.execute('BEGIN EXCLUSIVE')\ntime.sleep(60)\n",
             home.appendingPathComponent("Support/library.sqlite").path,
         ]
         let job = Task.detached { try Self.pdf(["reparse", file, "--page", "2-6", "--step", "ocr", "--json"], home: home) }
@@ -228,13 +257,16 @@ import Testing
         holder.terminate()
         holder.waitUntilExit()
         let object = try #require(run.json, "\(run.output.prefix(400))")
-        #expect(run.status != 1, "\(run.output.prefix(400))")
+        // The lock outlasts the whole command: the picks cannot be counted and the library list cannot be
+        // written (the same file). The summary comes anyway, with a clean sentence, and the code is the pages' (M2.24 review, M2/M3).
+        #expect([0, 2].contains(run.status), "\(run.output.prefix(400))")
         #expect(object["reparsed"] as? Int == 5, "\(object)")
         #expect(object["picksFailed"] == nil, "\(object)")
-        // Either the lock was in the way of the count, which says so, or it was not and the pick is counted.
-        #expect(object["picksUnknown"] != nil || (object["picksStale"] as? Int) == 1, "\(object)")
+        #expect((object["picksUnknown"] as? String)?.contains("database is locked") == true, "\(object)")
+        #expect(object["picksApply"] is NSNull && object["picksStale"] is NSNull, "unknown counts are null, not 0: \(object)")
+        #expect(!run.output.contains("SQLite error"), "\(run.output.prefix(400))")
         #expect(try Self.picksDB(home, "SELECT count(*) FROM pick") == "1")
-        #expect(!Self.running(file))
+        #expect(await Self.stopped(file))
     }
 
     /// The file changes between chunks, after a chunk found a pick stale: the count stays in the summary,
@@ -262,11 +294,11 @@ import Testing
         let run = try await job.value
         let longer = (PDFDocument(url: other)?.pageCount ?? 0) >= 10
         if longer {
-            #expect(run.output.contains("1 pick no longer applies") && run.output.contains("of the version before"), "\(run.output.prefix(500))")
+            #expect(run.output.contains("1 stored pick does not apply") && run.output.contains("of the version before"), "\(run.output.prefix(500))")
         } else {
             #expect(run.status == 1 && run.output.contains("pages were replaced"), "\(run.output.prefix(500))")
         }
-        #expect(!Self.running(file))
+        #expect(await Self.stopped(file))
     }
 
     /// A page's links belong to the file's version, not to the page's parse (M2.21b): a reparse of
@@ -284,14 +316,14 @@ import Testing
         _ = try Self.pdf(["reparse", file, "--page", "2", "--json"], home: home)
         #expect(try Self.cache(home, "SELECT page_index, length(data), more FROM page_annotation ORDER BY page_index") == before)
         #expect(try Self.pdf(["read", file, "--page", "2", "--budget", "all"], home: home).output.contains(link))
-        #expect(!Self.running(file))
+        #expect(await Self.stopped(file))
         _ = try Self.pdf(["rm", file, "--dry-run"], home: home)
         #expect(try Self.cache(home, "SELECT count(*) FROM page_annotation") == "3")
         #expect(try Self.pdf(["rm", file], home: home).status == 0)
         #expect(try Self.cache(home, "SELECT count(*) FROM page_annotation") == "0")
     }
 
-    @Test func pageSpecsAreReadsAndBadOnesAreRefused() throws {
+    @Test func pageSpecsAreReadsAndBadOnesAreRefused() async throws {
         let home = try OutputContractTests.freshHome()
         let file = try Self.copy(Self.paper, to: home)
         let run = try Self.pdf(["reparse", file, "--page", "3,5-6", "--page", "5", "--json"], home: home)
@@ -301,7 +333,7 @@ import Testing
         // Only these pages are cached: the reparse of a file never read just parses them.
         #expect(try Self.cache(home, "SELECT count(*) FROM page_result") == "3")
         #expect(try Self.pdf(["ls"], home: home).output.contains("parsed 3 of 18 pages"))
-        #expect(!Self.running(file))
+        #expect(await Self.stopped(file))
         for bad in ["0", "3-1", "x", "1-"] {
             #expect(try Self.pdf(["reparse", file, "--page", bad], home: home).status == 64, "--page \(bad)")
         }
@@ -320,7 +352,7 @@ import Testing
         #expect(run.json?["step"] as? String == "ocr")
         #expect(try Self.cache(home, "SELECT method FROM page_result WHERE method <> 'planted'") == "ocr", "page 1 was read by OCR")
         #expect(try Self.cache(home, "SELECT count(*) FROM page_result WHERE method = 'planted'") != "0", "the other pages stay")
-        #expect(!Self.running(file))
+        #expect(await Self.stopped(file))
 
         // A born-digital page, read by OCR on request, under the same key, and back with a plain reparse.
         let small = try Self.copy(Self.small, to: home)
@@ -424,7 +456,7 @@ import Testing
         let shown = try Self.pdf(["read", file, "--page", "35", "--budget", "all", "--show", "hidden"], home: home)
         #expect(shown.output.contains("PLANTED"), "--show hidden still shows the words: \(shown.output.prefix(600))")
         #expect(try Self.cache(home, "SELECT count(*) FROM page_result WHERE method = 'ocr'") == "2")
-        #expect(!Self.running(file))
+        #expect(await Self.stopped(file))
     }
 
     /// Text PDFKit leaves out of its text, drawn in letters in a form switched off or under an
@@ -445,7 +477,7 @@ import Testing
         #expect(try Self.pdf(["search", file, "PLANTED"], home: home).output.contains("0 hits"))
         let shown = try Self.pdf(["read", file, "--page", "1", "--budget", "all", "--show", "hidden"], home: home)
         #expect(shown.output.contains("PLANTED"), "\(shown.output.prefix(600))")
-        #expect(!Self.running(file))
+        #expect(await Self.stopped(file))
     }
 
     /// The same, in the shapes M2.19's review found: strings of two glyphs, spelled elsewhere on the page,
@@ -473,7 +505,7 @@ import Testing
         #expect(box.contains("LAND TEAM") && !box.contains("[hidden:"), "\(box.prefix(600))")
         let gap = try page(11)
         #expect(gap.contains("LAND TEAM MORE WORDS HERE") && !gap.contains("[hidden:"), "\(gap.prefix(600))")
-        #expect(!Self.running(file))
+        #expect(await Self.stopped(file))
     }
 
     /// A new reading that fails never replaces one that read well: the page keeps its result, the
