@@ -7,7 +7,8 @@ import Vision
 /// The space repair for a file at risk (DESIGNS.md → Decision: Apple OCR word breaks over
 /// PDFium for fonts that hide spaces). PDFKit's characters stay; Apple OCR reads the rendered
 /// page, and only its word breaks are taken, where the two texts agree on the characters
-/// around them.
+/// around them. OCR here is Vision's text recognizer, which gives one answer for one image
+/// (DESIGNS.md → Decision: the space repair reads with the text recognizer).
 enum SpaceRepair {
     /// Where OCR breaks words that PDFKit runs together, as UTF-16 offsets in `page.string`
     /// before which a space belongs.
@@ -24,9 +25,12 @@ enum SpaceRepair {
         let start = DispatchTime.now().uptimeNanoseconds
         guard let image = OCR.render(page, dpi: 200) else { return nil }
         let rendered = DispatchTime.now().uptimeNanoseconds
-        guard let paragraphs = await OCR.recognize(image) else { return nil }
+        // The text recognizer, not the document recognizer: it returns the same lines for the same
+        // image in every process, where the document recognizer's text for one image of page 17
+        // of arxiv-2609.23257 differed from run to run (FEATURES.md → F3).
+        guard let lines = OCR.textRecognizerLines(image) else { return nil }
         let recognized = DispatchTime.now().uptimeNanoseconds
-        let breaks = align(kit: page.string ?? "", ocr: paragraphs.map(\.text).joined(separator: "\n"))
+        let breaks = align(kit: page.string ?? "", ocr: lines.map(\.text).joined(separator: "\n"))
         let aligned = DispatchTime.now().uptimeNanoseconds
         Env.log("space repair: render \((rendered - start) / 1_000_000) ms, OCR \((recognized - rendered) / 1_000_000) ms, "
                 + "align \((aligned - recognized) / 1_000_000) ms, \(breaks.spaces.count) spaces, \(breaks.unsure.count) unsure")

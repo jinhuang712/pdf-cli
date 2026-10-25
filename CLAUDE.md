@@ -15,7 +15,7 @@ Read this before designing anything. Each line points to where it is written dow
 
 ## Versions
 
-Parser version 20, page key 2, index checks 11, cache schema 9: raise the parser version when the parse's output changes, the page key's when what it hashes changes, and the index checks when the index's checks change.
+Parser version 21, page key 2, index checks 11, cache schema 9: raise the parser version when the parse's output changes, the page key's when what it hashes changes, and the index checks when the index's checks change.
 
 ## How to work
 

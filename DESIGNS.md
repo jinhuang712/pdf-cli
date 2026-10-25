@@ -886,3 +886,15 @@ Options it beat:
 | **Judge on the query, over the parsed pages** | Same rule and same answer as `pdf read`; always current as pages parse; no stored state, so no index version and no stale mark; a library-wide search is the same loop per document. | Reads the pages of every matching block (0.7 s more for 3,678 hits in 625 pages, release build); the whole hit list is judged before `--top` or the budget cuts. |
 | Mark furniture in the index once a document is parsed | A query stays one SQL query. | A mark is stale as soon as a page is added, reparsed or picked, so it needs rebuilding with the neighbours' every change (a page's furniture depends on 8 others); a second copy of the judgement to keep equal to `read`'s; index checks 12 and a migration; nothing to mark while the file parses, the common case for a first search. |
 | Leave the header text out of the index when the page is parsed | The smallest query. | Needs the neighbours at parse time, which the parse never has (a page's parse must not depend on another's), and `--show headers` could not bring them back. |
+
+## Decision: the space repair reads with the text recognizer — 2026-10-25
+
+Page 17 of `testdata/smoke/arxiv-2609.23257.pdf` read as "Output (JSON)" in some fresh processes and "Output(JSON)" in others (M2.10 review, L5). PDFKit was not the source: its text of the page was the same in 130 runs, in 30 separate processes and 100 loops of one. The render was not: the image's bytes hashed the same each time. The source was Apple's document recognizer: the space repair takes its word breaks from OCR, and for the same image the recognizer returned two different texts (one with a line "Output (JSON)", one with none), in about a quarter of the processes of a full read (8 of 12 runs in one series), and never twice in one process (40 calls in a loop, 8 in parallel tasks, also in the background state). The text recognizer (`VNRecognizeTextRequest`, accurate) gave the same text for every page of the paper in 8 runs of 8. The repair now reads with it (parser version 21).
+
+| Option | For | Against |
+|---|---|---|
+| **The text recognizer for the space repair** | One answer per image, in every process. It needs only lines, so no paragraph grouping, and it is the engine older macOS versions already use. | M1.2 scored it a little lower on the spike's paper: 96.2% of spaces found and 93 added, against 97.8% and 68 with the document recognizer. On the smoke paper it found "CTRL performs" where the document recognizer left an unsure span, and left an unsure span of its own on p.17. |
+| Keep the document recognizer, read twice and compare | Keeps its recall. | Two readings cost twice 0.65 s a page, and when they differ there is still no rule to say which is right. |
+| Keep the document recognizer, record the flip | No change. | Breaks "same file, same answer" on a file whose spaces PDFKit loses, the agent's pick keys differ by run. |
+
+Not covered: a scanned page is still read by the document recognizer, because the text recognizer reads scans worse (F13), so a scan can read differently in two fresh caches. The cache keeps the first reading.
