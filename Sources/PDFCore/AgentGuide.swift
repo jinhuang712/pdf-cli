@@ -66,7 +66,7 @@ public enum AgentGuide {
         - `⚠ p.4 failed: …` or `⚠ p.4 low-quality: …`, for a page or for one block, as `⚠ p.4 ¶3 low-quality: …`: the text there is missing or unreliable. Run its `read it as an image:` command and read the image. One with no command, a page whose drawing is damaged, has nothing more to show: tell the user part of the page is missing.
         - `⚠ p.2 ¶5 unsure: two readings differ`, with readings `[a]` and `[b]`: where the words break is in doubt. Look at its `look:` crop, then run `pdf pick paper.pdf p2.5 a` or `b`. Later reads show the pick, as `[picked 2026-10-15]`.
         - `⚠ p.2 ¶5 unsure: words run together, and no reading splits them`: look at the crop.
-        - `set aside: … (show: --show raw)` in the first line: `--show raw` shows it, labelled with its reason, as `[low-quality]` or `[table text: rows and columns lost]` in place, or a scan's replaced text layer as `[old OCR]`.
+        - `set aside: … (show: --show raw)` in the first line: `--show raw` shows it, labelled with its reason, as `[low-quality]` or `[table text: rows and columns lost]` in place, or the replaced text layer as `[PDF text layer]`.
         - `⚠ made or last saved by macOS PDFKit` in the first line: such a save can damage the text; an earlier copy may read better.
         - A file that fails as a whole says why (not a PDF, damaged, locked, slow to open). For a locked one, ask the user to run `pdf add <pdf> --password-stdin`, as its failure line says; `pdf crop` needs `--password-stdin` each time.
 

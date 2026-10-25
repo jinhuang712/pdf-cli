@@ -94,8 +94,8 @@ import Testing
         read.replacedText = "Rcad bv 0CR."
         read.agreement = 0.95
         let pages = [try page(0, read, method: "ocr")]
-        #expect(Output.render(file: "scan.pdf", pageCount: 1, pages: pages).text.contains("set aside: 1 old OCR layer"))
-        #expect(Output.render(file: "scan.pdf", pageCount: 1, pages: pages, raw: true).text.contains("[old OCR] Rcad bv 0CR."))
+        #expect(Output.render(file: "scan.pdf", pageCount: 1, pages: pages).text.contains("set aside: 1 replaced text layer"))
+        #expect(Output.render(file: "scan.pdf", pageCount: 1, pages: pages, raw: true).text.contains("[PDF text layer] Rcad bv 0CR."))
     }
 
     @Test func aFilePDFKitSavedCarriesAWarning() throws {

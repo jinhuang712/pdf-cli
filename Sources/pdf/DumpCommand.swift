@@ -1,6 +1,7 @@
 import ArgumentParser
 import Foundation
 import PDFCore
+import PDFKit
 
 /// Writes a PDF's content to files and prints their paths (FEATURES.md → F6). Attachments and
 /// scripts are saved as bytes and text, never opened or run.
@@ -80,6 +81,17 @@ struct DumpCommand: ParsableCommand {
         case .pages(let id, let count, _):
             docID = id
             pageCount = count
+        }
+        // A locked file that was added reads from the cache without its password, but what is
+        // written from the file itself cannot: say so up front, with the command that opens it.
+        if Self.isLocked(path: Reader.resolve(path), password: password) {
+            let flags = [
+                markdown ? "--markdown" : nil, text ? "--text" : nil, figures ? "--figures" : nil, tables ? "--tables" : nil,
+                notes ? "--notes" : nil, refs ? "--refs" : nil, attachments ? "--attachments" : nil,
+                scripts ? "--scripts" : nil,
+            ].compactMap { $0 }
+            let unlock = " · dump it with: echo \"$PW\" | pdf dump \(Output.quoted(path)) \(flags.joined(separator: " ")) --password-stdin"
+            throw Contract.fail(path, OpenFailure.locked + unlock, json: json, code: Contract.fileFailed)
         }
 
         for (wanted, format, name) in [(markdown, "md", "document.md"), (text, "text", "document.txt")] where wanted {
@@ -209,6 +221,8 @@ struct DumpCommand: ParsableCommand {
     /// given: a link there is refused, not followed.
     static func canonical(_ folder: URL) -> URL {
         let url = folder.standardizedFileURL
+        // macOS's own folder aliases are no link the user made: `-o /tmp` is `/private/tmp`.
+        if ["/tmp", "/var", "/etc"].contains(url.path) { return URL(fileURLWithPath: "/private" + url.path, isDirectory: true) }
         var parent = url.deletingLastPathComponent()
         var rest: [String] = []
         while parent.path != "/", !FileManager.default.fileExists(atPath: parent.path) {
@@ -220,6 +234,12 @@ struct DumpCommand: ParsableCommand {
         var resolved = URL(fileURLWithPath: String(cString: buffer), isDirectory: true)
         for part in rest { resolved.appendPathComponent(part, isDirectory: true) }
         return resolved.appendingPathComponent(url.lastPathComponent, isDirectory: true)
+    }
+
+    /// Whether the file is locked and the password given, if any, does not open it.
+    static func isLocked(path: String, password: String?) -> Bool {
+        guard let document = PDFDocument(url: URL(fileURLWithPath: path)), document.isLocked else { return false }
+        return password.map { !document.unlock(withPassword: $0) } ?? true
     }
 
     static var encoder: JSONEncoder {

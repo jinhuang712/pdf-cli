@@ -104,7 +104,7 @@ check "its failure block crops the page" "read it as an image: pdf crop $scan --
 check "--show raw shows its text, labelled" "\[low-quality\] TECH LIBRARY" "$(quality read $scan --page 1 --show raw)"
 check "a file that PDFKit made carries the warning" "made or last saved by macOS PDFKit" \
     "$(quality read testdata/ocr/scan-no-text.pdf --page 1)"
-check "the text layer OCR replaced shows with --show raw" "\[old OCR\]" "$(quality read testdata/ocr/scan-wrong-layer.pdf --page 1 --show raw)"
+check "the text layer OCR replaced shows with --show raw" "\[PDF text layer\]" "$(quality read testdata/ocr/scan-wrong-layer.pdf --page 1 --show raw)"
 check "a scan page whose second OCR reading failed is low-quality" \
     "p.1 low-quality: OCR read the page, but its second reading, which checks the first, failed" \
     "$(PDF_CLI_HOME=$work/unchecked PDF_CLI_TEST_FAULT=ocr-check-fail:0 $pdf read testdata/ocr/scan-no-text.pdf --page 1 2>&1)"

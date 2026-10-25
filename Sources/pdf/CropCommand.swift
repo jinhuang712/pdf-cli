@@ -108,7 +108,8 @@ struct CropCommand: ParsableCommand {
         } catch {
             let reason = (error as? CropError)?.description ?? "\(error)"
             let message = "p.\(number) could not be drawn: \(reason)" + (reason.hasPrefix(OpenFailure.locked) ? unlock : "")
-            throw Contract.fail(path, message, json: json)
+            // A locked file is a file that would not open, as above: 3, not 1.
+            throw Contract.fail(path, message, json: json, code: reason.hasPrefix(OpenFailure.locked) ? Contract.fileFailed : Contract.couldNotRun)
         }
         let tokens = Crop.tokens(width: made.width, height: made.height)
         if json {

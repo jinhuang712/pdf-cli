@@ -59,7 +59,14 @@ struct TranscribeCommand: ParsableCommand {
     func transcribe() throws {
         let (kind, asked) = wanted!
         let language = Transcript.language(of: kind)
-        // The text first, so a read with none fails before anything is parsed.
+        // The file first, so a missing or unreadable one is reported even when nothing is piped.
+        try Contract.requireFile(path)
+        guard FileManager.default.isReadableFile(atPath: Reader.resolve(path)) else {
+            throw Contract.fail(path, "could not be read: permission denied", json: json, code: Contract.fileFailed)
+        }
+        // A dry run opens only what is there, and reads only what the cache holds.
+        if dryRun, !Store.exists() { throw Contract.fail(path, Contract.notReadYet(path, page: page, .neverRead), json: json) }
+        // The text next, so a read with none fails before anything is parsed.
         var given: String?
         if !clear {
             let data = isatty(STDIN_FILENO) == 1 ? Data() : ((try? FileHandle.standardInput.read(upToCount: Self.readLimit + 1)) ?? nil) ?? Data()
@@ -78,11 +85,6 @@ struct TranscribeCommand: ParsableCommand {
                 throw Refusal(description: "the \(language) holds \(length) characters; at most \(Transcripts.limit(kind)) are kept")
             }
             given = text
-        }
-        // A dry run opens only what is there, and reads only what the cache holds.
-        if dryRun {
-            try Contract.requireFile(path)
-            if !Store.exists() { throw Contract.fail(path, Contract.notReadYet(path, page: page, .neverRead), json: json) }
         }
         let store = try Store(readOnly: dryRun)
         let reader = Reader(store: store, library: dryRun ? nil : try Library())

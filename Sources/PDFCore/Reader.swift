@@ -107,8 +107,22 @@ public final class Reader: Sendable {
     }
 
     /// The path the cache knows a file by: absolute, with symbolic links resolved.
+    ///
+    /// macOS's three folder aliases, `/tmp`, `/var` and `/etc`, are always written without
+    /// `/private`, whether or not the file exists: Foundation strips it only from a path that
+    /// exists, so `/private/tmp/x.pdf` and `/tmp/x.pdf` named one file while it was there and two
+    /// once it was gone.
     public static func resolve(_ path: String) -> String {
-        URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path
+        let resolved = URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path
+        return systemAliasless(resolved)
+    }
+
+    /// `/private/tmp/x` as `/tmp/x`, and likewise for `/var` and `/etc`; any other path as it is.
+    public static func systemAliasless(_ path: String) -> String {
+        for alias in ["/tmp", "/var", "/etc"] where path == "/private" + alias || path.hasPrefix("/private" + alias + "/") {
+            return String(path.dropFirst("/private".count))
+        }
+        return path
     }
 
     /// Returns the pages, counted from 0, once each one is cached. Nil means every page.

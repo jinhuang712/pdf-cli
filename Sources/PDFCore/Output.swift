@@ -1164,7 +1164,7 @@ public enum Output {
                            : "flagged: " + flagged.map { "p.\($0.page) (\($0.status.rawValue))" }.joined(separator: ", "))
             var aside: [String] = []
             if doubtful > 0 { aside.append("\(doubtful) doubtful block\(doubtful == 1 ? "" : "s")") }
-            if oldLayers > 0 { aside.append("\(oldLayers) old OCR layer\(oldLayers == 1 ? "" : "s")") }
+            if oldLayers > 0 { aside.append("\(oldLayers) replaced text layer\(oldLayers == 1 ? "" : "s")") }
             if inside > 0 { aside.append("\(inside) block\(inside == 1 ? "" : "s") of text inside figures, tables and equations") }
             if raw {
                 summary.append("showing the text set aside as doubtful")
@@ -1188,6 +1188,10 @@ public enum Output {
             }
             if let parsed, parsed < pageCount {
                 summary.append("provisional: \(parsed) of \(pageCount) pages parsed so far")
+                // The list may stand on a page not parsed yet: say so, not nothing.
+                if refsMode == .end, endRefs.isEmpty {
+                    summary.append("references: none listed, no list seen in the pages parsed so far (pdf ref parses the whole file)")
+                }
             }
             if savedByPDFKit {
                 summary.append("⚠ made or last saved by macOS PDFKit, as Preview saves: such a save can damage the text, "
@@ -1419,7 +1423,7 @@ public enum Output {
         case .doubtful:
             return "\(address(block)) [\(block.status ?? "low-quality")] \(block.text ?? "")"
         case .oldOCR:
-            return "[old OCR] \(block.text ?? "")"
+            return "[PDF text layer] \(block.text ?? "")"
         case .hidden:
             return block.text ?? ""
         case .failure:

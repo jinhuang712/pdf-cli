@@ -263,15 +263,17 @@ struct RemoveCommand: ParsableCommand {
         let entries = try library?.entries() ?? []
         let path = Reader.resolve(target)
         var paths: [String]
-        var shown: String
-        if let entry = entries.first(where: { $0.path == path }) {
-            paths = [path]
-            shown = "\(entry.shortID) · \(entry.displayTitle)"
+        var shownID: String?
+        var shownTitle: String
+        if let entry = entries.first(where: { Reader.systemAliasless($0.path) == path }) {
+            paths = Array(Set([entry.path, path])).sorted()
+            shownID = entry.shortID
+            shownTitle = entry.displayTitle
         } else if try store?.knows(path: path) ?? false {
             // A file the cache knows that never joined the library, as one read by a hidden
             // command.
             paths = [path]
-            shown = URL(fileURLWithPath: path).lastPathComponent
+            shownTitle = URL(fileURLWithPath: path).lastPathComponent
         } else {
             let id = target.lowercased()
             let documents = Set(entries.map(\.docID).filter { id.count >= 4 && $0.hasPrefix(id) })
@@ -284,8 +286,10 @@ struct RemoveCommand: ParsableCommand {
             }
             let listed = entries.filter { $0.docID == docID }
             paths = Array(Set(listed.map(\.path) + (try store?.paths(docID: docID) ?? []))).sorted()
-            shown = "\(listed[0].shortID) · \(listed[0].displayTitle)"
+            shownID = listed[0].shortID
+            shownTitle = listed[0].displayTitle
         }
+        let shown = shownID.map { "\($0) · \(shownTitle)" } ?? shownTitle
         // The documents these files carry, for what a dry run says stays.
         var docIDs = Set(entries.filter { paths.contains($0.path) }.map(\.docID))
         if dryRun, let store { docIDs.formUnion(try store.docIDs(paths: paths)) }
@@ -305,7 +309,8 @@ struct RemoveCommand: ParsableCommand {
         }
         if json {
             struct Body: Encodable {
-                var removed: String
+                var id: String?
+                var title: String
                 var files: [String]
                 var cachedPages: Int
                 var dryRun: Bool?
@@ -316,7 +321,7 @@ struct RemoveCommand: ParsableCommand {
             print(
                 Contract.json(
                     Body(
-                        removed: shown, files: paths, cachedPages: removed.pages, dryRun: dryRun ? true : nil,
+                        id: shownID, title: shownTitle, files: paths, cachedPages: removed.pages, dryRun: dryRun ? true : nil,
                         picksKept: dryRun ? kept.picks : nil, transcriptsKept: dryRun ? kept.transcripts : nil,
                         sharedWith: dryRun ? kept.shared : nil)))
         } else if dryRun {

@@ -84,7 +84,7 @@ import Testing
             (["pick", file, "p1.1", "a"], [1], "failed"), (["transcribe", file, "--page", "1", "--equation", "1"], [1], "failed"),
             (["note", file, "1"], [1], "failed"), (["ref", file, "1"], [1], "failed"),
             (["agent-guide"], [0], "guide"), (["agent-guide", "--install", "claude-code"], [0], "installed"),
-            (["rm", file], [0], "removed"), (["doctor", "--clean"], [0], "clean"), (["doctor"], [0, 2], "cache"),
+            (["rm", file], [0], "title"), (["doctor", "--clean"], [0], "clean"), (["doctor"], [0, 2], "cache"),
             (["setup"], [0], "workers"), (["setup", "--memory", "balanced"], [0], "memoryMB"),
         ]
         for command in commands {

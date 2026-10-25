@@ -47,23 +47,32 @@ struct AgentGuideCommand: ParsableCommand {
         } catch {
             throw Contract.fail(file.path, "could not install the Claude Code skill: \((error as NSError).localizedDescription)", json: json)
         }
+        // Claude Code watches the skills folders it found at its start, and no others.
+        let hint =
+            installed == .unchanged
+            ? nil
+            : "a running Claude Code session picks it up, after /reload-skills if its skills folder is newer than the session"
+        // The skill's commands run the pdf that a shell finds on the PATH.
+        let me = Bundle.main.executableURL?.resolvingSymlinksInPath()
+        var warnings: [String] = []
+        if let found = AgentGuide.commandOnPath() {
+            if let me, found != me {
+                warnings.append("the pdf on the PATH is \(found.path), not this one, \(me.path): the skill's commands run that one")
+            }
+        } else {
+            warnings.append(
+                "no pdf on the PATH, so the skill's commands cannot run until one is there"
+                    + (me.map { "; this one is \($0.path)" } ?? ""))
+        }
         if json {
             struct Body: Encodable {
                 var file: String
                 var installed: String
                 var warnings: [String]
-            }
-            let me = Bundle.main.executableURL?.resolvingSymlinksInPath()
-            var warnings: [String] = []
-            if let found = AgentGuide.commandOnPath() {
-                if let me, found != me {
-                    warnings.append("the pdf on the PATH is \(found.path), not this one, \(me.path): the skill's commands run that one")
-                }
-            } else {
-                warnings.append("no pdf on the PATH, so the skill's commands cannot run until one is there")
+                var hint: String?
             }
             let state = installed == .new ? "new" : installed == .replaced ? "replaced" : "unchanged"
-            print(Contract.json(Body(file: file.path, installed: state, warnings: warnings)))
+            print(Contract.json(Body(file: file.path, installed: state, warnings: warnings, hint: hint)))
             return
         }
         switch installed {
@@ -71,19 +80,7 @@ struct AgentGuideCommand: ParsableCommand {
         case .replaced: print("updated the Claude Code skill, replacing the SKILL.md that was there: \(file.path)")
         case .unchanged: print("the Claude Code skill is up to date: \(file.path)")
         }
-        // Claude Code watches the skills folders it found at its start, and no others.
-        if installed != .unchanged {
-            print("a running Claude Code session picks it up, after /reload-skills if its skills folder is newer than the session")
-        }
-        // The skill's commands run the pdf that a shell finds on the PATH.
-        let me = Bundle.main.executableURL?.resolvingSymlinksInPath()
-        if let found = AgentGuide.commandOnPath() {
-            if let me, found != me {
-                print("⚠ the pdf on the PATH is \(found.path), not this one, \(me.path): the skill's commands run that one")
-            }
-        } else {
-            print("⚠ no pdf on the PATH, so the skill's commands cannot run until one is there"
-                  + (me.map { "; this one is \($0.path)" } ?? ""))
-        }
+        if let hint { print(hint) }
+        for warning in warnings { print("⚠ " + warning) }
     }
 }

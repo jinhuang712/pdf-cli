@@ -269,6 +269,20 @@ import Testing
         #expect(!off.report().text.contains("## References"))
     }
 
+    @Test func refsEndSaysWhenTheListIsNotParsedYet() throws {
+        let text = page([body(0.1, "First [1] and [2]. " + sentence)])
+        let judged = judge([text])
+        var document = Output.Document(file: "paper.pdf", pageCount: 2, refs: .end)
+        _ = document.add(try outputPage(0, text, judged))
+        let first = document.report(parsed: 1).text.components(separatedBy: "\n")[0]
+        #expect(first.contains("references: none listed, no list seen in the pages parsed so far"))
+        // Every page parsed: nothing is waiting to be found, and nothing is said.
+        #expect(!document.report(parsed: 2).text.contains("no list seen"))
+        var off = Output.Document(file: "paper.pdf", pageCount: 2)
+        _ = off.add(try outputPage(0, text, judged))
+        #expect(!off.report(parsed: 1).text.contains("no list seen"))
+    }
+
     @Test func aParagraphThatCitesFortyEntriesListsAboutAThousandTokens() throws {
         let words = String(repeating: "a long title of the work that goes on ", count: 8)
         let text = page([body(0.1, "Many works [" + (1...40).map(String.init).joined(separator: ", ") + "]. " + sentence)])
