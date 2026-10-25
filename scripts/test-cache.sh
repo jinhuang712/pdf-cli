@@ -97,7 +97,7 @@ check "the unsure block shows both readings" "\[b\] lookback𝐿 and𝐹 feature
 check "an unsure page exits 2" "exit 2" "$output"
 check "a pick needs a block with unsure words" "has no unsure words" "$(quality pick $spaces p3.1 a)"
 check "a pick is saved" "picked b for p.3 ¶5: lookback𝐿 and𝐹 features" "$(quality pick $spaces p3.5 b)"
-check "a later read shows the picked words" "features \[picked" "$(quality read $spaces --page 3)"
+check "a later read shows the picked words" "lookback𝐿 and𝐹 features \[picked" "$(quality read $spaces --page 3)"
 
 scan=testdata/smoke/scan-naca-report-1034.pdf
 output=$(quality read $scan --page 1)
@@ -260,10 +260,11 @@ check "a lone PDF without words is refused" "give the words to find after the PD
 
 # Hidden text: one page per way of hiding a planted line (scripts/make-hidden-fixture.swift).
 hidden=testdata/hidden/hidden.pdf
-# p.38 has two places since M2.25: the planted line, and the last letter of the last REDACTED label,
-# which lies past the black box and reads white on white.
+# p.38 has three places since M2.25 (was 57 on macOS 14): the planted line is split around the "." that PDFKit
+# joins to it, and the last letter of the last REDACTED label lies past the black box. The count follows PDFKit's
+# boxes and is fragile.
 output=$(reading read $hidden --budget all)
-check "every hiding trick leaves a marker" "hidden text: 58 places on p.1, p.2, p.3, p.4, p.5, p.6, p.7, p.8, p.11, p.12, p.13, p.14, p.15, p.16, p.17, p.18, p.19, p.20, p.23, p.24, p.34, p.35, p.36, p.37, p.38, p.39, p.40, p.41, p.42, p.43, p.44, p.45, p.46, p.47, p.48, p.51, p.52, p.53, p.54, p.55, p.58, p.59, p.60, p.61, p.62, p.63, p.65, p.68, p.69, p.70, p.71, p.72, p.73" "$output"
+check "every hiding trick leaves a marker" "hidden text: 59 places on p.1, p.2, p.3, p.4, p.5, p.6, p.7, p.8, p.11, p.12, p.13, p.14, p.15, p.16, p.17, p.18, p.19, p.20, p.23, p.24, p.34, p.35, p.36, p.37, p.38, p.39, p.40, p.41, p.42, p.43, p.44, p.45, p.46, p.47, p.48, p.51, p.52, p.53, p.54, p.55, p.58, p.59, p.60, p.61, p.62, p.63, p.65, p.68, p.69, p.70, p.71, p.72, p.73" "$output"
 check "a page where OCR stopped at its cap says so" "^\[hidden-text check incomplete: .* · look: pdf crop $hidden --page 23\]$" "$output"
 check "a word showing its first letter keeps only that letter" "^¶2 P\[hidden: 7 words, leaves no ink" "$(reading read $hidden --page 17)"
 check "a marker says what is hidden and how to show it" \

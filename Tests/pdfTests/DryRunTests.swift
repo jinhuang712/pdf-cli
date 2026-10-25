@@ -86,7 +86,8 @@ import Testing
     @Test func pickDryRunSaysWhatItWouldKeepAndKeepsNothing() async throws {
         let home = try OutputContractTests.freshHome()
         let file = Self.unsure
-        _ = try Self.pdf(["read", file, "--page", "3", "--budget", "all"], home: home)
+        // A long page limit: under the load of a parallel suite, page 3 can pass the default 30 s.
+        _ = try ReparseTests.pdf(["read", file, "--page", "3", "--budget", "all"], home: home, environment: ["PDF_CLI_PAGE_TIME_LIMIT": "180"])
         try await Self.settle(home)
         let before = Self.snapshot(home)
         let dry = try Self.pdf(["pick", file, "p3.5", "b", "--dry-run"], home: home)

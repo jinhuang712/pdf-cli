@@ -1,4 +1,4 @@
-<!-- what-we-build: drafted 2026-10-25 -->
+<!-- what-we-build: drafted 2026-10-26 -->
 # Roadmap
 
 **Current milestone:** M2. M1's tasks are all built; its exit criteria, the goals measured and a week of daily use, wait for the final wrap-up, as every milestone's do (the user, 2026-10-17).

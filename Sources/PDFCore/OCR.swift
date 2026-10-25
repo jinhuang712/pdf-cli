@@ -242,7 +242,10 @@ enum OCR {
         let marks = text.filter { !$0.isWhitespace }
         guard !marks.isEmpty else { return false }
         let words = text.split(whereSeparator: \.isWhitespace).filter { $0.filter(\.isLetter).count >= 2 }
-        return words.count >= 3 && Double(marks.filter(\.isLetter).count) >= 0.6 * Double(marks.count)
+        // Latin letters only: OCR reads specks as Arabic-like or Cyrillic strokes too, and prose in another
+        // script never qualifies (a gap, FEATURES.md → F9).
+        func latin(_ c: Character) -> Bool { c.isLetter && (c.unicodeScalars.first.map { $0.value < 0x250 } ?? false) }
+        return words.count >= 3 && Double(marks.filter(latin).count) >= 0.6 * Double(marks.count)
     }
 
     /// Below this share of a reading's words that a second reading also finds, OCR's text is in

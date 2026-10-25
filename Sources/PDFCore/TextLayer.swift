@@ -557,11 +557,8 @@ enum TextLayer {
         unit == 0x0A || unit == 0x0D || unit == 0x2028 || unit == 0x2029
     }
 
-    /// U+FFFC, the object replacement character, counts as a space: macOS 27's PDFKit puts one in
-    /// its text for each picture or figure a tagged file marks, a placeholder with no word of the page
-    /// in it, and a line of them would read as text (`¶2 ￼ ￼ ￼ ￼`, M2.25).
     static func isSpace(_ unit: unichar) -> Bool {
-        unit == 0x20 || unit == 0x09 || unit == 0xA0 || unit == 0xFFFC || isLineBreak(unit)
+        unit == 0x20 || unit == 0x09 || unit == 0xA0 || isLineBreak(unit)
     }
 
     /// One line of the page string, with its rectangle from the boxes of its characters.
@@ -586,27 +583,10 @@ enum TextLayer {
         }
         // Words as the line will show them: a space in the text or one the repair puts back
         // ends a word.
-        //
-        // PDFKit glues a run to the one before it when the second starts back to the left, as a
-        // label drawn over the line, and then gives the characters at the join boxes many ems
-        // wide ("." 140 points wide at 12 points, on p.38 of testdata/hidden/hidden.pdf, macOS
-        // 27). A word that PDFKit joins so is judged as two, the join before the first such
-        // character, so the box of the join does not make the hidden half read as seen. The
-        // text shows no space there.
-        func joined(_ index: Int) -> Bool {
-            guard let box = glyphs.boxes[index], glyphs.sizes.indices.contains(index), glyphs.sizes[index] >= 2 else { return false }
-            return box.width > 3 * glyphs.sizes[index]
-        }
         var words: [[Int]] = [[]]
-        var afterJoin = false
         for character in characters {
             if character.isSpace || spacesBefore.contains(character.index) { words.append([]) }
-            if !character.isSpace {
-                let wide = joined(character.index)
-                if wide, !afterJoin, !words[words.count - 1].isEmpty { words.append([]) }
-                afterJoin = wide
-                words[words.count - 1].append(character.index)
-            }
+            if !character.isSpace { words[words.count - 1].append(character.index) }
         }
         let marks = glyphs.marks(characters.filter { !$0.isSpace }.map(\.index), words: words.filter { !$0.isEmpty })
         // Each word a reader cannot see, by its first and last character, with the reason.
@@ -731,9 +711,17 @@ enum TextLayer {
                 // places the boxes of symbols, accents and the letters beside them off their ink.
                 let characters = word.map { text.substring(with: NSRange(location: $0, length: widths[$0] ?? 1)) }
                 let wordy = characters.map { $0.allSatisfy { $0.isLetter || $0.isNumber } }
+                // Punctuation inside a word, as the "." of "user.REDACTED" where PDFKit joined two runs,
+                // is checked too, but only between letters: "(3.15)" and "x=y" are maths, whose boxes
+                // PDFKit places off their ink (M2.25 review, H2).
                 guard let firstWordy = wordy.firstIndex(of: true), let lastWordy = wordy.lastIndex(of: true),
-                      wordy[firstWordy...lastWordy].allSatisfy({ $0 }),
-                      characters.indices.allSatisfy({ wordy[$0] || characters[$0].allSatisfy(\.isPunctuation) }) else { continue }
+                    wordy[firstWordy...lastWordy].indices.allSatisfy({ index in
+                        wordy[index]
+                            || (index > firstWordy && index < lastWordy && characters[index - 1].allSatisfy(\.isLetter)
+                                && characters[index + 1].allSatisfy(\.isLetter))
+                    }),
+                    characters.indices.allSatisfy({ wordy[$0] || characters[$0].allSatisfy(\.isPunctuation) })
+                else { continue }
                 // A letter of another color is judged against the color behind it alone, as white
                 // letters on a highlight behind just them, and by the test ink takes.
                 var unseen = [Bool](repeating: false, count: word.count)

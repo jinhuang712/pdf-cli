@@ -494,6 +494,14 @@ public enum Output {
             }
             for (index, block) in layer.blocks.enumerated() {
                 for position in anchors[index] ?? [] { result.units.append(regionUnit(position, at: index)) }
+                // A block of nothing but U+FFFC, the object replacement character that macOS 27's PDFKit
+                // puts in its text for each picture of a tagged figure, holds no word: it shows nothing
+                // and is no set-aside text. The layer keeps it, as it marks where a picture sits, which
+                // the regions use (M2.25).
+                if block.text.unicodeScalars.allSatisfy({ $0 == "\u{FFFC}" || $0.properties.isWhitespace }) {
+                    result.units.append(Unit(blocks: [], number: index + 1))
+                    continue
+                }
                 if let doubt = quality.doubts.first(where: { $0.blocks?.contains(index) == true }) {
                     var unit = Unit(blocks: [failureBlock(doubt, page: number, block: index + 1,
                                                           region: expanded(block.box, lines: block.lines), path: path, raw: raw)],

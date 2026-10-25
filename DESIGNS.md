@@ -1,4 +1,4 @@
-<!-- what-we-build: drafted 2026-10-25 -->
+<!-- what-we-build: drafted 2026-10-26 -->
 # Designs
 
 PDF files on the user's Mac and commands from an agent go in. Text with page addresses, PNG crops, search hits and failure reports come out, served from a local cache. In between, worker processes parse each page once, in steps that escalate only as far as the page needs, and store the result in SQLite. Behavior is in [FEATURES.md](FEATURES.md).
@@ -889,15 +889,17 @@ Options it beat:
 
 ## Decision: the space repair reads with the text recognizer — 2026-10-25
 
-Page 17 of `testdata/smoke/arxiv-2609.23257.pdf` read as "Output (JSON)" in some fresh processes and "Output(JSON)" in others (M2.10 review, L5). PDFKit was not the source: its text of the page was the same in 130 runs, in 30 separate processes and 100 loops of one. The render was not: the image's bytes hashed the same each time. The source was Apple's document recognizer: the space repair takes its word breaks from OCR, and for the same image the recognizer returned two different texts (one with a line "Output (JSON)", one with none), in about a quarter of the processes of a full read (8 of 12 runs in one series), and never twice in one process (40 calls in a loop, 8 in parallel tasks, also in the background state). The text recognizer (`VNRecognizeTextRequest`, accurate) gave the same text for every page of the paper in 8 runs of 8. The repair now reads with it (parser version 21).
+Page 17 of `testdata/smoke/arxiv-2609.23257.pdf` read as "Output (JSON)" in some fresh processes and "Output(JSON)" in others (M2.10 review, L5). PDFKit was not the source: its text of the page was the same in 130 runs (30 separate processes, 100 loops of one), and the rendered image hashed the same each time. The source was Apple's document recognizer: for the same image it returned two texts (one with a line "Output (JSON)", one without). In the first investigation 8 of 12 full reads showed the second text; the review measured it in 2 of 12 full reads, and later series of mine (12, 14 and 16 fresh processes, also under load) showed none, so it depends on the machine's state and is rare and unpredictable. It never differed twice within one process. The text recognizer (`VNRecognizeTextRequest`, accurate) gave one answer for every page in 8 runs of 8 and in 12 of 12. The repair now reads with it (parser version 21).
+
+Options, with numbers (smoke set, this macOS):
 
 | Option | For | Against |
 |---|---|---|
-| **The text recognizer for the space repair** | One answer per image, in every process. It needs only lines, so no paragraph grouping, and it is the engine older macOS versions already use. | M1.2 scored it a little lower on the spike's paper: 96.2% of spaces found and 93 added, against 97.8% and 68 with the document recognizer. On the smoke paper it found "CTRL performs" where the document recognizer left an unsure span, and left an unsure span of its own on p.17. |
-| Keep the document recognizer, read twice and compare | Keeps its recall. | Two readings cost twice 0.65 s a page, and when they differ there is still no rule to say which is right. |
-| Keep the document recognizer, record the flip | No change. | Breaks "same file, same answer" on a file whose spaces PDFKit loses, the agent's pick keys differ by run. |
+| **The text recognizer for the repair** | One answer per image in every process measured. It needs lines only. | Roughly even with the document recognizer on the smoke set (the review counted about +22 correct spaces, -9 correct, +8 wrong), and one silent loss: `arxiv-2608.24191` p.13 para 11 "Translatethefollowing Urdusocialmedia" is no longer flagged (each half is under the 25-letter run-together threshold); table 18 on `arxiv-2609.23257` p.17 loses about 12 spaces in `--show raw`. M1.2 scored it lower on the spike's paper: 96.2% found, 93 added, against 97.8% and 68. |
+| The document recognizer pinned to the CPU (`setComputeDevice(.cpu)` for the main and post-processing stages) | The review got one answer in 16 of 16 processes on the arXiv page and 6 of 6 on the NACA page where the default differed 2 of 6; same speed (2.49 s against 2.65 s); would make scans deterministic too. | M2.25 measured it and could not show a gain: the default also gave one answer in all of my 12 + 14 + 16 fresh processes, and 10 of 10 on NACA p.17 both ways, so the flip could not be reproduced to check the fix. Its text differs from the default's: on the arXiv paper it joined "stationarity;Shift", "Zheng,Wen" and "]for" (2 glitches, against 0 for the default document recognizer and 1 for the text recognizer). Not "at least as good", so not taken. Left as an option in TODO. |
+| The document recognizer as it was, read twice and compared | Keeps recall. | Doubles 0.65 s a page, and when the two differ there is no rule for which is right. |
 
-Not covered: a scanned page is still read by the document recognizer, because the text recognizer reads scans worse (F13), so a scan can read differently in two fresh caches. The cache keeps the first reading.
+Not covered: a scan is still read by the document recognizer, so a scan can read differently in two fresh caches; `pdf reparse` reads it again and may change it. The cache keeps a reading until a reparse.
 
 ## Decision: an OCR line that reads as prose is no "too small to read" text — 2026-10-25
 
@@ -914,3 +916,4 @@ Text under 2 points or squeezed to slivers is drawn as specks, and OCR reads spe
 
 Tested by `TinySpotsTests` on `testdata/hidden/tiny-near-prose.pdf` (two prose lines under 1.5-point words; both hidden on the old build), made by `scripts/make-hidden-fixture.swift`.
 
+*Dated note on the PDFKit save decision (M2.25, 2026-10-26):* on macOS 27 a PDFKit save keeps the file's original producer (the sample's saved copy said "pikepdf"), and the text of all 11 pages of the sample paper survives it, so the damage this decision describes no longer shows there. A file saved by older macOS still carries it, and nothing in the file tells the saves apart.
