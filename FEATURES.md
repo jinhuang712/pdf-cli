@@ -240,7 +240,7 @@ p.15 · caption: Accuracy vs. dropout rate
 mentioned on p.12, p.15
 ```
 
-`--figure`, `--table` and `--equation` look in the pages parsed so far, and in the whole file once it is parsed when those do not hold it; `--page` narrows them to one page, and is needed where two pages hold the same number, as an appendix that numbers its tables again. An unknown number fails with the numbers found, once the whole file is parsed: on a long file that is not yet, that takes as long as its parse, 2 minutes for a 517-page textbook. `--equation` and `--table` also print the LaTeX or Markdown the agent kept, to check against the image, or else the `pdf transcribe` command that keeps it.
+`--figure`, `--table` and `--equation` look in the pages parsed so far, and then parse the rest in batches of 40 pages from the start, stopping at the first batch that holds the number, or at 60 s, when the failure says how many pages it searched and to run the command again (the pages stay parsed) or add `--page`; `--page` narrows them to one page, and is needed where two pages hold the same number, as an appendix that numbers its tables again. An unknown number fails with the numbers found, once the whole file is parsed: on a long file that is not yet, that takes as long as its parse, 2 minutes for a 517-page textbook. `--equation` and `--table` also print the LaTeX or Markdown the agent kept, to check against the image, or else the `pdf transcribe` command that keeps it.
 
 The image is in color, and it is sized so small text in a chart stays readable. `pdf crop` prints the absolute path of the image file. The file stays for 7 days, and the same command makes it again after that.
 

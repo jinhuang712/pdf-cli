@@ -187,11 +187,32 @@ struct CropCommand: ParsableCommand {
         if let page { pages = pages.filter { $0.index == page - 1 } }
         var found = Region.find(wanted.kind, wanted.number, in: pages)
         let keys = try store.pageKeys(docID: docID)
-        if found.isEmpty, page != nil || pages.count < keys.count {
-            _ = try reader.read(path: path, pages: page.map { [$0 - 1] }, password: password)
-            pages = try layers()
-            if let page { pages = pages.filter { $0.index == page - 1 } }
+        var stopped: String?
+        if found.isEmpty, let page {
+            _ = try reader.read(path: path, pages: [page - 1], password: password)
+            pages = try layers().filter { $0.index == page - 1 }
             found = Region.find(wanted.kind, wanted.number, in: pages)
+        } else if found.isEmpty, pages.count < keys.count {
+            // A number the parsed pages do not hold: the rest of the file is parsed in batches from
+            // the start, and the looking ends at the first batch that holds it, or at the time limit
+            // (M2.21: a textbook of 517 pages took 115 s to parse before it said the number was not
+            // there). The pages stay parsed, and the parse goes on in the background.
+            let started = Date()
+            while found.isEmpty {
+                let cached = Set(try InfoCommand.cachedPages(docID: docID, store: store).map(\.index))
+                let next = keys.indices.filter { !cached.contains($0) }.prefix(Env.lookBatch)
+                if next.isEmpty { break }
+                _ = try reader.read(path: path, pages: Array(next), password: password)
+                pages = try layers()
+                found = Region.find(wanted.kind, wanted.number, in: pages)
+                let parsed = cached.count + next.count
+                if found.isEmpty, parsed < keys.count, Date().timeIntervalSince(started) >= Env.lookTimeLimit {
+                    stopped =
+                        "stopped at the time limit of \(Int(Env.lookTimeLimit)) s with \(parsed) of \(keys.count) pages searched; "
+                        + "run the command again to look further (the pages stay parsed), or add --page N"
+                    break
+                }
+            }
         }
         let name = "\(wanted.kind.rawValue) \(wanted.number)"
         guard let first = found.first else {
@@ -200,6 +221,11 @@ struct CropCommand: ParsableCommand {
             }
             let list = Set(numbers).sorted { $0.localizedStandardCompare($1) == .orderedAscending }.prefix(30).joined(separator: ", ")
             var message = "no \(name)" + (page.map { " on p.\($0)" } ?? " found")
+            if let stopped {
+                // Not in the whole file: how far the looking went, and how to go on.
+                message += " yet: " + stopped + (list.isEmpty ? "" : "; \(wanted.kind.rawValue)s found so far: \(list)")
+                throw NotFound(description: message)
+            }
             message += list.isEmpty ? "; no \(wanted.kind.rawValue) was found there" : "; \(wanted.kind.rawValue)s found: \(list)"
             if wanted.kind != .equation {
                 message += ". A table drawn without rules, or a figure with no caption, is not found; pdf crop --page N --bbox crops any region"
