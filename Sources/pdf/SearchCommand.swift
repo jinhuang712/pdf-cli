@@ -28,12 +28,25 @@ struct SearchCommand: ParsableCommand {
     @Option(help: ArgumentHelp("Show at most N hits.", valueName: "N")) var top: Int?
     @Option(help: ArgumentHelp("Start at hit N, as a next: line says.", valueName: "N")) var from = 1
     @Option(help: ArgumentHelp("Stop at about N tokens, or all for no limit.", valueName: "N")) var budget = "5000"
+    @Option(
+        name: .customLong("show"),
+        help: ArgumentHelp(
+            "Show the hits on running headers, footers and page numbers, which are left out and counted.",
+            valueName: "headers"))
+    var shows: [String] = []
     @Flag(help: "Print JSON.") var json = false
+
+    var headers: Bool { ReadCommand.shown(shows)?.contains("headers") ?? false }
 
     /// How long a search of one PDF waits for its pages to parse before it searches those that are.
     static let wait: TimeInterval = 10
 
     func validate() throws {
+        if let bad = ReadCommand.badShown(shows) ?? ReadCommand.shown(shows)?.subtracting(["headers"]).first {
+            throw ValidationError(
+                "--show: '\(bad)' is not offered by search; headers shows the hits on running headers, footers and page numbers (hidden words are never searched)"
+            )
+        }
         guard ReadCommand.tokens(budget) != nil else { throw ValidationError("--budget takes a number of tokens, or all") }
         if let top, top < 1 { throw ValidationError("--top takes a number of hits, 1 or more") }
         if from < 1 { throw ValidationError("--from takes a hit number, 1 or more") }
@@ -110,7 +123,7 @@ struct SearchCommand: ParsableCommand {
             if targets.isEmpty {
                 let report = Report(
                     query: regex ?? query, regex: regex != nil, targets: [], single: false, total: 0, loose: false,
-                    capped: false, from: from, store: store, picks: nil)
+                    capped: false, from: from, store: store, picks: nil, leftOut: 0, kinds: [:])
                 if json {
                     print(String(decoding: try report.json([], next: nil), as: UTF8.self))
                 } else {
@@ -128,6 +141,10 @@ struct SearchCommand: ParsableCommand {
         var total = 0
         var loose = false
         var capped = false
+        // Hits on running headers, footers and page numbers: left out and counted, or, with
+        // `--show headers`, kept and labelled.
+        var leftOut = 0
+        var kinds: [Search.Place: Furniture.Kind] = [:]
         let pattern = regex.map { try! NSRegularExpression(pattern: $0, options: [.anchorsMatchLines]) }
         if let pattern {
             // A pattern with nested repeats can run for minutes, and NSRegularExpression has no
@@ -149,34 +166,55 @@ struct SearchCommand: ParsableCommand {
                 hits += found
             }
             watchdog.cancel()
+            kinds = try Search.runningHeaders(among: hits.map { ($0.docID, $0.page, $0.block) }, store: store)
+            if !headers {
+                let kept = hits.filter { kinds[Search.Place(docID: $0.docID, page: $0.page, block: $0.block)] == nil }
+                leftOut = hits.count - kept.count
+                hits = kept
+            }
             total = hits.count
             hits = Array(hits.dropFirst(from - 1).prefix(wanted))
         } else {
             try store.indexForSearch(docIDs: docIDs)
             var match = Search.query(query)!
-            total = try store.search(match, docIDs: docIDs, limit: 0, offset: 0).total
-            if total == 0, let any = Search.query(query, any: true), any != match {
+            // Every block that matches, judged once for running headers, before the budget cuts.
+            func judged(_ match: String) throws -> (kept: [SearchCandidate], aside: Int) {
+                let all = try store.searchCandidates(match, docIDs: docIDs)
+                let found = try Search.runningHeaders(among: all.map { ($0.docID, $0.page, $0.block) }, store: store)
+                kinds.merge(found) { first, _ in first }
+                if headers { return (all, 0) }
+                let kept = all.filter { found[Search.Place(docID: $0.docID, page: $0.page, block: $0.block)] == nil }
+                return (kept, all.count - kept.count)
+            }
+            var found = try judged(match)
+            if found.kept.isEmpty, let any = Search.query(query, any: true), any != match {
                 // No block holds every word: blocks that hold some of them, best first.
-                let some = try store.search(any, docIDs: docIDs, limit: 0, offset: 0).total
-                if some > 0 {
+                let some = try judged(any)
+                if !some.kept.isEmpty {
                     match = any
                     loose = true
-                    total = some
+                    found = some
                 }
             }
+            total = found.kept.count
+            leftOut = found.aside
+            let most = min(wanted, max(0, total - (from - 1)))
             var offset = from - 1
-            while hits.count < min(wanted, total - (from - 1)) && offset < total {
-                let page = try store.search(match, docIDs: docIDs, limit: min(200, wanted - hits.count), offset: offset).hits
+            while hits.count < most && offset < total {
+                let slice = Array(found.kept[offset..<min(total, offset + min(200, most - hits.count))])
+                let page = try store.hits(match, for: slice)
                 guard !page.isEmpty else { break }
                 hits += page
-                offset += page.count
+                offset += slice.count
                 // A page of hits is about 60 tokens each, so more than the budget holds needs no more.
                 if let limit, hits.count * 30 > limit { break }
             }
         }
 
-        let report = Report(query: regex ?? query, regex: regex != nil, targets: targets, single: path != nil,
-                            total: total, loose: loose, capped: capped, from: from, store: store, picks: try? Picks())
+        let report = Report(
+            query: regex ?? query, regex: regex != nil, targets: targets, single: path != nil,
+            total: total, loose: loose, capped: capped, from: from, store: store, picks: try? Picks(),
+            leftOut: leftOut, kinds: kinds)
         let shown = report.render(hits, budget: limit, top: top)
         let flags = (regex.map { " --regex " + Output.quoted($0) } ?? "")
             + (budget == "5000" ? "" : " --budget \(budget)") + (json ? " --json" : "")
@@ -222,6 +260,10 @@ struct SearchCommand: ParsableCommand {
         var from: Int
         var store: Store
         var picks: Picks?
+        /// Hits on running headers, footers and page numbers that the search left out.
+        var leftOut: Int
+        /// What the hits' places are, where one is furniture: shown only with `--show headers`.
+        var kinds: [Search.Place: Furniture.Kind]
 
         struct Line: Encodable {
             var file: String
@@ -233,6 +275,8 @@ struct SearchCommand: ParsableCommand {
             var inside: String?
             var crop: String?
             var snippet: String
+            /// "header", "footer" or "publisher-stamp", on a hit that `--show headers` brought back.
+            var runningHeader: String?
         }
 
         /// A document's sections, as far as a search needs them: where each starts. With
@@ -291,11 +335,13 @@ struct SearchCommand: ParsableCommand {
                 let found = known[hit.docID] ?? sections(target)
                 known[hit.docID] = found
                 let region = regions["\(hit.docID) \(hit.page) \(hit.block)"]
-                let line = Line(file: target.path, page: hit.page + 1, block: hit.block,
-                                section: Info.section(at: hit.page + 1, block: hit.block, in: found)?.title,
-                                flagged: flagged["\(hit.docID) \(hit.page)"], inside: region?.name,
-                                crop: region.map { "pdf crop \(Output.quoted(target.path)) --page \(hit.page + 1) --\($0.kind.rawValue) \($0.number)" },
-                                snippet: hit.snippet)
+                let line = Line(
+                    file: target.path, page: hit.page + 1, block: hit.block,
+                    section: Info.section(at: hit.page + 1, block: hit.block, in: found)?.title,
+                    flagged: flagged["\(hit.docID) \(hit.page)"], inside: region?.name,
+                    crop: region.map { "pdf crop \(Output.quoted(target.path)) --page \(hit.page + 1) --\($0.kind.rawValue) \($0.number)" },
+                    snippet: hit.snippet,
+                    runningHeader: kinds[Search.Place(docID: hit.docID, page: hit.page, block: hit.block)]?.rawValue)
                 let cost = Output.tokens(text(line))
                 if let budget, !lines.isEmpty, used + cost > budget { break }
                 used += cost
@@ -332,13 +378,23 @@ struct SearchCommand: ParsableCommand {
                         + (partial.count > 5 ? ", and \(partial.count - 5) more" : ""))
                 }
             }
+            if leftOut > 0 {
+                lines.append("running headers and footers: \(leftOut) hit\(leftOut == 1 ? "" : "s") left out (show: --show headers)")
+            }
+            // A header is known from the pages that repeat it, so before the pages around it are
+            // parsed it can show as a hit.
+            if targets.contains(where: { $0.parsed < $0.pageCount }) {
+                lines.append("running headers are judged on the pages parsed so far; a hit on one can show until the rest parse")
+            }
             if loose { lines.append("no paragraph holds every word, so these hold some of them") }
             return lines.joined(separator: "\n")
         }
 
         func text(_ line: Line) -> String {
             (single ? "" : Output.quoted(name(line.file)) + " ") + "p.\(line.page) ¶\(line.block)"
-                + (line.section.map { " · " + $0 } ?? "") + (line.flagged.map { " · \($0) page" } ?? "")
+                + (line.section.map { " · " + $0 } ?? "")
+                + (line.runningHeader.map { " · [\($0 == "publisher-stamp" ? "publisher stamp" : $0)]" } ?? "")
+                + (line.flagged.map { " · \($0) page" } ?? "")
                 + (line.inside.map { " · in \($0)" + (line.crop.map { " (crop: \($0))" } ?? "") } ?? "")
                 + " · " + line.snippet.replacingOccurrences(of: "\n", with: " ")
         }
@@ -364,21 +420,26 @@ struct SearchCommand: ParsableCommand {
                 var pageCount: Int
                 var pagesSearched: Int
             }
+            struct SetAside: Encodable { var runningHeaders: Int }
             struct Body: Encodable {
                 var query: String
                 var regex: Bool
                 var total: Int
                 var someWords: Bool
                 var capped: Bool
+                var setAside: SetAside
                 var files: [File]
                 var hits: [Line]
                 var next: String?
             }
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.withoutEscapingSlashes, .sortedKeys]
-            return try encoder.encode(Body(query: query, regex: regex, total: total, someWords: loose, capped: capped,
-                                           files: targets.map { File(file: $0.path, pageCount: $0.pageCount, pagesSearched: $0.parsed) },
-                                           hits: lines, next: next))
+            return try encoder.encode(
+                Body(
+                    query: query, regex: regex, total: total, someWords: loose, capped: capped,
+                    setAside: SetAside(runningHeaders: leftOut),
+                    files: targets.map { File(file: $0.path, pageCount: $0.pageCount, pagesSearched: $0.parsed) },
+                    hits: lines, next: next))
         }
     }
 }

@@ -96,3 +96,71 @@ import Testing
         #expect(Info.section(at: 9, block: 1, in: sections)?.title == "2.1 Data")
     }
 }
+
+/// Running headers in the search (M2.22), judged on the query against the pages parsed now.
+@Suite struct SearchRunningHeadersTests {
+    func page(_ number: Int, body: String) throws -> PageResult {
+        func block(_ text: String, y: Double) -> TextBlock {
+            let box = Box(x: 0.1, y: y, width: 0.5, height: 0.012)
+            return TextBlock(text: text, box: box, lines: [TextLine(text: text, box: box)])
+        }
+        let layer = PageText(
+            blocks: [block("Annual Ledger Report", y: 0.04), block(body, y: 0.4), block("Ledger confidential", y: 0.94)],
+            words: 0, runTogether: 0)
+        return PageResult(
+            status: .ok, method: "pdfkit", text: layer.text, reason: "", parseMillis: 1,
+            data: String(decoding: try JSONEncoder().encode(layer), as: UTF8.self))
+    }
+
+    func hits(_ store: Store, _ id: String, _ query: String) throws -> [SearchCandidate] {
+        try store.indexForSearch(docIDs: [id])
+        return try store.searchCandidates(Search.query(query)!, docIDs: [id])
+    }
+
+    /// With the pages around parsed, the header and footer are found, the body is not, and the
+    /// words of the header in a body stay a hit.
+    @Test func aRepeatedHeaderIsFoundAndTheSameWordsInABodyAreNot() throws {
+        let store = try Store(directory: FileManager.default.temporaryDirectory.appendingPathComponent("pdf-cli-search-\(UUID())"))
+        let keys = (0..<5).map { "k\($0)" }
+        let id = try store.saveIndex(path: "/a.pdf", stat: FileStat(size: 1, modifiedNanos: 1, inode: 1, device: 1), pageKeys: keys)
+        for (number, key) in keys.enumerated() {
+            try store.saveResult(key: key, page(number, body: number == 2 ? "The ledger shows every payment." : "Plain words \(number)."))
+        }
+        let all = try hits(store, id, "ledger")
+        #expect(all.count == 11)
+        let found = try Search.runningHeaders(among: all.map { ($0.docID, $0.page, $0.block) }, store: store)
+        #expect(found.count == 10)
+        #expect(found[Search.Place(docID: id, page: 2, block: 2)] == nil)
+        #expect(found[Search.Place(docID: id, page: 2, block: 1)] == .header)
+        #expect(found[Search.Place(docID: id, page: 4, block: 3)] == .footer)
+    }
+
+    /// Before the pages around are parsed, nothing repeats yet: the header shows as a hit rather
+    /// than a real hit being dropped on a guess; a page with no parsed neighbour drops nothing.
+    @Test func aHeaderIsNotGuessedBeforeItsNeighboursAreParsed() throws {
+        let store = try Store(directory: FileManager.default.temporaryDirectory.appendingPathComponent("pdf-cli-search-\(UUID())"))
+        let keys = (0..<4).map { "k\($0)" }
+        let id = try store.saveIndex(path: "/a.pdf", stat: FileStat(size: 1, modifiedNanos: 1, inode: 1, device: 1), pageKeys: keys)
+        try store.saveResult(key: "k0", page(0, body: "Plain words."))
+        try store.saveResult(key: "k1", page(1, body: "Plain words."))
+        var all = try hits(store, id, "ledger")
+        var found = try Search.runningHeaders(among: all.map { ($0.docID, $0.page, $0.block) }, store: store)
+        #expect(all.count == 4)
+        // Two parsed pages repeat them (15 letters or more count on one neighbour): found.
+        #expect(found[Search.Place(docID: id, page: 0, block: 1)] == .header)
+        #expect(found[Search.Place(docID: id, page: 1, block: 3)] == .footer)
+        #expect(found.count == 4)
+        // A page alone has no neighbour: nothing is dropped.
+        let lone = try Store(directory: FileManager.default.temporaryDirectory.appendingPathComponent("pdf-cli-search-\(UUID())"))
+        let loneID = try lone.saveIndex(path: "/b.pdf", stat: FileStat(size: 1, modifiedNanos: 1, inode: 1, device: 1), pageKeys: ["a", "b", "c"])
+        try lone.saveResult(key: "a", page(0, body: "Plain words."))
+        all = try hits(lone, loneID, "ledger")
+        found = try Search.runningHeaders(among: all.map { ($0.docID, $0.page, $0.block) }, store: lone)
+        #expect(all.count == 2 && found.isEmpty)
+        for number in 1..<3 { try lone.saveResult(key: ["a", "b", "c"][number], page(number, body: "Plain words.")) }
+        try lone.indexForSearch(docIDs: [loneID])
+        all = try hits(lone, loneID, "ledger")
+        found = try Search.runningHeaders(among: all.map { ($0.docID, $0.page, $0.block) }, store: lone)
+        #expect(all.count == 6 && found.count == 6)
+    }
+}

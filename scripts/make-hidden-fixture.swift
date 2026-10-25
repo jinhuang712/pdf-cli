@@ -1073,3 +1073,27 @@ let sharedComment = sharing.add("<< /Type /Annot /Subtype /Text /Rect [500 700 5
 let sharedAnnots = annots(Array((0..<150).flatMap { _ in [sharedLink, sharedComment] }))
 try sharing.write((1...20).map { Page(name: "300 references to two annotations", content: line("Page \($0) shares its annotations.", y: 700), extra: sharedAnnots) },
                  resources: "<< /Font << /F1 \(sharedFont) 0 R >> >>", to: "carries-shared-annots.pdf", folder: "testdata/safety")
+
+// Running headers in the search (M2.22): six pages with a header, a footer and a page number on
+// each, whose words are real words in the body of some of them. A search for "ledger" must find
+// the body on page 3 and 4, not the six headers; "confidential" the body on page 5, not the
+// footers; "2" the body of page 2, not the page numbers.
+let running = Writer()
+let runningFont = running.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>")
+let runningBodies = [
+    "The opening pages describe the plan for the year.",
+    "Section 2 explains how the money was spent.",
+    "The ledger shows every payment made in March.",
+    "A copy of the Annual Ledger Report goes to the board.",
+    "This confidential agreement binds both parties.",
+    "The closing pages list the signatures.",
+]
+try running.write(
+    runningBodies.enumerated().map { index, body in
+        Page(
+            name: "header, footer and page number, page \(index + 1)",
+            content: line("Annual Ledger Report", y: 760) + line("Ledger confidential", y: 48)
+                + line("\(index + 1)", y: 30, x: 300) + line(body, y: 500)
+                + line("A second paragraph of page \(index + 1) with plain words.", y: 400))
+    },
+    resources: "<< /Font << /F1 \(runningFont) 0 R >> >>", to: "running-headers.pdf", folder: "testdata/notes")

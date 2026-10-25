@@ -22,6 +22,16 @@ public struct SearchHit: Equatable, Sendable {
     }
 }
 
+/// A block that matches a keyword query, before its snippet is read.
+public struct SearchCandidate: Equatable, Sendable {
+    public var rowid: Int64
+    public var docID: String
+    /// Counted from 0.
+    public var page: Int
+    /// Counted from 1.
+    public var block: Int
+}
+
 /// Keyword search over the cached pages (FEATURES.md → F4), with SQLite's FTS5 index of every
 /// block's text (DESIGNS.md → Decision: SQLite over qmd and Tantivy).
 public enum Search {
@@ -107,6 +117,47 @@ public enum Search {
         }
         flush()
         return terms.isEmpty ? nil : terms.joined(separator: any ? " OR " : " AND ")
+    }
+
+    // MARK: Running headers
+
+    /// The running headers, footers, page numbers and stamps among the places a search found
+    /// (M2.22), judged as `pdf read` judges them, against the pages around each that are parsed
+    /// now. A header is known only from the pages that repeat it, so with the neighbours not
+    /// parsed yet it is not found, and the hit stays: a real hit is never dropped on a guess.
+    /// The index holds every block, so the judgement runs on the query: the pages parsed
+    /// change between searches, and a mark kept in the index would go stale with them.
+    /// Returns the places that are furniture, as (document, page, block counted from 1) keys.
+    public static func runningHeaders(among places: [(docID: String, page: Int, block: Int)], store: Store) throws
+        -> [Place: Furniture.Kind]
+    {
+        var found: [Place: Furniture.Kind] = [:]
+        for (docID, group) in Dictionary(grouping: places, by: \.docID) {
+            let keys = try store.pageKeys(docID: docID)
+            let pages = Set(group.map(\.page)).filter(keys.indices.contains).sorted()
+            // A few pages at a time, each with the pages around it, so a word on every page of
+            // a long file holds no more than a chunk's layers in memory.
+            for start in stride(from: 0, to: pages.count, by: 40) {
+                let chunk = Array(pages[start..<min(start + 40, pages.count)])
+                for (page, blocks) in try Furniture.find(pages: chunk, keys: keys, store: store) {
+                    for (block, kind) in blocks { found[Place(docID: docID, page: page, block: block + 1)] = kind }
+                }
+            }
+        }
+        return found
+    }
+
+    /// A block of a page of a document, the page counted from 0 and the block from 1.
+    public struct Place: Hashable, Sendable {
+        public var docID: String
+        public var page: Int
+        public var block: Int
+
+        public init(docID: String, page: Int, block: Int) {
+            self.docID = docID
+            self.page = page
+            self.block = block
+        }
     }
 
     // MARK: Patterns
@@ -229,6 +280,51 @@ extension Store {
                                             arguments: [key, Env.parserVersion]) ?? false else { continue }
                     try Store.indexForSearch(db, key: key, version: Env.parserVersion, result: result)
                 }
+            }
+        }
+    }
+
+    /// Every block of these documents that matches an FTS5 query, best first, with no snippet
+    /// yet: `pdf search` judges which are running headers before it asks for the snippets of the
+    /// hits it shows (`snippets`).
+    public func searchCandidates(_ match: String, docIDs: [String]) throws -> [SearchCandidate] {
+        guard !docIDs.isEmpty else { return [] }
+        let marks = Array(repeating: "?", count: docIDs.count).joined(separator: ",")
+        return try pool.read { db in
+            try Row.fetchAll(
+                db,
+                sql: """
+                    SELECT block_text.rowid AS id, d.doc_id, d.page_index, b.block
+                    FROM block_text
+                    JOIN search_block b ON b.id = block_text.rowid
+                    JOIN document_page d ON d.page_key = b.page_key
+                    WHERE block_text MATCH ? AND b.parser_version = ? AND d.doc_id IN (\(marks))
+                    ORDER BY bm25(block_text), d.doc_id, d.page_index, b.block
+                    """, arguments: StatementArguments([match, Env.parserVersion] + docIDs)!
+            )
+            .map { SearchCandidate(rowid: $0["id"], docID: $0["doc_id"], page: $0["page_index"], block: $0["block"]) }
+        }
+    }
+
+    /// The hits for these candidates, in their order: snippet and rank, read for them alone.
+    public func hits(_ match: String, for candidates: [SearchCandidate]) throws -> [SearchHit] {
+        var found: [Int64: (snippet: String, rank: Double)] = [:]
+        try pool.read { db in
+            for start in stride(from: 0, to: candidates.count, by: 200) {
+                let ids = Set(candidates[start..<min(start + 200, candidates.count)].map(\.rowid))
+                let marks = Array(repeating: "?", count: ids.count).joined(separator: ",")
+                let rows = try Row.fetchAll(
+                    db,
+                    sql: """
+                        SELECT rowid AS id, snippet(block_text, 0, '**', '**', '…', 16) AS snippet, bm25(block_text) AS rank
+                        FROM block_text WHERE block_text MATCH ? AND rowid IN (\(marks))
+                        """, arguments: StatementArguments([match] + ids.map { $0 as DatabaseValueConvertible })!)
+                for row in rows { found[row["id"]] = (Search.readable(row["snippet"]), row["rank"]) }
+            }
+        }
+        return candidates.compactMap { candidate in
+            found[candidate.rowid].map {
+                SearchHit(docID: candidate.docID, page: candidate.page, block: candidate.block, snippet: $0.snippet, rank: $0.rank)
             }
         }
     }
