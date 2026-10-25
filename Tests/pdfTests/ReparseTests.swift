@@ -94,25 +94,25 @@ import Testing
     @Test func aReparseReplacesTheCachedResultsKeepsAPickOfTheSameReadingsAndLeavesOtherPagesAlone() async throws {
         let home = try OutputContractTests.freshHome()
         let file = try Self.copy(Self.paper, to: home)
-        _ = try Self.pdf(["read", file, "--page", "2", "--budget", "all"], home: home)
+        _ = try Self.pdf(["read", file, "--page", "3", "--budget", "all"], home: home)
         try await DryRunTests.settle(home)
-        let picked = try Self.pdf(["pick", file, "p2.2", "b"], home: home)
+        let picked = try Self.pdf(["pick", file, "p3.5", "b"], home: home)
         #expect(picked.status == 0, "\(picked.output)")
-        #expect(try Self.pdf(["read", file, "--page", "2", "--budget", "all"], home: home).output.contains("[picked"))
+        #expect(try Self.pdf(["read", file, "--page", "3", "--budget", "all"], home: home).output.contains("[picked"))
         // Plant a change in every cached result: a reparse that replaces gets the real reading back.
         try Self.cache(home, "UPDATE page_result SET status = 'failed', reason = 'planted', text = 'planted'")
         let cached = try Self.cache(home, "SELECT count(*) FROM page_result")
         let indexed = try Self.cache(home, "SELECT count(*) FROM search_page")
 
-        let run = try Self.pdf(["reparse", file, "--page", "2", "--json"], home: home)
-        #expect(run.status == 2, "p.2 holds unsure words, so the reparse ends 2: \(run.output.prefix(300))")
+        let run = try Self.pdf(["reparse", file, "--page", "3", "--json"], home: home)
+        #expect(run.status == 2, "p.3 holds unsure words, so the reparse ends 2: \(run.output.prefix(300))")
         let object = try #require(run.json, "\(run.output.prefix(300))")
-        #expect(object["reparsed"] as? Int == 1 && object["pages"] as? [Int] == [2])
+        #expect(object["reparsed"] as? Int == 1 && object["pages"] as? [Int] == [3])
         // The new reading offers the same words, so the pick applies and is counted (M2.24).
         #expect(object["picksStale"] as? Int == 0 && object["picksApply"] as? Int == 1, "\(object)")
         #expect(object["picksKept"] == nil && object["picksCleared"] == nil, "\(object)")
         let change = try #require((object["changes"] as? [[String: Any]])?.first)
-        #expect(change["page"] as? Int == 2 && change["before"] as? String == "failed" && change["after"] as? String == "unsure", "\(change)")
+        #expect(change["page"] as? Int == 3 && change["before"] as? String == "failed" && change["after"] as? String == "unsure", "\(change)")
         // Exactly one result came back; the other pages keep what was planted.
         #expect(try Self.cache(home, "SELECT count(*) FROM page_result") == cached)
         #expect(try Self.cache(home, "SELECT count(*) FROM page_result WHERE status = 'failed'") == String((Int(cached) ?? 0) - 1))
@@ -124,7 +124,7 @@ import Testing
             try Self.cache(home, "SELECT count(*) FROM search_block s WHERE NOT EXISTS (SELECT 1 FROM page_result r WHERE r.page_key = s.page_key)")
                 == "0")
         // The pick is still there, and still applies.
-        let again = try Self.pdf(["read", file, "--page", "2", "--budget", "all"], home: home)
+        let again = try Self.pdf(["read", file, "--page", "3", "--budget", "all"], home: home)
         #expect(again.output.contains("[picked"), "\(again.output.prefix(400))")
         #expect(try Self.sql(home, "Support/library.sqlite", "SELECT count(*) FROM pick") == "1")
         // No runner is left parsing the other pages of the file.
@@ -222,14 +222,14 @@ import Testing
         let file = try Self.copy(Self.paper, to: home)
         let blocks = try Self.unsureBlocks(file, home: home)
         try await DryRunTests.settle(home)
-        let second = try #require(blocks.first { $0.page == 2 }, "\(blocks)")
-        #expect(try Self.pdf(["pick", file, "p2.\(second.block)", "b"], home: home).status == 0)
-        let run = try Self.pdf(["reparse", file, "--page", "2,3", "--json"], home: home, environment: ["PDF_CLI_TEST_FAULT": "crash:1"])
+        let second = try #require(blocks.first { $0.page == 3 }, "\(blocks)")
+        #expect(try Self.pdf(["pick", file, "p3.\(second.block)", "b"], home: home).status == 0)
+        let run = try Self.pdf(["reparse", file, "--page", "3,4", "--json"], home: home, environment: ["PDF_CLI_TEST_FAULT": "crash:2"])
         let object = try #require(run.json, "\(run.output.prefix(300))")
-        #expect((object["kept"] as? [[String: Any]])?.first?["page"] as? Int == 2, "\(object)")
+        #expect((object["kept"] as? [[String: Any]])?.first?["page"] as? Int == 3, "\(object)")
         #expect(object["picksApply"] as? Int == 1 && object["picksStale"] as? Int == 0, "\(object)")
         #expect(try Self.picksDB(home, "SELECT count(*) FROM pick") == "1")
-        let text = try Self.pdf(["reparse", file, "--page", "2,3"], home: home, environment: ["PDF_CLI_TEST_FAULT": "crash:1"])
+        let text = try Self.pdf(["reparse", file, "--page", "3,4"], home: home, environment: ["PDF_CLI_TEST_FAULT": "crash:2"])
         #expect(text.output.contains("1 page kept the old result") && text.output.contains("1 pick still applies"), "\(text.output.prefix(300))")
     }
 
@@ -240,8 +240,8 @@ import Testing
         let file = try Self.copy(Self.paper, to: home)
         let blocks = try Self.unsureBlocks(file, home: home)
         try await DryRunTests.settle(home)
-        let second = try #require(blocks.first { $0.page == 2 }, "\(blocks)")
-        #expect(try Self.pdf(["pick", file, "p2.\(second.block)", "b"], home: home).status == 0)
+        let second = try #require(blocks.first { $0.page == 3 }, "\(blocks)")
+        #expect(try Self.pdf(["pick", file, "p3.\(second.block)", "b"], home: home).status == 0)
         let holder = Process()
         holder.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
         holder.arguments = [
@@ -277,13 +277,13 @@ import Testing
         let other = Self.root.appendingPathComponent("testdata/smoke/arxiv-2608.04589.pdf")
         let blocks = try Self.unsureBlocks(file, home: home)
         try await DryRunTests.settle(home)
-        let second = try #require(blocks.first { $0.page == 2 }, "\(blocks)")
-        #expect(try Self.pdf(["pick", file, "p2.\(second.block)", "b"], home: home).status == 0)
+        let second = try #require(blocks.first { $0.page == 3 }, "\(blocks)")
+        #expect(try Self.pdf(["pick", file, "p3.\(second.block)", "b"], home: home).status == 0)
         try Self.picksDB(home, "UPDATE pick SET reading_a = 'planted words'")
-        // Every cached result is planted; the first chunk (page 2) replaces its own.
+        // Every cached result is planted; the first chunk (page 3) replaces its own.
         try Self.cache(home, "UPDATE page_result SET reason = 'planted'")
         let planted = try Self.cache(home, "SELECT count(*) FROM page_result WHERE reason = 'planted'")
-        let job = Task.detached { try Self.pdf(["reparse", file, "--page", "2-10"], home: home, environment: ["PDF_CLI_REPARSE_CHUNK": "1"]) }
+        let job = Task.detached { try Self.pdf(["reparse", file, "--page", "3-10"], home: home, environment: ["PDF_CLI_REPARSE_CHUNK": "1"]) }
         var replaced = false
         for _ in 0..<1500 where !replaced {
             try await Task.sleep(nanoseconds: 20_000_000)
@@ -574,14 +574,14 @@ import Testing
     @Test func aFirstReadingIsNoChangeAndTheSummaryCountsOnlyReplacedPages() throws {
         let home = try OutputContractTests.freshHome()
         let file = try Self.copy(Self.paper, to: home)
-        let run = try Self.pdf(["reparse", file, "--page", "2", "--json"], home: home)
+        let run = try Self.pdf(["reparse", file, "--page", "3", "--json"], home: home)
         #expect(run.status == 2)
         #expect(run.json?["neverRead"] as? Bool == true)
         let flagged = try #require((run.json?["flaggedPages"] as? [[String: Any]])?.first)
-        #expect(flagged["page"] as? Int == 2 && flagged["status"] as? String == "unsure", "page numbers are numbers: \(run.output)")
+        #expect(flagged["page"] as? Int == 3 && flagged["status"] as? String == "unsure", "page numbers are numbers: \(run.output)")
         let change = try #require((run.json?["changes"] as? [[String: Any]])?.first)
         #expect(change["before"] is NSNull, "\(run.output)")
-        let text = try Self.pdf(["reparse", file, "--page", "3"], home: home)
+        let text = try Self.pdf(["reparse", file, "--page", "4"], home: home)
         #expect(text.output.contains("no page changed status"), "\(text.output)")
         #expect(!text.output.contains("only parsed"), "\(text.output)")
     }

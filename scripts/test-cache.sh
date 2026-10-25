@@ -89,13 +89,15 @@ check "facts whose first worker crashes are read on a second try" "comments: 0 �
 # warning.
 quality() { PDF_CLI_HOME=$work/quality $pdf "$@" 2>&1; echo "exit $?"; }
 spaces=testdata/smoke/arxiv-2609.23257.pdf
-output=$(quality read $spaces --page 2)
-check "a word two readers break differently gets an unsure block" "p.2 ¶2 unsure: two readings differ" "$output"
-check "the unsure block shows both readings" "\[b\] CTRL performs" "$output"
+# Page 3's paragraph 5 holds "lookback𝐿and𝐹features", which the repair breaks with unsure spots (page 2's
+# "CTRLperforms" was one until the repair read with the text recognizer, M2.25).
+output=$(quality read $spaces --page 3)
+check "a word two readers break differently gets an unsure block" "p.3 ¶5 unsure: two readings differ" "$output"
+check "the unsure block shows both readings" "\[b\] lookback𝐿 and𝐹 features" "$output"
 check "an unsure page exits 2" "exit 2" "$output"
-check "a pick needs a block with unsure words" "has no unsure words" "$(quality pick $spaces p2.1 a)"
-check "a pick is saved" "picked b for p.2 ¶2: CTRL performs" "$(quality pick $spaces p2.2 b)"
-check "a later read shows the picked words" "CTRL performs \[picked" "$(quality read $spaces --page 2)"
+check "a pick needs a block with unsure words" "has no unsure words" "$(quality pick $spaces p3.1 a)"
+check "a pick is saved" "picked b for p.3 ¶5: lookback𝐿 and𝐹 features" "$(quality pick $spaces p3.5 b)"
+check "a later read shows the picked words" "features \[picked" "$(quality read $spaces --page 3)"
 
 scan=testdata/smoke/scan-naca-report-1034.pdf
 output=$(quality read $scan --page 1)
@@ -258,8 +260,10 @@ check "a lone PDF without words is refused" "give the words to find after the PD
 
 # Hidden text: one page per way of hiding a planted line (scripts/make-hidden-fixture.swift).
 hidden=testdata/hidden/hidden.pdf
+# p.38 has two places since M2.25: the planted line, and the last letter of the last REDACTED label,
+# which lies past the black box and reads white on white.
 output=$(reading read $hidden --budget all)
-check "every hiding trick leaves a marker" "hidden text: 57 places on p.1, p.2, p.3, p.4, p.5, p.6, p.7, p.8, p.11, p.12, p.13, p.14, p.15, p.16, p.17, p.18, p.19, p.20, p.23, p.24, p.34, p.35, p.36, p.37, p.38, p.39, p.40, p.41, p.42, p.43, p.44, p.45, p.46, p.47, p.48, p.51, p.52, p.53, p.54, p.55, p.58, p.59, p.60, p.61, p.62, p.63, p.65, p.68, p.69, p.70, p.71, p.72, p.73" "$output"
+check "every hiding trick leaves a marker" "hidden text: 58 places on p.1, p.2, p.3, p.4, p.5, p.6, p.7, p.8, p.11, p.12, p.13, p.14, p.15, p.16, p.17, p.18, p.19, p.20, p.23, p.24, p.34, p.35, p.36, p.37, p.38, p.39, p.40, p.41, p.42, p.43, p.44, p.45, p.46, p.47, p.48, p.51, p.52, p.53, p.54, p.55, p.58, p.59, p.60, p.61, p.62, p.63, p.65, p.68, p.69, p.70, p.71, p.72, p.73" "$output"
 check "a page where OCR stopped at its cap says so" "^\[hidden-text check incomplete: .* · look: pdf crop $hidden --page 23\]$" "$output"
 check "a word showing its first letter keeps only that letter" "^¶2 P\[hidden: 7 words, leaves no ink" "$(reading read $hidden --page 17)"
 check "a marker says what is hidden and how to show it" \

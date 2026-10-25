@@ -86,33 +86,33 @@ import Testing
     @Test func pickDryRunSaysWhatItWouldKeepAndKeepsNothing() async throws {
         let home = try OutputContractTests.freshHome()
         let file = Self.unsure
-        _ = try Self.pdf(["read", file, "--page", "2", "--budget", "all"], home: home)
+        _ = try Self.pdf(["read", file, "--page", "3", "--budget", "all"], home: home)
         try await Self.settle(home)
         let before = Self.snapshot(home)
-        let dry = try Self.pdf(["pick", file, "p2.2", "b", "--dry-run"], home: home)
+        let dry = try Self.pdf(["pick", file, "p3.5", "b", "--dry-run"], home: home)
         #expect(dry.status == 0)
-        #expect(dry.output.hasPrefix("dry run: would pick b for p.2 ¶2: "), "\(dry.output)")
-        let dryJSON = try Self.pdf(["pick", file, "p2.2", "b", "--dry-run", "--json"], home: home)
+        #expect(dry.output.hasPrefix("dry run: would pick b for p.3 ¶5: "), "\(dry.output)")
+        let dryJSON = try Self.pdf(["pick", file, "p3.5", "b", "--dry-run", "--json"], home: home)
         #expect(Self.snapshot(home) == before, "a dry pick changed the cache or the library")
-        let real = try Self.pdf(["pick", file, "p2.2", "b", "--json"], home: home)
+        let real = try Self.pdf(["pick", file, "p3.5", "b", "--json"], home: home)
         #expect(real.status == 0)
         #expect(Self.snapshot(home) != before)
         Self.expectSameKeys(dryJSON.json, real.json, extra: ["replaces"], "pick")
         // A second pick would replace the first, and the dry run says which.
-        let again = try Self.pdf(["pick", file, "p2.2", "a", "--dry-run", "--json"], home: home)
+        let again = try Self.pdf(["pick", file, "p3.5", "a", "--dry-run", "--json"], home: home)
         #expect(again.json?["replaces"] as? String == "b", "\(again.output)")
-        let same = try Self.pdf(["pick", file, "p2.2", "b", "--dry-run"], home: home)
+        let same = try Self.pdf(["pick", file, "p3.5", "b", "--dry-run"], home: home)
         #expect(same.output.contains("(already picked b)"), "\(same.output)")
         #expect(dryJSON.json?["replaces"] is NSNull, "replaces is null when nothing is picked: \(dryJSON.output)")
         // A miss ends the same way as the real run.
         for json in [[], ["--json"]] {
-            let miss = try Self.pdf(["pick", file, "p2.1", "a"] + json, home: home)
-            let dryMiss = try Self.pdf(["pick", file, "p2.1", "a", "--dry-run"] + json, home: home)
+            let miss = try Self.pdf(["pick", file, "p3.1", "a"] + json, home: home)
+            let dryMiss = try Self.pdf(["pick", file, "p3.1", "a", "--dry-run"] + json, home: home)
             #expect(miss.status == 1 && dryMiss.status == 1)
             #expect(miss.output == dryMiss.output, "\(dryMiss.output)")
         }
         // The same wrong flag value is the parser's.
-        #expect(try Self.pdf(["pick", file, "p2.2", "c", "--dry-run"], home: home).status == 64)
+        #expect(try Self.pdf(["pick", file, "p3.5", "c", "--dry-run"], home: home).status == 64)
     }
 
     /// A pick that no longer applies (the page offers other words) is no earlier pick: `read` shows the
@@ -217,7 +217,7 @@ import Testing
     @Test func aDryRunOnAnEmptyHomeCreatesNothing() throws {
         let home = try OutputContractTests.freshHome()
         let runs: [[String]] = [
-            ["pick", Self.unsure, "p2.2", "a", "--dry-run"],
+            ["pick", Self.unsure, "p3.5", "a", "--dry-run"],
             ["transcribe", Self.regions, "--page", "2", "--equation", "1", "--dry-run"],
             ["transcribe", Self.regions, "--page", "2", "--equation", "1", "--clear", "--dry-run"],
             ["rm", Self.regions, "--dry-run"],
@@ -227,7 +227,7 @@ import Testing
             #expect(run.status == 1, "pdf \(arguments.joined(separator: " ")): \(run.output)")
             #expect(Self.snapshot(home).isEmpty, "pdf \(arguments.joined(separator: " ")) created \(Self.snapshot(home).keys)")
         }
-        #expect(try Self.pdf(["pick", Self.unsure, "p2.2", "a", "--dry-run"], home: home).output.contains("not in the cache yet"))
+        #expect(try Self.pdf(["pick", Self.unsure, "p3.5", "a", "--dry-run"], home: home).output.contains("not in the cache yet"))
     }
 
     @Test func aDryRunOnAnOlderCacheLeavesItAndSaysSo() async throws {
