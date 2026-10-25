@@ -13,6 +13,7 @@ import Testing
     static let scan = root.appendingPathComponent("testdata/smoke/scan-naca-report-1034.pdf").path
     static let small = root.appendingPathComponent("testdata/safety/carries-comments.pdf").path
     static let regions = root.appendingPathComponent("testdata/safety/hidden-figure-alt.pdf").path
+    static let manyLinks = root.appendingPathComponent("testdata/safety/carries-many-links.pdf").path
 
     static func pdf(_ arguments: [String], home: URL, stdin: String = "") throws -> OutputContractTests.Run {
         try OutputContractTests.pdf(arguments, home: home, stdin: stdin)
@@ -117,6 +118,28 @@ import Testing
         #expect(!Self.running(file))
         // The other pages were not parsed by the reparse: still planted.
         #expect(try Self.cache(home, "SELECT count(*) FROM page_result WHERE reason = 'planted'") == String((Int(cached) ?? 0) - 1))
+    }
+
+    /// A page's links belong to the file's version, not to the page's parse (M2.21b): a reparse of
+    /// one page leaves its links and every other page's as they were, a dry-run `rm` leaves them,
+    /// and `rm` removes them.
+    @Test func aReparseLeavesThePagesLinksAndRmRemovesThem() async throws {
+        let home = try OutputContractTests.freshHome()
+        let file = try Self.copy(Self.manyLinks, to: home)
+        let link = "[Reference 5 of page 2](https://example.org/p2/5)"
+        let first = try Self.pdf(["read", file, "--page", "2", "--budget", "all"], home: home)
+        #expect(first.output.contains(link), "\(first.output.prefix(400))")
+        try await DryRunTests.settle(home)
+        #expect(try Self.cache(home, "SELECT count(*) FROM page_annotation") == "3")
+        let before = try Self.cache(home, "SELECT page_index, length(data), more FROM page_annotation ORDER BY page_index")
+        _ = try Self.pdf(["reparse", file, "--page", "2", "--json"], home: home)
+        #expect(try Self.cache(home, "SELECT page_index, length(data), more FROM page_annotation ORDER BY page_index") == before)
+        #expect(try Self.pdf(["read", file, "--page", "2", "--budget", "all"], home: home).output.contains(link))
+        #expect(!Self.running(file))
+        _ = try Self.pdf(["rm", file, "--dry-run"], home: home)
+        #expect(try Self.cache(home, "SELECT count(*) FROM page_annotation") == "3")
+        #expect(try Self.pdf(["rm", file], home: home).status == 0)
+        #expect(try Self.cache(home, "SELECT count(*) FROM page_annotation") == "0")
     }
 
     @Test func pageSpecsAreReadsAndBadOnesAreRefused() throws {

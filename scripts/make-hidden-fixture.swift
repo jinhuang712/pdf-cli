@@ -1028,3 +1028,35 @@ try more.write([Page(name: "visible words", content: visible),
                      contentDictionary: "/Filter [/FlateDecode /FlateDecode]", contentBytes: try flate(bomb(megabytes: 600))),
                 Page(name: "a Type 3 glyph procedure that is a bomb", content: "BT /T3 12 Tf 72 700 Td (a) Tj ET\n")],
                resources: "<< /Font << /F1 \(moreFont) 0 R /T3 \(type3) 0 R >> >>", to: "broken-content-bomb-more.pdf", folder: "testdata/safety")
+
+// Many links (M2.21b), from a writer of its own, so no other file's object numbers move. Page 1
+// holds 1,010 links on a grid, 10 past the cap of one page, and pages 2 and 3 hold 12 each over
+// lines of text, so the file holds 1,034, more than the 1,000 a file once kept. Every address
+// names its page and number.
+let many = Writer()
+let manyFont = many.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>")
+let gridLinks = (0..<1_010).map { number in
+    many.add(
+        "<< /Type /Annot /Subtype /Link /Rect [\(40 + number % 25 * 20) \(100 + number / 25 * 12) \(56 + number % 25 * 20) "
+            + "\(110 + number / 25 * 12)] /Border [0 0 0] /A << /S /URI /URI (https://example.org/p1/\(number + 1)) >> >>")
+}
+func lineLinks(_ page: Int) -> [Int] {
+    (0..<12).map { number in
+        many.add(
+            "<< /Type /Annot /Subtype /Link /Rect [72 \(697 - 24 * number) 200 \(713 - 24 * number)] /Border [0 0 0] "
+                + "/A << /S /URI /URI (https://example.org/p\(page)/\(number + 1)) >> >>")
+    }
+}
+func linkLines(_ page: Int) -> String {
+    (0..<12).map { line("Reference \($0 + 1) of page \(page)", y: 700 - 24 * $0) }.joined()
+}
+func annots(_ objects: [Int]) -> String { "/Annots [\(objects.map { "\($0) 0 R" }.joined(separator: " "))]" }
+let linksTwo = lineLinks(2)
+let linksThree = lineLinks(3)
+try many.write(
+    [
+        Page(name: "1,010 links", content: line("Page 1 holds 1010 links.", y: 740), extra: annots(gridLinks)),
+        Page(name: "12 links", content: linkLines(2), extra: annots(linksTwo)),
+        Page(name: "12 links", content: linkLines(3), extra: annots(linksThree)),
+    ],
+    resources: "<< /Font << /F1 \(manyFont) 0 R >> >>", to: "carries-many-links.pdf", folder: "testdata/safety")

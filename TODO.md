@@ -2,7 +2,6 @@
 
 Small fixes and follow-ups with no milestone yet. An item moves to ROADMAP.md once it has a milestone.
 
-- Links past the first 1,000 of a file are not shown: TeX Live's PGF manual holds 44,700, so most of its pages show none. Keep annotations per page in a table of their own, not in the file's facts, which every read decodes, and read their words for the pages asked for. Noted 2026-10-17, in M1.13.
 - `pdf search` still finds running headers, footers and page numbers, one hit a page: the index takes each page as it is parsed, before the pages around it say what repeats. Mark them in the index once a document is parsed, or drop them from the hits. Noted 2026-10-17, in M2.5.
 - On this machine, since 2026-10-25, PDFKit and Apple's OCR read differently: two unit tests and five `scripts/test-cache.sh` checks fail on `main` too. Find what changed and update the expectations in the final wrap-up.
 - The `scripts/test-cache.sh` check "--show raw shows its text, labelled" (expects `[low-quality] TECH LIBRARY`) fails on both the old and the new build on this machine (M2.17 review): part of the same differences.

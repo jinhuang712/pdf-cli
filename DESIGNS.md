@@ -426,7 +426,7 @@ A cleanup never takes what a read still needs:
 
 ## Decision: a file's facts kept with its entry, apart from its pages — 2026-10-15
 
-A file's metadata, bookmarks, page labels, comments, highlights, form fields, attachments and scripts live in its catalog and its annotations, not in what its pages draw. A worker of their own reads them while the index runs its sample check, and the runner keeps them with the file's entry in the cache: a highlight appended to a file changes its facts and leaves its pages' results alone, as the principle "Annotations leave the cache alone" asks. A new version of the index checks reads every file's facts again on its next read.
+A file's metadata, bookmarks, page labels, comments, highlights, form fields, attachments and scripts live in its catalog and its annotations, not in what its pages draw. A worker of their own reads them while the index runs its sample check, and the runner keeps them with the file's entry in the cache: a highlight appended to a file changes its facts and leaves its pages' results alone, as the principle "Annotations leave the cache alone" asks. A new version of the index checks reads every file's facts again on its next read. The file's annotations are kept apart from the facts, in a table of their own (DESIGNS.md → Decision: annotations per page, in a table of their own).
 
 Facts are extra, so they never cost the file or a page. A facts worker has 10 s, since facts take under 0.2 s even on 30,000 pages and a new file's first page waits for them; one that runs out of time or crashes gets a second try, as the sample check does. A second failure stores the reason until the file changes, the file indexes all the same, and `pdf info` shows the facts as unknown with that reason, never as none. The reading visits at most 200,000 objects and follows no loop. It counts each tree node, attached file and form field once in the file, and each action once for the document and once on each page that holds it. It walks the page tree once, counting a node the tree lists twice twice, as CGPDF numbers the pages. It lists the first 100 attachments and scripts and counts the rest, measures a script by its stored length without decompressing it, and runs nothing it finds.
 
@@ -733,6 +733,19 @@ Comments, notes, marks on words, filled-in form fields and links reach `pdf read
 | PDFKit's annotation objects for everything | Less code: PDFKit resolves fields, destinations and actions. | PDFKit followed a link's action chained to itself until it crashed, which cost the file all its facts, its counts and outline included. |
 
 The facts' version, `Store.indexChecks`, went to 8, so every file's facts are read again, without a page parsed again. A worker that reads facts stops reading words after 3 s, and lists at most 1,000 annotations.
+
+## Decision: annotations per page, in a table of their own — 2026-10-25
+
+M1.13 kept a file's annotations in its facts, at most 1,000 links a file, and every read decoded them all. TeX Live's PGF manual holds 44,655 links, so most of its pages showed none, and keeping them all in the facts would have made every read, even of one page, decode a few megabytes. Cache schema 9 adds the table `page_annotation (path, page_index, data, more)`, one row for each page that holds an annotation or has some past its cap: `data` is the page's annotations as JSON, `more` how many the page holds past `FactReader.maxAnnotations` (1,000 links and as many others a page; 100,000 in a file). `pdf read` fetches the rows of the pages in the chunk it reads, and the page says when its cap is hit. The facts keep their counts and `moreAnnotations`, and no annotation. The rows go in the same transaction as the file's entry, which deletes the rows of the version before it; `rm`, `doctor --clean`, `gc` and `forgetEntry` remove them with the entry (`dropUnused` deletes the rows whose path has no entry). The index checks went to 11, so every file's facts are read again, which fills the table: no migration of rows, as for schema 8.
+
+| Option | For | Against |
+|---|---|---|
+| **A table keyed by the file's path, one row per page** | The annotations belong to this version of the file, as the facts do: a highlight appended to a file leaves every page key alone. A read decodes the pages it shows. A cap per page keeps a row small. | A second place to clean up with the entry, handled in the one `dropUnused` and in `saveEntry`. |
+| Keyed by the page's key | Follows the page-level tables. | An appended highlight changes no page key, so it would never show; and two files that share a page would share links to other pages, which are the file's own (`#p.12`). |
+| Keep them in the facts, raise the cap | No new table. | Every read decodes them all: 250 KB at 1,000 links, more than 4 MB at 44,655. |
+| Read a page's links when the page is read, from the file | Nothing stored. | Opens the file and PDFKit on every read, and selects the words under each link again. |
+
+A reparse does not touch the rows: they are no result of the page's parse, so there is nothing for it to replace, and the page's links stay as they were.
 
 ## Decision: a file that PDFKit saved counts as a new file, with a warning — 2026-10-15
 

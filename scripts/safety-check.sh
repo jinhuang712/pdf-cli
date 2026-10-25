@@ -200,6 +200,11 @@ expect_read carries-form-fields "[field: Name = Jane Doe]"
 expect_read carries-form-fields "[field: Agree = checked]"
 expect_read carries-form-fields "[field: Country = France]"
 expect_read carries-links "¶2 [See the project page for](https://example.org/paper) the code."
+# More links than the 1,000 a file once kept: the pages after the first show theirs, and the page past
+# its cap says how many are left (M2.21b).
+expect_read carries-many-links "¶5 [Reference 5 of page 2](https://example.org/p2/5)"
+expect_read carries-many-links "¶12 [Reference 12 of page 3](https://example.org/p3/12)"
+expect_read carries-many-links "[10 more annotations on this page, past 1.0k links and as many others, not shown]"
 expect_read carries-scripts "¶2 Open the calculator."
 expect_read carries-pictures "[stamp] Approved · crop: pdf crop testdata/safety/carries-pictures.pdf --page 1 --bbox 0.73,0.09,0.19,0.06"
 expect_read carries-pictures "[drawing] crop: pdf crop testdata/safety/carries-pictures.pdf --page 1 --bbox 0.52,0.30,0.37,0.14"
