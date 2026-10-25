@@ -214,7 +214,9 @@ struct ReadCommand: ParsableCommand {
                 break
             }
             // The annotations of these pages only: the cache keeps them per page.
-            let annotations = (try? fileStat.map { try store.annotations(path: resolved, stat: $0, pages: chunk.map { $0 - 1 }) }) ?? [:]
+            var annotations = (try? fileStat.map { try store.annotations(path: resolved, stat: $0, pages: chunk.map { $0 - 1 }) }) ?? [:]
+            // The words under these pages' links, read once, in a worker.
+            if let fileStat { annotations = AnnotationWords.fill(path: resolved, stat: fileStat, found: annotations, store: store) }
             // Running headers and footers, judged against the pages around these that are parsed.
             let furniture = (try? Furniture.find(pages: results.map(\.page), keys: keys, store: store)) ?? [:]
             // Footnotes, endnotes and the rest, judged against the pages parsed so far, and the
@@ -228,7 +230,7 @@ struct ReadCommand: ParsableCommand {
                 let added = document.add(
                     Output.Page(
                         index: page, result: result, key: keys[page], annotations: annotations[page]?.annotations ?? [],
-                        moreAnnotations: annotations[page]?.more ?? 0,
+                        moreAnnotations: annotations[page]?.more ?? 0, whyAnnotations: annotations[page]?.why ?? 0,
                         furniture: furniture[page] ?? [:], notes: judged[page] ?? PageNotes(), citations: cited[page] ?? PageCitations()),
                     from: resume ? start?.block : nil, offset: resume ? start?.offset : nil)
                 if !added { break reading }

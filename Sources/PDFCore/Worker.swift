@@ -144,6 +144,13 @@ public enum Worker {
         return 0
     }
 
+    /// Reports the words under the links whose boxes the file `out` lists (`AnnotationWords`).
+    public static func words(path: String, input: String) -> Int32 {
+        watchParent()
+        emit(AnnotationWords.answer(path: path, input: input))
+        return 0
+    }
+
     /// Saves the file's attachments and scripts into `out` and reports the items written. The
     /// dump runs it in a worker so that a stream that decodes into too much memory costs the worker.
     public static func dump(path: String, out: String, attachments: Bool, scripts: Bool) -> Int32 {

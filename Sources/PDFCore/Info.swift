@@ -523,7 +523,7 @@ public struct Info: Encodable, Sendable {
                       "form fields: \(formFields)" + (formFields > 0 ? " (\(filledFields) filled)" : "")]
             if let annotationsLeftOut {
                 counts.append(
-                    "annotations past the first \(Info.thousands(FactReader.maxAnnotations)) links and as many others on a page, or \(Info.thousands(FactReader.maxAnnotationsInFile)) in the file: \(Info.thousands(annotationsLeftOut)) not shown by pdf read"
+                    "annotations pdf read leaves out, past its caps (\(Info.thousands(FactReader.maxAnnotations)) links and as many others a page, \(Info.thousands(FactReader.maxAnnotationsInFile)) a file, or the size kept) or as repeats: \(Info.thousands(annotationsLeftOut))"
                 )
             }
             if factsPartial { counts.append("counted in part of the file, which holds more objects than one read visits") }

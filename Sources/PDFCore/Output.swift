@@ -15,6 +15,8 @@ public enum Output {
         /// How many annotations the page holds past what the cache keeps for it
         /// (`FactReader.maxAnnotations`): a line says so.
         public var moreAnnotations: Int
+        /// Why (`FactReader.Cap` bits).
+        public var whyAnnotations: Int
         /// The page's running headers, footers and publisher stamps, by block, judged against
         /// the pages around it (`Furniture`).
         public var furniture: [Int: Furniture.Kind]
@@ -26,7 +28,7 @@ public enum Output {
 
         public init(
             index: Int, result: PageResult, key: String, annotations: [FileFacts.Annotation] = [],
-            moreAnnotations: Int = 0, furniture: [Int: Furniture.Kind] = [:], notes: PageNotes = PageNotes(),
+            moreAnnotations: Int = 0, whyAnnotations: Int = 0, furniture: [Int: Furniture.Kind] = [:], notes: PageNotes = PageNotes(),
             citations: PageCitations = PageCitations()
         ) {
             self.index = index
@@ -34,6 +36,7 @@ public enum Output {
             self.key = key
             self.annotations = annotations
             self.moreAnnotations = moreAnnotations
+            self.whyAnnotations = whyAnnotations
             self.furniture = furniture
             self.notes = notes
             self.citations = citations
@@ -227,7 +230,13 @@ public enum Output {
         }
         // What the page's annotations show, each after the block it sits on, with that block's
         // number, so a read cut there goes on as before.
-        let notes = annotations(page, layer: layer, path: path, includeHidden: includeHidden, heldBack: quality.wholePage)
+        // A link to a page of the file with no words under it has no place in the text to stand on and
+        // says no more than the page number the text shows: it is counted, not shown. A link to a
+        // web address stays, for its address.
+        var shownPage = page
+        shownPage.annotations = page.annotations.filter { !Output.wordless($0) }
+        let wordless = page.annotations.count - shownPage.annotations.count
+        let notes = annotations(shownPage, layer: layer, path: path, includeHidden: includeHidden, heldBack: quality.wholePage)
         func numbered(_ note: Note, _ block: Int) -> Block {
             var numbered = note.block
             numbered.block = block
@@ -670,18 +679,26 @@ public enum Output {
         } else {
             rest(notes)
         }
+        // What the page leaves out of its annotations, in one line, with the reason.
+        var left: [String] = []
         if page.moreAnnotations > 0 {
-            // Numbered after the page's last block, as the annotations with no block are.
-            after += 1
-            let left = page.moreAnnotations
-            let cap = Info.thousands(FactReader.maxAnnotations)
-            result.units.append(
-                Unit(blocks: [
-                    Block(
-                        kind: .annotation, page: number, block: after,
-                        text: "\(left) more annotation\(left == 1 ? "" : "s") on this page, past \(cap) links and as many others, not shown",
-                        status: "more")
-                ]))
+            let count = page.moreAnnotations
+            left.append("\(count) more annotation\(count == 1 ? "" : "s") on this page, \(Output.capReasons(page.whyAnnotations)), not shown")
+        }
+        if wordless > 0 {
+            left.append("\(wordless) link\(wordless == 1 ? "" : "s") to pages of the file with no words under \(wordless == 1 ? "it" : "them"), not shown")
+        }
+        if !left.isEmpty {
+            let text = left.joined(separator: "; ")
+            // A paragraph that already says how many annotations it leaves out takes this on its line.
+            if let unit = result.units.lastIndex(where: { $0.blocks.contains { $0.status == "more" } }),
+                let block = result.units[unit].blocks.lastIndex(where: { $0.status == "more" }) {
+                result.units[unit].blocks[block].text = (result.units[unit].blocks[block].text ?? "") + "; " + text
+            } else {
+                // Numbered after the page's last block, as the annotations with no block are.
+                after += 1
+                result.units.append(Unit(blocks: [Block(kind: .annotation, page: number, block: after, text: text, status: "more")]))
+            }
         }
         if let old = layer?.replacedText {
             if raw {
@@ -692,6 +709,21 @@ public enum Output {
             }
         }
         return result
+    }
+
+    /// A link to a page of the file with no words under it.
+    static func wordless(_ annotation: FileFacts.Annotation) -> Bool {
+        annotation.kind == .link && annotation.words == nil && annotation.target?.hasPrefix("p.") == true
+    }
+
+    /// The reasons an annotation was left out, as `FactReader.Cap` bits say.
+    static func capReasons(_ why: Int) -> String {
+        var reasons: [String] = []
+        if why & FactReader.Cap.page != 0 { reasons.append("past \(Info.thousands(FactReader.maxAnnotations)) links and as many others") }
+        if why & FactReader.Cap.file != 0 { reasons.append("past the \(Info.thousands(FactReader.maxAnnotationsInFile)) of a kind kept for a file") }
+        if why & FactReader.Cap.size != 0 { reasons.append("past the size kept for a page or a file") }
+        if why & FactReader.Cap.repeated != 0 { reasons.append("repeats of an annotation listed already") }
+        return reasons.isEmpty ? "past what the cache keeps" : reasons.joined(separator: " and ")
     }
 
     /// An annotation as a page shows it: its block, the text block it follows, and, for a link

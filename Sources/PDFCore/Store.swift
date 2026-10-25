@@ -251,8 +251,10 @@ public final class Store: Sendable {
                     page_index INTEGER NOT NULL,
                     data TEXT NOT NULL,
                     more INTEGER NOT NULL DEFAULT 0,
+                    why INTEGER NOT NULL DEFAULT 0,
+                    words INTEGER NOT NULL DEFAULT 0,
                     PRIMARY KEY (path, page_index)
-                ) WITHOUT ROWID
+                )
                 """)
         try db.execute(sql: "PRAGMA user_version = \(schemaVersion)")
     }
@@ -379,6 +381,7 @@ public final class Store: Sendable {
             var kept = facts
             kept?.annotations = []
             kept?.moreOnPage = [:]
+            kept?.whyOnPage = [:]
             let encoded = kept.flatMap { try? JSONEncoder().encode($0) }.map { String(decoding: $0, as: UTF8.self) }
             try saveEntry(db, path: path, stat: stat, docID: id, failure: nil, facts: encoded ?? "")
             try Store.saveAnnotations(db, path: path, facts: facts)
@@ -386,28 +389,68 @@ public final class Store: Sendable {
         return id
     }
 
-    /// The annotations of one page of a file, with how many more the page holds past what is kept.
+    /// The annotations of one page of a file, with how many more the page holds past what is kept
+    /// and why (`FactReader.Cap` bits), and whether the words under its links are read yet.
     public struct PageAnnotations: Equatable, Sendable {
+        /// `WordsState.pending` until the words under the page's links are read.
+        public enum WordsState: Int, Sendable { case pending = 0, read = 1, failed = 2 }
         public var annotations: [FileFacts.Annotation]
         public var more: Int
-        public init(annotations: [FileFacts.Annotation] = [], more: Int = 0) {
+        public var why: Int
+        public var words: WordsState
+        public init(annotations: [FileFacts.Annotation] = [], more: Int = 0, why: Int = 0, words: WordsState = .read) {
             self.annotations = annotations
             self.more = more
+            self.why = why
+            self.words = words
         }
     }
 
-    /// Replaces the rows of a file's pages: one per page that holds an annotation or has some past
-    /// the cap. The file's facts are the whole truth about this version of the file.
+    /// Replaces the rows of a file's pages: one per page that holds an annotation or has some left
+    /// out. The file's facts are the whole truth about this version of the file. A page with links
+    /// waits for their words (`saveWords`).
     static func saveAnnotations(_ db: Database, path: String, facts: FileFacts?) throws {
         try db.execute(sql: "DELETE FROM page_annotation WHERE path = ?", arguments: [path])
         guard let facts else { return }
         let encoder = JSONEncoder()
         let byPage = Dictionary(grouping: facts.annotations, by: \.page)
         for page in Set(byPage.keys).union(facts.moreOnPage.keys).sorted() {
-            guard let data = try? encoder.encode(byPage[page] ?? []) else { continue }
+            let list = byPage[page] ?? []
+            guard let data = try? encoder.encode(list) else { continue }
+            let pending = list.contains { $0.kind == .link }
             try db.execute(
-                sql: "INSERT INTO page_annotation (path, page_index, data, more) VALUES (?, ?, ?, ?)",
-                arguments: [path, page, String(bytes: data, encoding: .utf8) ?? "[]", facts.moreOnPage[page] ?? 0])
+                sql: "INSERT INTO page_annotation (path, page_index, data, more, why, words) VALUES (?, ?, ?, ?, ?, ?)",
+                arguments: [path, page, String(bytes: data, encoding: .utf8) ?? "[]", facts.moreOnPage[page] ?? 0,
+                            facts.whyOnPage[page] ?? 0, pending ? 0 : 1])
+        }
+    }
+
+    /// Puts the words under a page's links into its row, once: `words` holds the words by the
+    /// link's place in the page's list, and nil says the reading failed. Only while the file is the
+    /// version `stat` names and the row still waits, so a file indexed again meanwhile keeps its own.
+    public func saveWords(path: String, stat: FileStat, page: Int, words: [Int: String]?) throws {
+        try write { db in
+            guard
+                let row = try Row.fetchOne(
+                    db,
+                    sql: """
+                        SELECT a.data, a.words FROM page_annotation a JOIN file_entry e ON e.path = a.path
+                        WHERE a.path = ? AND a.page_index = ? AND a.words = 0
+                          AND e.size = ? AND e.modified_ns = ? AND e.inode = ? AND e.device = ? AND e.checks = ?
+                        """, arguments: [path, page, stat.size, stat.modifiedNanos, stat.inode, stat.device, Store.indexChecks])
+            else { return }
+            guard let words else {
+                try db.execute(sql: "UPDATE page_annotation SET words = 2 WHERE path = ? AND page_index = ?", arguments: [path, page])
+                return
+            }
+            let data: String = row["data"]
+            var list = (try? JSONDecoder().decode([FileFacts.Annotation].self, from: Data(data.utf8))) ?? []
+            for (index, text) in words where list.indices.contains(index) && list[index].kind == .link {
+                list[index].words = text
+            }
+            let encoded = String(bytes: try JSONEncoder().encode(list), encoding: .utf8) ?? data
+            try db.execute(sql: "UPDATE page_annotation SET data = ?, words = 1 WHERE path = ? AND page_index = ?",
+                           arguments: [encoded, path, page])
         }
     }
 
@@ -432,25 +475,29 @@ public final class Store: Sendable {
                 let rows = try Row.fetchAll(
                     db,
                     sql: """
-                        SELECT page_index, data, more FROM page_annotation WHERE path = ? AND page_index IN (\(marks))
+                        SELECT page_index, data, more, why, words FROM page_annotation WHERE path = ? AND page_index IN (\(marks))
                         """, arguments: StatementArguments([path as any DatabaseValueConvertible] + chunk.map { $0 as any DatabaseValueConvertible }))
                 for row in rows {
                     let data: String = row["data"]
                     let list = (try? decoder.decode([FileFacts.Annotation].self, from: Data(data.utf8))) ?? []
-                    found[row["page_index"]] = PageAnnotations(annotations: list, more: row["more"])
+                    found[row["page_index"]] = PageAnnotations(
+                        annotations: list, more: row["more"], why: row["why"],
+                        words: PageAnnotations.WordsState(rawValue: row["words"]) ?? .failed)
                 }
             }
         }
         return found
     }
 
-    /// The facts of a file as it is now, if the cache knows this version of it.
-    public func facts(path: String, stat: FileStat) throws -> FileFacts? {
+    /// The facts of a file as it is now, if the cache knows this version of it. With `olderChecks`,
+    /// facts that an older version of the index read of this very file count too: good for what
+    /// they hold and the new version does not change, as the outline.
+    public func facts(path: String, stat: FileStat, olderChecks: Bool = false) throws -> FileFacts? {
         let text = try pool.read { db in
             try String.fetchOne(db, sql: """
                 SELECT facts FROM file_entry
-                WHERE path = ? AND size = ? AND modified_ns = ? AND inode = ? AND device = ? AND checks = ?
-                """, arguments: [path, stat.size, stat.modifiedNanos, stat.inode, stat.device, Store.indexChecks])
+                WHERE path = ? AND size = ? AND modified_ns = ? AND inode = ? AND device = ? AND (checks = ? OR ?)
+                """, arguments: [path, stat.size, stat.modifiedNanos, stat.inode, stat.device, Store.indexChecks, olderChecks])
         }
         guard let text, !text.isEmpty else { return nil }
         return try? JSONDecoder().decode(FileFacts.self, from: Data(text.utf8))

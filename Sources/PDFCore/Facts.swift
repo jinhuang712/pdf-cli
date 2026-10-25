@@ -103,12 +103,37 @@ public struct FileFacts: Codable, Equatable, Sendable {
     public var annotations: [Annotation] = []
     public var moreAnnotations = 0
     public var moreOnPage: [Int: Int] = [:]
+    /// Why each page of `moreOnPage` has some left out: the `FactReader.Cap` bits that were hit.
+    public var whyOnPage: [Int: Int] = [:]
     /// True when the file holds more objects than one read visits, so the counts cover part of it.
     public var partial = false
     /// Why the facts could not be read, such as a time limit. The file's pages read all the same.
     public var failure: String?
 
     public init() {}
+
+    /// Reads facts an older version of the index stored too: a key it did not write is the default.
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        author = try values.decodeIfPresent(String.self, forKey: .author)
+        year = try values.decodeIfPresent(String.self, forKey: .year)
+        outline = try values.decodeIfPresent([Section].self, forKey: .outline) ?? []
+        labels = try values.decodeIfPresent([String].self, forKey: .labels)
+        comments = try values.decodeIfPresent(Int.self, forKey: .comments) ?? 0
+        highlights = try values.decodeIfPresent(Int.self, forKey: .highlights) ?? 0
+        formFields = try values.decodeIfPresent(Int.self, forKey: .formFields) ?? 0
+        filledFields = try values.decodeIfPresent(Int.self, forKey: .filledFields) ?? 0
+        attachments = try values.decodeIfPresent([Attachment].self, forKey: .attachments) ?? []
+        scripts = try values.decodeIfPresent([Script].self, forKey: .scripts) ?? []
+        moreAttachments = try values.decodeIfPresent(Int.self, forKey: .moreAttachments) ?? 0
+        moreScripts = try values.decodeIfPresent(Int.self, forKey: .moreScripts) ?? 0
+        annotations = try values.decodeIfPresent([Annotation].self, forKey: .annotations) ?? []
+        moreAnnotations = try values.decodeIfPresent(Int.self, forKey: .moreAnnotations) ?? 0
+        moreOnPage = try values.decodeIfPresent([Int: Int].self, forKey: .moreOnPage) ?? [:]
+        whyOnPage = try values.decodeIfPresent([Int: Int].self, forKey: .whyOnPage) ?? [:]
+        partial = try values.decodeIfPresent(Bool.self, forKey: .partial) ?? false
+        failure = try values.decodeIfPresent(String.self, forKey: .failure)
+    }
 
     public init(failure: String) {
         self.failure = failure
@@ -125,12 +150,22 @@ final class FactReader {
     static let maxListed = 100
     /// Per page: links, and as many of the other annotations.
     static let maxAnnotations = 1_000
-    /// In a file, all pages together: the table of a hostile file stays small.
+    /// In a file, all pages together, for the links and for the other annotations each.
     static let maxAnnotationsInFile = 100_000
+    /// What the table keeps of a page, and of a file, in bytes of the annotations' text, so a hostile file
+    /// of long strings cannot fill the cache whatever the count.
+    static let maxBytesOnPage = 512 * 1024
+    static let maxBytesInFile = 32 * 1024 * 1024
+    /// The marks (highlights and the like) whose words PDFKit selects in the walk. The words under
+    /// links are read when their page is, not here (`AnnotationWords`).
+    static let maxMarkWords = 5_000
+
+    /// Why an annotation was left out, as bits of `FileFacts.whyOnPage`.
+    enum Cap {
+        static let page = 1, file = 2, size = 4, repeated = 8
+    }
     /// The longest an annotation's text or words are kept, in characters.
     static let maxAnnotationText = 1_000
-    /// How long the read of annotations with PDFKit may take, of the facts' 10 s.
-    static let annotationSeconds = 3.0
 
     private(set) var facts = FileFacts()
     /// Given each attachment and script as the walk meets it, for `pdf dump`; nil for the facts.
@@ -155,15 +190,24 @@ final class FactReader {
     /// The links and the other annotations listed so far on the page being read, each up to
     /// `maxAnnotations`, and the count of all in the file.
     private var linksListed = 0, othersListed = 0
-    private var listedInFile = 0
+    private var linksInFile = 0, othersInFile = 0
+    private var bytesOnPage = 0, bytesInFile = 0
     private var currentPage = -1
+    /// The most of a kind the file keeps; a test sets it low.
+    var fileCap = FactReader.maxAnnotationsInFile
+    var pageBytesCap = FactReader.maxBytesOnPage
+    /// Annotation dictionaries listed already: one that several pages share is listed once.
+    private var annotationsListed = Set<OpaquePointer>()
     /// The layers the file switches off, by their dictionaries: an annotation in one is hidden.
     private var layersOff = Set<OpaquePointer>()
 
     /// Reads every fact of `document`. The outline comes from PDFKit, which opens the file again.
     static func read(_ document: CGPDFDocument, url: URL, attachments: Bool = true, scripts: Bool = true,
+                     fileCap: Int = FactReader.maxAnnotationsInFile, pageBytes: Int = FactReader.maxBytesOnPage,
                      sink: ((Payload) -> Void)? = nil) -> FileFacts {
         let reader = FactReader()
+        reader.fileCap = fileCap
+        reader.pageBytesCap = pageBytes
         reader.sink = sink
         reader.wantAttachments = attachments
         reader.wantScripts = scripts
@@ -410,16 +454,31 @@ final class FactReader {
             currentPage = found.page
             linksListed = 0
             othersListed = 0
+            bytesOnPage = 0
         }
-        guard (link ? linksListed : othersListed) < Self.maxAnnotations, listedInFile < Self.maxAnnotationsInFile else {
-            facts.moreAnnotations += 1
-            facts.moreOnPage[found.page, default: 0] += 1
-            return false
+        let size = 120 + [found.author, found.text, found.name, found.value, found.target, found.words].reduce(0) { $0 + ($1?.utf8.count ?? 0) }
+        var why = 0
+        if (link ? linksListed : othersListed) >= Self.maxAnnotations {
+            why = Cap.page
+        } else if (link ? linksInFile : othersInFile) >= fileCap {
+            why = Cap.file
+        } else if bytesOnPage + size > pageBytesCap || bytesInFile + size > Self.maxBytesInFile {
+            why = Cap.size
         }
-        listedInFile += 1
-        if link { linksListed += 1 } else { othersListed += 1 }
+        guard why == 0 else { return leftOut(found.page, why) }
+        bytesOnPage += size
+        bytesInFile += size
+        if link { linksListed += 1; linksInFile += 1 } else { othersListed += 1; othersInFile += 1 }
         facts.annotations.append(found)
         return true
+    }
+
+    /// Counts an annotation left out, on its page, with the cap that left it out.
+    func leftOut(_ page: Int, _ why: Int) -> Bool {
+        facts.moreAnnotations += 1
+        facts.moreOnPage[page, default: 0] += 1
+        facts.whyOnPage[page, default: 0] |= why
+        return false
     }
 
     /// Reads a comment, a note, a mark on words or a link from the annotation's dictionary, as
@@ -432,6 +491,11 @@ final class FactReader {
                                                           "Circle": .shape, "Line": .shape, "Polygon": .shape, "PolyLine": .shape,
                                                           "Caret": .shape]
         guard let kind = kinds[subtype], var found = start(annotation, kind: kind, page: page, crop: crop) else { return }
+        // Pages that share one annotation, as 50 pages with one /Annots array do, list it once.
+        guard annotationsListed.insert(Self.identity(annotation)).inserted else {
+            _ = leftOut(page, Cap.repeated)
+            return
+        }
         let text = Self.clean(Self.string(annotation, "Contents"))
         switch kind {
         case .comment, .note:
@@ -441,7 +505,7 @@ final class FactReader {
             _ = list(found)
         case .highlight, .underline, .squiggly, .strikeout:
             found.text = text
-            guard list(found) else { return }
+            guard list(found), underWords.count < Self.maxMarkWords else { return }
             underWords.append((facts.annotations.count - 1, page, Self.quads(annotation) ?? [Self.rect(annotation)].compactMap { $0 }))
         case .link:
             var action: CGPDFDictionaryRef?
@@ -474,7 +538,6 @@ final class FactReader {
                 if found.target == "p.?" { pageLinks.removeLast() }
                 return
             }
-            underWords.append((facts.annotations.count - 1, page, [Self.rect(annotation)].compactMap { $0 }))
         case .stamp, .ink, .shape:
             // What it says, or a stamp's standard name, as "Approved". Any other name is a key a
             // reader never sees: an Acrobat stamp's is a random ID, and a file can name one with a
@@ -559,12 +622,12 @@ final class FactReader {
         facts.annotations = facts.annotations.enumerated().filter { !dropped.contains($0.offset) }.map(\.element)
     }
 
-    /// The words under each mark and link, as PDFKit selects them there: they may hold text a
-    /// reader cannot see, which the output leaves out. At most `annotationSeconds`.
+    /// The words under each mark, as PDFKit selects them there: they may hold text a reader cannot
+    /// see, which the output leaves out. The first `maxMarkWords` marks of the file get theirs, a
+    /// count and no clock, so the same file gives the same facts on a busy machine and an idle one.
+    /// The words under links are read when their page is read (`AnnotationWords`).
     func readWords(_ document: PDFDocument) {
-        let started = DispatchTime.now().uptimeNanoseconds
         for entry in underWords {
-            guard Double(DispatchTime.now().uptimeNanoseconds - started) / 1e9 < Self.annotationSeconds else { break }
             guard let page = document.page(at: entry.page) else { continue }
             let words = entry.rects.compactMap { page.selection(for: $0)?.string }.joined(separator: " ")
             facts.annotations[entry.annotation].words = Self.clean(words)

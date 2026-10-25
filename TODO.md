@@ -11,3 +11,4 @@ Small fixes and follow-ups with no milestone yet. An item moves to ROADMAP.md on
 - M2.10 review, L9: commit `d95bc2f` lacks the `Claude-Session` trailer; history is not rewritten. Noted 2026-10-25.
 - M2.12 input, from M2.10's review: OCR reading order and the quality threshold on `testdata/smoke/scan-naca-report-1034.pdf` (page 1 reads low-quality as a whole page after `--step ocr`); tune with M2.12. Noted 2026-10-25.
 - After `--step ocr`, pages 3, 8 and 10 of `sottigra.pdf` (private test set) lose text to the old "too small to read" hiding: the layer's squeezed-text spots mark OCR lines over them. It predates M2.19 (found by its review). Check what the spots cover before OCR draws them. Noted 2026-10-25.
+- `pdf dump --refs` writes `references.json` without the DOIs `pdf ref` takes from the links over an entry (M2.21b review, L7): `ReferenceIndex.allEntries` has no per-page links; give it the `Store.annotations` closure `lookup` takes. Noted 2026-10-25.

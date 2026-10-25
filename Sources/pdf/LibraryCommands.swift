@@ -214,7 +214,10 @@ struct ListCommand: ParsableCommand {
         guard let stat = FileStat(path: entry.path) else {
             return FileStat.isGone(path: entry.path) ? "file missing" : "out of reach, as on a drive not plugged in"
         }
-        guard try store.entry(path: entry.path, stat: stat) != nil else { return "changed since it was read" }
+        guard try store.entry(path: entry.path, stat: stat) != nil else {
+            // An entry the file still matches, from an older pdf, is no change of the file.
+            return try store.hasEntry(path: entry.path, stat: stat) ? "pdf was updated, read it again" : "changed since it was read"
+        }
         let keys = try store.pageKeys(docID: entry.docID)
         guard !keys.isEmpty else { return "not parsed" }
         // Judging needs no page's text, so a library of thousands of files lists without

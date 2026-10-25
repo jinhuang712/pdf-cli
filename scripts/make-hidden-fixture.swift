@@ -1060,3 +1060,16 @@ try many.write(
         Page(name: "12 links", content: linkLines(3), extra: annots(linksThree)),
     ],
     resources: "<< /Font << /F1 \(manyFont) 0 R >> >>", to: "carries-many-links.pdf", folder: "testdata/safety")
+
+// Pages that share one /Annots array (M2.21b review): 20 pages list the same 300 references, 150
+// to one link and 150 to one comment, each with 900 characters of text. A reader that lists an
+// annotation for every reference stores 6,000 of them a page; the cache must keep two.
+let sharing = Writer()
+let sharedFont = sharing.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>")
+let longText = String(repeating: "abcdefghij", count: 90)
+let sharedLink = sharing.add("<< /Type /Annot /Subtype /Link /Rect [72 646 200 662] /Border [0 0 0] "
+                            + "/A << /S /URI /URI (https://example.org/\(longText)) >> >>")
+let sharedComment = sharing.add("<< /Type /Annot /Subtype /Text /Rect [500 700 520 720] /T (Eve) /Contents (\(longText)) /F 4 >>")
+let sharedAnnots = annots(Array((0..<150).flatMap { _ in [sharedLink, sharedComment] }))
+try sharing.write((1...20).map { Page(name: "300 references to two annotations", content: line("Page \($0) shares its annotations.", y: 700), extra: sharedAnnots) },
+                 resources: "<< /Font << /F1 \(sharedFont) 0 R >> >>", to: "carries-shared-annots.pdf", folder: "testdata/safety")

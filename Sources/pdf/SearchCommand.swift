@@ -241,7 +241,7 @@ struct SearchCommand: ParsableCommand {
         func sections(_ target: Target) -> [Section] {
             let resolved = Reader.resolve(target.path)
             guard let keys = try? store.pageKeys(docID: target.docID) else { return [] }
-            let facts = FileStat(path: resolved).flatMap { try? store.facts(path: resolved, stat: $0) }
+            let facts = FileStat(path: resolved).flatMap { try? store.facts(path: resolved, stat: $0, olderChecks: true) }
             if let outline = facts?.outline, !outline.isEmpty {
                 let wanted = Set(outline.map(\.page)).filter { keys.indices.contains($0) }.sorted()
                 let results = (try? store.results(keys: wanted.map { keys[$0] })) ?? [:]
