@@ -263,7 +263,7 @@ public final class Store: Sendable {
     /// the title, the facts and the annotations of each page. Raise it when they change. A file entry indexed with older
     /// checks still holds its document, so a cleanup keeps the document's pages, but a read
     /// indexes the file again and runs every check.
-    static let indexChecks = 11
+    static let indexChecks = 12
 
     static func createVersion1(_ db: Database) throws {
         try db.execute(sql: """

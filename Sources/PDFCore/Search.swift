@@ -140,13 +140,24 @@ public enum Search {
             for start in stride(from: 0, to: pages.count, by: 40) {
                 let chunk = Array(pages[start..<min(start + 40, pages.count)])
                 try autoreleasepool {
-                    for (page, blocks) in try Furniture.find(pages: chunk, keys: keys, store: store) {
+                    for (page, blocks) in try Search.judge(pages: chunk, keys: keys, store: store) {
                         for (block, kind) in blocks { found[Place(docID: docID, page: page, block: block + 1)] = kind }
                     }
                 }
             }
         }
         return found
+    }
+
+    /// `Furniture.find` from the stored summaries of the pages and the ones around them: no layer
+    /// is read for a page that has its summary.
+    static func judge(pages: [Int], keys: [String], store: Store) throws -> [Int: [Int: Furniture.Kind]] {
+        let around = Set(pages.flatMap { max(0, $0 - Furniture.reach)...max(0, min(keys.count - 1, $0 + Furniture.reach)) })
+            .filter(keys.indices.contains)
+        let stored = try store.edgeSummaries(keys: around.map { keys[$0] })
+        var summaries: [Int: Furniture.Summary] = [:]
+        for page in around { if let summary = stored[keys[page]] { summaries[page] = summary } }
+        return Furniture.find(pages: pages, summaries: summaries)
     }
 
     /// The same for the pages of one document that a pattern search has decoded already: no
@@ -233,34 +244,62 @@ extension Store {
     /// row of the block's text in `block_text`. `search_page` marks the pages indexed, an empty
     /// one included. Deleting a page's result deletes its rows from the index.
     static func createSearchIndex(_ db: Database) throws {
-        try db.execute(sql: """
-            CREATE TABLE IF NOT EXISTS search_block (
-                id INTEGER PRIMARY KEY,
-                page_key TEXT NOT NULL,
-                parser_version INTEGER NOT NULL,
-                block INTEGER NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS search_block_by_key ON search_block (page_key, parser_version);
-            CREATE TABLE IF NOT EXISTS search_page (
-                page_key TEXT NOT NULL,
-                parser_version INTEGER NOT NULL,
-                PRIMARY KEY (page_key, parser_version)
-            );
-            CREATE VIRTUAL TABLE IF NOT EXISTS block_text USING fts5(text, tokenize = 'porter unicode61 remove_diacritics 2');
-            CREATE TRIGGER IF NOT EXISTS page_result_leaves_the_index AFTER DELETE ON page_result BEGIN
-                DELETE FROM block_text WHERE rowid IN
-                    (SELECT id FROM search_block WHERE page_key = old.page_key AND parser_version = old.parser_version);
-                DELETE FROM search_block WHERE page_key = old.page_key AND parser_version = old.parser_version;
-                DELETE FROM search_page WHERE page_key = old.page_key AND parser_version = old.parser_version;
-            END;
-            """)
+        try db.execute(
+            sql: """
+                CREATE TABLE IF NOT EXISTS search_block (
+                    id INTEGER PRIMARY KEY,
+                    page_key TEXT NOT NULL,
+                    parser_version INTEGER NOT NULL,
+                    block INTEGER NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS search_block_by_key ON search_block (page_key, parser_version);
+                CREATE TABLE IF NOT EXISTS search_page (
+                    page_key TEXT NOT NULL,
+                    parser_version INTEGER NOT NULL,
+                    PRIMARY KEY (page_key, parser_version)
+                );
+                CREATE TABLE IF NOT EXISTS search_edge (
+                    page_key TEXT NOT NULL,
+                    parser_version INTEGER NOT NULL,
+                    data TEXT NOT NULL,
+                    PRIMARY KEY (page_key, parser_version)
+                ) WITHOUT ROWID;
+                CREATE TRIGGER IF NOT EXISTS page_result_leaves_the_edges AFTER DELETE ON page_result BEGIN
+                    DELETE FROM search_edge WHERE page_key = old.page_key AND parser_version = old.parser_version;
+                END;
+                CREATE TABLE IF NOT EXISTS search_edge (
+                    page_key TEXT NOT NULL,
+                    parser_version INTEGER NOT NULL,
+                    data TEXT NOT NULL,
+                    PRIMARY KEY (page_key, parser_version)
+                ) WITHOUT ROWID;
+                CREATE TRIGGER IF NOT EXISTS page_result_leaves_the_edges AFTER DELETE ON page_result BEGIN
+                    DELETE FROM search_edge WHERE page_key = old.page_key AND parser_version = old.parser_version;
+                END;
+                CREATE VIRTUAL TABLE IF NOT EXISTS block_text USING fts5(text, tokenize = 'porter unicode61 remove_diacritics 2');
+                CREATE TRIGGER IF NOT EXISTS page_result_leaves_the_index AFTER DELETE ON page_result BEGIN
+                    DELETE FROM block_text WHERE rowid IN
+                        (SELECT id FROM search_block WHERE page_key = old.page_key AND parser_version = old.parser_version);
+                    DELETE FROM search_block WHERE page_key = old.page_key AND parser_version = old.parser_version;
+                    DELETE FROM search_page WHERE page_key = old.page_key AND parser_version = old.parser_version;
+                END;
+                """)
     }
 
     /// Adds a page's blocks to the keyword index, once.
     static func indexForSearch(_ db: Database, key: String, version: Int, result: PageResult) throws {
         try db.execute(sql: "INSERT OR IGNORE INTO search_page (page_key, parser_version) VALUES (?, ?)",
                        arguments: [key, version])
-        guard db.changesCount > 0, let layer = result.pageText else { return }
+        // The summary of the page's edge blocks, beside the index (M2.26); "-" for a page with no layer.
+        try db.execute(
+            sql: "INSERT OR REPLACE INTO search_edge (page_key, parser_version, data) VALUES (?, ?, ?)",
+            arguments: [key, version, result.pageText.map { Furniture.summary(of: $0).stored } ?? "-"])
+        let isNew = db.changesCount > 0
+        // The summary of the page's edge blocks, beside the index (M2.26); "-" for a page with no layer.
+        try db.execute(
+            sql: "INSERT OR REPLACE INTO search_edge (page_key, parser_version, data) VALUES (?, ?, ?)",
+            arguments: [key, version, result.pageText.map { Furniture.summary(of: $0).stored } ?? "-"])
+        guard isNew, let layer = result.pageText else { return }
         // Only what a reader can see: words planted out of sight are no search hit to quote.
         for (index, block) in layer.blocks.enumerated() {
             try db.execute(sql: "INSERT INTO search_block (page_key, parser_version, block) VALUES (?, ?, ?)",
@@ -296,6 +335,52 @@ extension Store {
                 }
             }
         }
+    }
+
+    /// The edge summaries of these page keys (`Furniture.Summary`); a key with no layer or no
+    /// result has none. A page indexed before the summaries existed has its summary made and
+    /// stored now, from its result; a write that fails, as on a cache another process holds
+    /// locked, fails nothing.
+    public func edgeSummaries(keys: [String]) throws -> [String: Furniture.Summary] {
+        let unique = Array(Set(keys))
+        var found: [String: Furniture.Summary] = [:]
+        var known = Set<String>()
+        try pool.read { db in
+            for chunk in stride(from: 0, to: unique.count, by: 500).map({ Array(unique[$0..<min($0 + 500, unique.count)]) }) {
+                let marks = Array(repeating: "?", count: chunk.count).joined(separator: ",")
+                for row in try Row.fetchAll(
+                    db,
+                    sql: """
+                        SELECT page_key, data FROM search_edge WHERE parser_version = ? AND page_key IN (\(marks))
+                        """, arguments: StatementArguments([Env.parserVersion] + chunk)!)
+                {
+                    let key: String = row["page_key"]
+                    known.insert(key)
+                    if let summary = Furniture.Summary(stored: row["data"]) { found[key] = summary }
+                }
+            }
+        }
+        let missing = unique.filter { !known.contains($0) }
+        for start in stride(from: 0, to: missing.count, by: 200) {
+            let chunk = Array(missing[start..<min(start + 200, missing.count)])
+            let results = try results(keys: chunk)
+            var made: [String: String] = [:]
+            for (key, result) in results {
+                let summary = result.pageText.map { Furniture.summary(of: $0) }
+                made[key] = summary?.stored ?? "-"
+                if let summary { found[key] = summary }
+            }
+            try? write { db in
+                for (key, data) in made {
+                    try db.execute(
+                        sql: """
+                            INSERT OR IGNORE INTO search_edge (page_key, parser_version, data)
+                            SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM page_result WHERE page_key = ? AND parser_version = ?)
+                            """, arguments: [key, Env.parserVersion, data, key, Env.parserVersion])
+                }
+            }
+        }
+        return found
     }
 
     /// Every block of these documents that matches an FTS5 query, best first, with no snippet

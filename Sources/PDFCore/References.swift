@@ -936,9 +936,37 @@ public struct ReferenceIndex {
     }
 
     /// Every entry of the lists, cited or not, in list order.
-    public mutating func allEntries(notes: [Int: PageNotes]) -> [ReferenceEntry] {
+    /// An entry whose words give no DOI takes the one a link over it gives (`links`, as for
+    /// `lookup`).
+    public mutating func allEntries(
+        notes: [Int: PageNotes], keys: [String], store: Store,
+        links: (Int) -> [FileFacts.Annotation] = { _ in [] }
+    ) throws -> [ReferenceEntry] {
         if judged == nil { judged = References.resolve(digests: digests, notes: notes, outline: outline) }
-        return judged!.entries.map { ReferenceEntry($0) }
+        var layers: [Int: PageText?] = [:]
+        return try judged!.entries.map { found in
+            var entry = ReferenceEntry(found)
+            if entry.doi == nil {
+                if layers[entry.page] == nil { layers[entry.page] = .some(try store.results(keys: [keys[entry.page]])[keys[entry.page]]?.pageText) }
+                entry.doi = Self.linkedDOI(entry, layer: layers[entry.page] ?? nil, links: links)
+            }
+            return entry
+        }
+    }
+
+    /// How many entries the lists hold, cited or not.
+    public mutating func entryCount(notes: [Int: PageNotes]) -> Int {
+        if judged == nil { judged = References.resolve(digests: digests, notes: notes, outline: outline) }
+        return judged!.entries.count
+    }
+
+    /// The DOI of a link to doi.org over the entry's words.
+    static func linkedDOI(_ entry: ReferenceEntry, layer: PageText?, links: (Int) -> [FileFacts.Annotation]) -> String? {
+        guard let layer else { return nil }
+        let boxes = entry.blocks.filter(layer.blocks.indices.contains).map { layer.blocks[$0].box }
+        return links(entry.page).lazy.filter { link in
+            link.page == entry.page && link.kind == .link && boxes.contains { Output.share(of: link.box, inside: $0) >= 0.5 }
+        }.compactMap { $0.target.flatMap(References.doi) }.first
     }
 
     /// How many entries the lists hold, and on which pages they start, counted from 1.
@@ -1021,12 +1049,8 @@ public struct ReferenceIndex {
             }
         }
         var entry = ReferenceEntry(match)
-        if entry.doi == nil, let layer = try store.results(keys: [keys[entry.page]])[keys[entry.page]]?.pageText {
-            let boxes = entry.blocks.filter(layer.blocks.indices.contains).map { layer.blocks[$0].box }
-            entry.doi =
-                links(entry.page).lazy.filter { link in
-                    link.page == entry.page && link.kind == .link && boxes.contains { Output.share(of: link.box, inside: $0) >= 0.5 }
-                }.compactMap { $0.target.flatMap(References.doi) }.first
+        if entry.doi == nil {
+            entry.doi = Self.linkedDOI(entry, layer: try store.results(keys: [keys[entry.page]])[keys[entry.page]]?.pageText, links: links)
         }
         return .found(Found(id: match.id, page: entry.page + 1, text: entry.text, doi: entry.doi, citations: places))
     }

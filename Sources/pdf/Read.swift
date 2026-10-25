@@ -224,7 +224,7 @@ struct ReadCommand: ParsableCommand {
             let judged = (try? noteIndex.resolve(pages: everyPage, keys: keys, store: store)) ?? [:]
             try? referenceIndex.refresh(keys: keys, store: store)
             let cited = referenceIndex.resolve(pages: results.map(\.page), notes: judged)
-            document.listEntries = referenceIndex.allEntries(notes: judged).count
+            document.listEntries = referenceIndex.entryCount(notes: judged)
             for (page, result) in results {
                 let resume = index == 0 && page + 1 == start?.page
                 let added = document.add(

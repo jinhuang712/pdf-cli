@@ -174,3 +174,24 @@ import Testing
         #expect(FileManager.default.fileExists(atPath: target))
     }
 }
+
+/// M2.26: `dump --refs` writes the DOIs that a link over an entry gives, as `pdf ref` does.
+@Suite(.serialized) struct DumpRefsDOITests {
+    @Test func dumpRefsWritesTheDOIsFromTheLinks() throws {
+        let home = try OutputContractTests.freshHome()
+        let file = OutputContractTests.root.appendingPathComponent("testdata/smoke/arxiv-2608.22898.pdf").path
+        let added = try OutputContractTests.pdf(["add", file], home: home)
+        #expect(added.status == 0 || added.status == 2, "\(added.output)")
+        let folder = home.appendingPathComponent("out").path
+        let run = try OutputContractTests.pdf(["dump", file, "--refs", "-o", folder], home: home)
+        #expect(run.status == 0 || run.status == 2, "\(run.output)")
+        let data = try Data(contentsOf: URL(fileURLWithPath: folder + "/references.json"))
+        let list = try #require(try JSONSerialization.jsonObject(with: data) as? [[String: Any]])
+        let fromLinks = list.filter { ($0["doi"] as? String) != nil && !(($0["text"] as? String) ?? "").contains("10.") }
+        #expect(!fromLinks.isEmpty, "\(list.count) entries")
+        // The same DOI as `pdf ref` gives.
+        let id = try #require(fromLinks.first?["id"] as? String)
+        let ref = try OutputContractTests.pdf(["ref", file, id, "--json"], home: home)
+        #expect(ref.json?["doi"] as? String == fromLinks.first?["doi"] as? String, "\(ref.output.prefix(300))")
+    }
+}

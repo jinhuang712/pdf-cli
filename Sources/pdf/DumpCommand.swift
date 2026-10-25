@@ -166,7 +166,13 @@ struct DumpCommand: ParsableCommand {
                         var text: String
                         var doi: String?
                     }
-                    let list = index.allEntries(notes: judged).map { Entry(id: $0.id, page: $0.page + 1, text: $0.text, doi: $0.doi) }
+                    let list = try index.allEntries(
+                        notes: judged, keys: keys, store: store,
+                        links: { page in
+                            (try? FileStat(path: resolved).map { try store.annotations(path: resolved, stat: $0, pages: [page]) })?[page]?.annotations
+                                ?? []
+                        }
+                    ).map { Entry(id: $0.id, page: $0.page + 1, text: $0.text, doi: $0.doi) }
                     let target = try Self.writeJSON(list, as: "references.json", in: folder)
                     written.append(Written(kind: "references", path: target.path, page: nil, note: "\(list.count) entr\(list.count == 1 ? "y" : "ies"), cited or not, in the list's order"))
                 }

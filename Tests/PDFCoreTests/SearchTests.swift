@@ -189,3 +189,60 @@ extension SearchRunningHeadersTests {
         #expect(try Search.runningHeaders(among: all.map { ($0.docID, $0.page, $0.block) }, store: store).isEmpty)
     }
 }
+
+/// M2.26: a page's edge summary is stored beside the index, judges as the layers do, and goes
+/// with the page's result when it is replaced.
+extension SearchRunningHeadersTests {
+    func store5() throws -> (Store, String, [String]) {
+        let store = try Store(directory: FileManager.default.temporaryDirectory.appendingPathComponent("pdf-cli-search-\(UUID())"))
+        let keys = (0..<5).map { "k\($0)" }
+        let id = try store.saveIndex(path: "/a.pdf", stat: FileStat(size: 1, modifiedNanos: 1, inode: 1, device: 1), pageKeys: keys)
+        for (number, key) in keys.enumerated() { try store.saveResult(key: key, page(number, body: "Plain words \(number).")) }
+        return (store, id, keys)
+    }
+
+    func judged(_ store: Store, _ id: String, _ keys: [String]) throws -> [Search.Place: Furniture.Kind] {
+        let all = try hits(store, id, "ledger")
+        return try Search.runningHeaders(among: all.map { ($0.docID, $0.page, $0.block) }, store: store)
+    }
+
+    /// The summaries judge exactly as the layers do.
+    @Test func theSummariesJudgeAsTheLayersDo() throws {
+        let (store, _, keys) = try store5()
+        let summaries = try store.edgeSummaries(keys: keys)
+        #expect(summaries.count == 5)
+        let fromLayers = try Furniture.find(pages: Array(0..<5), keys: keys, store: store)
+        #expect(!fromLayers.isEmpty)
+        #expect(try Search.judge(pages: Array(0..<5), keys: keys, store: store) == fromLayers)
+    }
+
+    /// A page indexed before the summaries existed gets its summary made on the first search.
+    @Test func aPageWithNoSummaryGetsItsSummaryMade() throws {
+        let (store, id, keys) = try store5()
+        let before = try judged(store, id, keys)
+        try store.write { try $0.execute(sql: "DELETE FROM search_edge") }
+        #expect(try store.pool.read { try Int.fetchOne($0, sql: "SELECT count(*) FROM search_edge") } == 0)
+        #expect(try judged(store, id, keys) == before)
+        #expect(try store.pool.read { try Int.fetchOne($0, sql: "SELECT count(*) FROM search_edge") } == 5)
+    }
+
+    /// A reparse replaces the page's result and its summary: a header the page lost is no
+    /// header any more, though the old summary held it.
+    @Test func aReparseReplacesTheSummary() throws {
+        let (store, id, keys) = try store5()
+        #expect(try judged(store, id, keys)[Search.Place(docID: id, page: 2, block: 1)] == .header)
+        let box = Box(x: 0.1, y: 0.4, width: 0.5, height: 0.012)
+        let layer = PageText(
+            blocks: [TextBlock(text: "Ledger notes", box: box, lines: [TextLine(text: "Ledger notes", box: box)])], words: 0, runTogether: 0)
+        try store.replaceResults([
+            keys[2]: PageResult(
+                status: .ok, method: "pdfkit", text: layer.text, reason: "", parseMillis: 1,
+                data: String(decoding: try JSONEncoder().encode(layer), as: UTF8.self))
+        ])
+        let found = try judged(store, id, keys)
+        #expect(found[Search.Place(docID: id, page: 2, block: 1)] == nil)
+        #expect(found[Search.Place(docID: id, page: 1, block: 1)] == .header)
+        #expect(try store.edgeSummaries(keys: [keys[2]])[keys[2]]?.edges.isEmpty == true)
+        #expect(try store.pool.read { try Int.fetchOne($0, sql: "SELECT count(*) FROM search_edge") } == 5)
+    }
+}

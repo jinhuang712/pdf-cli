@@ -23,13 +23,49 @@ public enum Furniture {
     public static let reach = 4
 
     /// A block at a page's edge that may be furniture.
-    struct Edge {
+    struct Edge: Codable, Equatable {
         var index: Int
         var zone: Kind
         /// Its letters and digits, lowercased, without a page number at either end.
         var key: String
         /// For a page number alone, its value.
         var number: Int?
+        /// Whether it is arXiv's stamp, which is judged from its own text alone.
+        var arXiv: Bool = false
+    }
+
+    /// What the judgement reads of a page: its label and its edge blocks, the few candidates.
+    /// A search keeps it beside the index (`Store.edgeSummaries`), so it judges a hit's page, and
+    /// the pages around it, without reading their layers (M2.26). It is a function of the page's
+    /// layer alone, so it goes with the page's result.
+    public struct Summary: Codable, Equatable, Sendable {
+        var label: String?
+        var edges: [Edge]
+
+        /// The stored form: JSON.
+        public var stored: String {
+            (try? JSONEncoder().encode(self)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
+        }
+
+        public init?(stored: String) {
+            guard let data = stored.data(using: .utf8), let value = try? JSONDecoder().decode(Summary.self, from: data) else { return nil }
+            self = value
+        }
+
+        init(label: String?, edges: [Edge]) {
+            self.label = label
+            self.edges = edges
+        }
+    }
+
+    /// The summary of a page's layer.
+    public static func summary(of page: PageText) -> Summary {
+        var list = edges(page)
+        for (position, edge) in list.enumerated() where edge.zone == .stamp {
+            let text = page.blocks[edge.index].visibleText.trimmingCharacters(in: .whitespaces)
+            if text.range(of: arXivStamp, options: .regularExpression) != nil { list[position].arXiv = true }
+        }
+        return Summary(label: page.label, edges: list)
     }
 
     /// The blocks of a page that are furniture, by their index on the page. `index` is the
@@ -42,11 +78,14 @@ public enum Furniture {
     /// number that agrees with the page's own, printed or by position, or with a page number
     /// nearby, at the top or the bottom; or is arXiv's stamp, set sideways in the margin.
     static func find(_ page: PageText, index: Int, near: [(index: Int, layer: PageText)]) -> [Int: Kind] {
-        let others = near.map { (index: $0.index, edges: edges($0.layer)) }
+        find(summary(of: page), index: index, near: near.map { (index: $0.index, summary: summary(of: $0.layer)) })
+    }
+
+    static func find(_ page: Summary, index: Int, near: [(index: Int, summary: Summary)]) -> [Int: Kind] {
+        let others = near.map { (index: $0.index, edges: $0.summary.edges) }
         var found: [Int: Kind] = [:]
-        for edge in edges(page) {
-            let text = page.blocks[edge.index].visibleText.trimmingCharacters(in: .whitespaces)
-            if edge.zone == .stamp, text.range(of: arXivStamp, options: .regularExpression) != nil {
+        for edge in page.edges {
+            if edge.zone == .stamp, edge.arXiv {
                 found[edge.index] = .stamp
             } else if let number = edge.number, edge.zone != .stamp {
                 let own = page.label.flatMap(value) ?? index + 1
@@ -67,11 +106,24 @@ public enum Furniture {
     /// The furniture of each page asked for, counted from 0, by page and block, judged against
     /// the pages within `reach` of it in `layers`, the pages parsed so far.
     public static func find(pages: [Int], in layers: [Int: PageText]) -> [Int: [Int: Kind]] {
+        // Only the pages asked for and the ones around them are summarised.
+        var summaries: [Int: Summary] = [:]
+        for page in pages {
+            for other in page - reach...page + reach where summaries[other] == nil {
+                if let layer = layers[other] { summaries[other] = summary(of: layer) }
+            }
+        }
+        return find(pages: pages, summaries: summaries)
+    }
+
+    /// The same from summaries: no layer is read.
+    public static func find(pages: [Int], summaries: [Int: Summary]) -> [Int: [Int: Kind]] {
         var found: [Int: [Int: Kind]] = [:]
         for page in pages {
-            guard let layer = layers[page] else { continue }
-            let near = (page - reach...page + reach).filter { $0 != page }.compactMap { other in layers[other].map { (other, $0) } }
-            let blocks = find(layer, index: page, near: near)
+            guard let own = summaries[page] else { continue }
+            let near = (page - reach...page + reach).filter { $0 != page }.compactMap { other in summaries[other].map { (index: other, summary: $0) }
+            }
+            let blocks = find(own, index: page, near: near)
             if !blocks.isEmpty { found[page] = blocks }
         }
         return found
