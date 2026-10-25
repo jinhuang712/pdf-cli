@@ -216,7 +216,13 @@ public final class Store: Sendable {
 
     static func createSchema(_ db: Database) throws {
         let version = try Int.fetchOne(db, sql: "PRAGMA user_version") ?? 0
-        guard version < schemaVersion else { return }
+        if version < schemaVersion { try createVersions(db) }
+        // M2.26: the edge summaries came after version 9 without a new version, so they are
+        // created whenever the cache opens, as `IF NOT EXISTS`.
+        try createEdgeSummaries(db)
+    }
+
+    static func createVersions(_ db: Database) throws {
         try createVersion1(db)
         // Version 2: the text layer of each page, and the font check of each document.
         // Version 3: the sample check of each document.
@@ -263,7 +269,7 @@ public final class Store: Sendable {
     /// the title, the facts and the annotations of each page. Raise it when they change. A file entry indexed with older
     /// checks still holds its document, so a cleanup keeps the document's pages, but a read
     /// indexes the file again and runs every check.
-    static let indexChecks = 12
+    static let indexChecks = 11
 
     static func createVersion1(_ db: Database) throws {
         try db.execute(sql: """

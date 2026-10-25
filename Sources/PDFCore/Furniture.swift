@@ -38,7 +38,12 @@ public enum Furniture {
     /// A search keeps it beside the index (`Store.edgeSummaries`), so it judges a hit's page, and
     /// the pages around it, without reading their layers (M2.26). It is a function of the page's
     /// layer alone, so it goes with the page's result.
+    /// Raise it when the summary's contents change: a change to `edges`, `key`, `pageNumber` or
+    /// the arXiv pattern. A stored summary of another version is made again (M2.26's review).
+    public static let summaryVersion = 1
+
     public struct Summary: Codable, Equatable, Sendable {
+        var v = Furniture.summaryVersion
         var label: String?
         var edges: [Edge]
 
@@ -48,7 +53,9 @@ public enum Furniture {
         }
 
         public init?(stored: String) {
-            guard let data = stored.data(using: .utf8), let value = try? JSONDecoder().decode(Summary.self, from: data) else { return nil }
+            guard let data = stored.data(using: .utf8), let value = try? JSONDecoder().decode(Summary.self, from: data),
+                value.v == Furniture.summaryVersion
+            else { return nil }
             self = value
         }
 

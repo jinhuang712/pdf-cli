@@ -258,24 +258,6 @@ extension Store {
                     parser_version INTEGER NOT NULL,
                     PRIMARY KEY (page_key, parser_version)
                 );
-                CREATE TABLE IF NOT EXISTS search_edge (
-                    page_key TEXT NOT NULL,
-                    parser_version INTEGER NOT NULL,
-                    data TEXT NOT NULL,
-                    PRIMARY KEY (page_key, parser_version)
-                ) WITHOUT ROWID;
-                CREATE TRIGGER IF NOT EXISTS page_result_leaves_the_edges AFTER DELETE ON page_result BEGIN
-                    DELETE FROM search_edge WHERE page_key = old.page_key AND parser_version = old.parser_version;
-                END;
-                CREATE TABLE IF NOT EXISTS search_edge (
-                    page_key TEXT NOT NULL,
-                    parser_version INTEGER NOT NULL,
-                    data TEXT NOT NULL,
-                    PRIMARY KEY (page_key, parser_version)
-                ) WITHOUT ROWID;
-                CREATE TRIGGER IF NOT EXISTS page_result_leaves_the_edges AFTER DELETE ON page_result BEGIN
-                    DELETE FROM search_edge WHERE page_key = old.page_key AND parser_version = old.parser_version;
-                END;
                 CREATE VIRTUAL TABLE IF NOT EXISTS block_text USING fts5(text, tokenize = 'porter unicode61 remove_diacritics 2');
                 CREATE TRIGGER IF NOT EXISTS page_result_leaves_the_index AFTER DELETE ON page_result BEGIN
                     DELETE FROM block_text WHERE rowid IN
@@ -286,14 +268,29 @@ extension Store {
                 """)
     }
 
+    /// Version 7's sibling: the summaries of the pages' edge blocks (M2.26). They are created
+    /// outside the schema version's guard, on every open, because the schema version stayed 9:
+    /// a cache made before them has the version and not the table.
+    static func createEdgeSummaries(_ db: Database) throws {
+        try db.execute(
+            sql: """
+                CREATE TABLE IF NOT EXISTS search_edge (
+                    page_key TEXT NOT NULL,
+                    parser_version INTEGER NOT NULL,
+                    data TEXT NOT NULL,
+                    PRIMARY KEY (page_key, parser_version)
+                ) WITHOUT ROWID;
+                CREATE TRIGGER IF NOT EXISTS page_result_leaves_the_edges AFTER DELETE ON page_result BEGIN
+                    DELETE FROM search_edge WHERE page_key = old.page_key AND parser_version = old.parser_version;
+                END;
+                """)
+    }
+
     /// Adds a page's blocks to the keyword index, once.
     static func indexForSearch(_ db: Database, key: String, version: Int, result: PageResult) throws {
         try db.execute(sql: "INSERT OR IGNORE INTO search_page (page_key, parser_version) VALUES (?, ?)",
                        arguments: [key, version])
-        // The summary of the page's edge blocks, beside the index (M2.26); "-" for a page with no layer.
-        try db.execute(
-            sql: "INSERT OR REPLACE INTO search_edge (page_key, parser_version, data) VALUES (?, ?, ?)",
-            arguments: [key, version, result.pageText.map { Furniture.summary(of: $0).stored } ?? "-"])
+        // Read at once: it is the index-once guard, and the statements below change rows too.
         let isNew = db.changesCount > 0
         // The summary of the page's edge blocks, beside the index (M2.26); "-" for a page with no layer.
         try db.execute(
@@ -355,8 +352,15 @@ extension Store {
                         """, arguments: StatementArguments([Env.parserVersion] + chunk)!)
                 {
                     let key: String = row["page_key"]
-                    known.insert(key)
-                    if let summary = Furniture.Summary(stored: row["data"]) { found[key] = summary }
+                    let data: String = row["data"]
+                    // A row of another summary version, or one that cannot be decoded, is missing:
+                    // it is made again below and replaced.
+                    if let summary = Furniture.Summary(stored: data) {
+                        known.insert(key)
+                        found[key] = summary
+                    } else if data == "-" {
+                        known.insert(key)
+                    }
                 }
             }
         }
@@ -370,11 +374,12 @@ extension Store {
                 made[key] = summary?.stored ?? "-"
                 if let summary { found[key] = summary }
             }
+            guard !made.isEmpty else { continue }
             try? write { db in
                 for (key, data) in made {
                     try db.execute(
                         sql: """
-                            INSERT OR IGNORE INTO search_edge (page_key, parser_version, data)
+                            INSERT OR REPLACE INTO search_edge (page_key, parser_version, data)
                             SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM page_result WHERE page_key = ? AND parser_version = ?)
                             """, arguments: [key, Env.parserVersion, data, key, Env.parserVersion])
                 }

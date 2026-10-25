@@ -246,3 +246,58 @@ extension SearchRunningHeadersTests {
         #expect(try store.pool.read { try Int.fetchOne($0, sql: "SELECT count(*) FROM search_edge") } == 5)
     }
 }
+
+/// M2.26's review: an old cache gets the table, the index is made once, a stale summary is made again.
+extension SearchRunningHeadersTests {
+    func count(_ store: Store, _ table: String) throws -> Int {
+        try store.pool.read { try Int.fetchOne($0, sql: "SELECT count(*) FROM \(table)") ?? -1 }
+    }
+
+    /// HIGH: a cache of schema 9 made before the table has none; opening it creates the table and
+    /// its trigger, and a page saved after is summarised and found.
+    @Test func aCacheMadeBeforeTheTableGetsTheTableWhenItOpens() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("pdf-cli-search-\(UUID())")
+        let old = try Store(directory: directory)
+        try old.write { db in
+            try db.execute(sql: "DROP TRIGGER page_result_leaves_the_edges")
+            try db.execute(sql: "DROP TABLE search_edge")
+        }
+        let store = try Store(directory: directory)
+        #expect(try count(store, "search_edge") == 0)
+        let keys = (0..<5).map { "k\($0)" }
+        let id = try store.saveIndex(path: "/a.pdf", stat: FileStat(size: 1, modifiedNanos: 1, inode: 1, device: 1), pageKeys: keys)
+        for (number, key) in keys.enumerated() { try store.saveResult(key: key, page(number, body: "Plain words \(number).")) }
+        #expect(try count(store, "search_edge") == 5)
+        let found = try judged(store, id, keys)
+        #expect(found[Search.Place(docID: id, page: 2, block: 1)] == .header)
+        try store.write { try $0.execute(sql: "DELETE FROM page_result WHERE page_key = 'k1'") }
+        #expect(try count(store, "search_edge") == 4)
+    }
+
+    /// MEDIUM 1: indexing a page twice puts its blocks in the index once.
+    @Test func aPageIsIndexedOnceWhateverTheOrder() throws {
+        let (store, _, keys) = try store5()
+        let blocks = try count(store, "search_block")
+        #expect(blocks == 15)
+        let result = try #require(try store.results(keys: [keys[0]])[keys[0]])
+        try store.write { try Store.indexForSearch($0, key: keys[0], version: Env.parserVersion, result: result) }
+        #expect(try count(store, "search_block") == blocks && count(store, "block_text") == blocks)
+    }
+
+    /// MEDIUM 2: a row of another version, or one that cannot be decoded, is made again and replaced.
+    @Test func aStaleOrUndecodableSummaryIsMadeAgain() throws {
+        let (store, id, keys) = try store5()
+        let good = try store.edgeSummaries(keys: keys)
+        for (key, data) in [
+            (keys[1], "{\"label\":null,\"edges\":[]}"), (keys[2], "not json"),
+            (keys[3], good[keys[3]]!.stored.replacingOccurrences(of: "\"v\":1", with: "\"v\":0")),
+        ] {
+            try store.write { try $0.execute(sql: "UPDATE search_edge SET data = ? WHERE page_key = ?", arguments: [data, key]) }
+        }
+        let again = try store.edgeSummaries(keys: keys)
+        #expect(again == good)
+        let rows = try store.pool.read { try String.fetchAll($0, sql: "SELECT data FROM search_edge WHERE page_key IN ('k1','k2','k3')") }
+        #expect(rows.allSatisfy { Furniture.Summary(stored: $0) != nil })
+        #expect(try judged(store, id, keys)[Search.Place(docID: id, page: 1, block: 1)] == .header)
+    }
+}
