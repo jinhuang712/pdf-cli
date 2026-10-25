@@ -978,11 +978,11 @@ public struct ReferenceIndex {
     /// The entry an id names: "12", "[12]", "BK06", "Smith2020", "Smith 2020" or "smith, 2020a";
     /// "2.12" for a later list's. A surname alone, or a number several lists have, names the entry
     /// when only one fits.
-    /// - Parameter links: the file's links, of which one over the entry's words to doi.org gives
-    ///   its DOI when its words give none.
+    /// - Parameter links: the links of a page of the file (counted from 0), of which one over the
+    ///   entry's words to doi.org gives its DOI when its words give none.
     public mutating func lookup(
         _ id: String, notes: [Int: PageNotes], keys: [String], store: Store,
-        links: [FileFacts.Annotation] = []
+        links: (Int) -> [FileFacts.Annotation] = { _ in [] }
     ) throws -> Outcome {
         if judged == nil { judged = References.resolve(digests: digests, notes: notes, outline: outline) }
         let judged = judged!
@@ -1024,7 +1024,7 @@ public struct ReferenceIndex {
         if entry.doi == nil, let layer = try store.results(keys: [keys[entry.page]])[keys[entry.page]]?.pageText {
             let boxes = entry.blocks.filter(layer.blocks.indices.contains).map { layer.blocks[$0].box }
             entry.doi =
-                links.lazy.filter { link in
+                links(entry.page).lazy.filter { link in
                     link.page == entry.page && link.kind == .link && boxes.contains { Output.share(of: link.box, inside: $0) >= 0.5 }
                 }.compactMap { $0.target.flatMap(References.doi) }.first
         }

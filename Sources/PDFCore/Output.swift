@@ -12,6 +12,9 @@ public enum Output {
         /// to this version of the file, not to the page's parse, so highlights added to a file
         /// show without its pages read again.
         public var annotations: [FileFacts.Annotation]
+        /// How many annotations the page holds past what the cache keeps for it
+        /// (`FactReader.maxAnnotations`): a line says so.
+        public var moreAnnotations: Int
         /// The page's running headers, footers and publisher stamps, by block, judged against
         /// the pages around it (`Furniture`).
         public var furniture: [Int: Furniture.Kind]
@@ -23,12 +26,14 @@ public enum Output {
 
         public init(
             index: Int, result: PageResult, key: String, annotations: [FileFacts.Annotation] = [],
-            furniture: [Int: Furniture.Kind] = [:], notes: PageNotes = PageNotes(), citations: PageCitations = PageCitations()
+            moreAnnotations: Int = 0, furniture: [Int: Furniture.Kind] = [:], notes: PageNotes = PageNotes(),
+            citations: PageCitations = PageCitations()
         ) {
             self.index = index
             self.result = result
             self.key = key
             self.annotations = annotations
+            self.moreAnnotations = moreAnnotations
             self.furniture = furniture
             self.notes = notes
             self.citations = citations
@@ -664,6 +669,19 @@ public enum Output {
             rest(notes.filter { $0.anchor == nil })
         } else {
             rest(notes)
+        }
+        if page.moreAnnotations > 0 {
+            // Numbered after the page's last block, as the annotations with no block are.
+            after += 1
+            let left = page.moreAnnotations
+            let cap = Info.thousands(FactReader.maxAnnotations)
+            result.units.append(
+                Unit(blocks: [
+                    Block(
+                        kind: .annotation, page: number, block: after,
+                        text: "\(left) more annotation\(left == 1 ? "" : "s") on this page, past \(cap) links and as many others, not shown",
+                        status: "more")
+                ]))
         }
         if let old = layer?.replacedText {
             if raw {

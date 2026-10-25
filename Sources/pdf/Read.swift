@@ -169,10 +169,10 @@ struct ReadCommand: ParsableCommand {
         }
 
         let keys = try store.pageKeys(docID: docID)
-        // The file's annotations, from its facts, which belong to this version of the file.
+        // The file's facts and annotations belong to this version of the file.
         let resolved = Reader.resolve(path)
-        let facts = try FileStat(path: resolved).flatMap { try store.facts(path: resolved, stat: $0) }
-        let annotations = Dictionary(grouping: facts?.annotations ?? [], by: \.page)
+        let fileStat = FileStat(path: resolved)
+        let facts = try fileStat.flatMap { try store.facts(path: resolved, stat: $0) }
         let limit = Self.tokens(budget)!
         let picks = try Picks().picks(keys: keys)
         let transcripts = try Transcripts().transcripts(keys: keys)
@@ -213,6 +213,8 @@ struct ReadCommand: ParsableCommand {
                 document.stop(at: chunk[0], because: "the file changed or could not be read; the command below reads on from here")
                 break
             }
+            // The annotations of these pages only: the cache keeps them per page.
+            let annotations = (try? fileStat.map { try store.annotations(path: resolved, stat: $0, pages: chunk.map { $0 - 1 }) }) ?? [:]
             // Running headers and footers, judged against the pages around these that are parsed.
             let furniture = (try? Furniture.find(pages: results.map(\.page), keys: keys, store: store)) ?? [:]
             // Footnotes, endnotes and the rest, judged against the pages parsed so far, and the
@@ -225,7 +227,8 @@ struct ReadCommand: ParsableCommand {
                 let resume = index == 0 && page + 1 == start?.page
                 let added = document.add(
                     Output.Page(
-                        index: page, result: result, key: keys[page], annotations: annotations[page] ?? [],
+                        index: page, result: result, key: keys[page], annotations: annotations[page]?.annotations ?? [],
+                        moreAnnotations: annotations[page]?.more ?? 0,
                         furniture: furniture[page] ?? [:], notes: judged[page] ?? PageNotes(), citations: cited[page] ?? PageCitations()),
                     from: resume ? start?.block : nil, offset: resume ? start?.offset : nil)
                 if !added { break reading }

@@ -141,7 +141,11 @@ struct RefCommand: ParsableCommand {
         let judged = try notes.resolve(pages: Array(0..<pageCount), keys: keys, store: store)
         var index = ReferenceIndex(outline: facts?.outline ?? [])
         try index.refresh(keys: keys, store: store)
-        let outcome = try index.lookup(id, notes: judged, keys: keys, store: store, links: facts?.annotations ?? [])
+        let outcome = try index.lookup(
+            id, notes: judged, keys: keys, store: store,
+            links: { page in
+                (try? FileStat(path: resolved).map { try store.annotations(path: resolved, stat: $0, pages: [page]) })?[page]?.annotations ?? []
+            })
         let provisional = parsed < pageCount ? " · provisional: \(parsed) of \(pageCount) pages parsed" : ""
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.withoutEscapingSlashes, .sortedKeys]

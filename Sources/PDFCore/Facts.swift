@@ -93,11 +93,16 @@ public struct FileFacts: Codable, Equatable, Sendable {
     public var scripts: [Script] = []
     public var moreAttachments = 0
     public var moreScripts = 0
-    /// The first `FactReader.maxAnnotations` links, and as many of the other annotations, in page
-    /// order, so a file of links cannot crowd out its comments; `moreAnnotations` counts those past
-    /// them.
+    /// The annotations the walk found: on each page the first `FactReader.maxAnnotations` links
+    /// and as many of the other annotations, and `FactReader.maxAnnotationsInFile` in all;
+    /// `moreAnnotations` counts those past them, `moreOnPage` by page (counted from 0).
+    ///
+    /// Only the walk's result holds them. The cache keeps them per page in a table of their own
+    /// (`Store.annotations`), so the facts it hands back have none, and `moreOnPage` is empty too
+    /// (DESIGNS.md → Decision: annotations per page, in a table of their own).
     public var annotations: [Annotation] = []
     public var moreAnnotations = 0
+    public var moreOnPage: [Int: Int] = [:]
     /// True when the file holds more objects than one read visits, so the counts cover part of it.
     public var partial = false
     /// Why the facts could not be read, such as a time limit. The file's pages read all the same.
@@ -118,7 +123,10 @@ final class FactReader {
     static let maxDepth = 12
     static let maxVisits = 200_000
     static let maxListed = 100
+    /// Per page: links, and as many of the other annotations.
     static let maxAnnotations = 1_000
+    /// In a file, all pages together: the table of a hostile file stays small.
+    static let maxAnnotationsInFile = 100_000
     /// The longest an annotation's text or words are kept, in characters.
     static let maxAnnotationText = 1_000
     /// How long the read of annotations with PDFKit may take, of the facts' 10 s.
@@ -144,8 +152,11 @@ final class FactReader {
     /// Links to a page of the file, by their place in `facts.annotations`, with the page's
     /// dictionary, or the name of a destination.
     private var pageLinks: [(annotation: Int, page: OpaquePointer?, name: String?)] = []
-    /// The links and the other annotations listed so far, each up to `maxAnnotations`.
+    /// The links and the other annotations listed so far on the page being read, each up to
+    /// `maxAnnotations`, and the count of all in the file.
     private var linksListed = 0, othersListed = 0
+    private var listedInFile = 0
+    private var currentPage = -1
     /// The layers the file switches off, by their dictionaries: an annotation in one is hidden.
     private var layersOff = Set<OpaquePointer>()
 
@@ -389,14 +400,23 @@ final class FactReader {
         return false
     }
 
-    /// Lists an annotation, up to `maxAnnotations` links and as many others; past them,
-    /// `moreAnnotations` counts it. Only what would show counts.
+    /// Lists an annotation, up to `maxAnnotations` links and as many others on its page, and
+    /// `maxAnnotationsInFile` in the file; past them, `moreAnnotations` and the page's count in
+    /// `moreOnPage` count it. Only what would show counts. Pages are read one after another, so
+    /// the page's counters start again when the page changes.
     func list(_ found: FileFacts.Annotation) -> Bool {
         let link = found.kind == .link
-        guard (link ? linksListed : othersListed) < Self.maxAnnotations else {
+        if found.page != currentPage {
+            currentPage = found.page
+            linksListed = 0
+            othersListed = 0
+        }
+        guard (link ? linksListed : othersListed) < Self.maxAnnotations, listedInFile < Self.maxAnnotationsInFile else {
             facts.moreAnnotations += 1
+            facts.moreOnPage[found.page, default: 0] += 1
             return false
         }
+        listedInFile += 1
         if link { linksListed += 1 } else { othersListed += 1 }
         facts.annotations.append(found)
         return true

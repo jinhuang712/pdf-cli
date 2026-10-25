@@ -212,7 +212,7 @@ public final class Store: Sendable {
         }
     }
 
-    static let schemaVersion = 8
+    static let schemaVersion = 9
 
     static func createSchema(_ db: Database) throws {
         let version = try Int.fetchOne(db, sql: "PRAGMA user_version") ?? 0
@@ -242,14 +242,26 @@ public final class Store: Sendable {
         // Version 7: the keyword index. Pages cached before it join the index when a search
         // first looks at their document.
         try createSearchIndex(db)
+        // Version 9: each page's annotations, in a table of their own. Files indexed before it
+        // have none, as their entries carry older index checks: the next read indexes them again.
+        try db.execute(
+            sql: """
+                CREATE TABLE IF NOT EXISTS page_annotation (
+                    path TEXT NOT NULL,
+                    page_index INTEGER NOT NULL,
+                    data TEXT NOT NULL,
+                    more INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (path, page_index)
+                ) WITHOUT ROWID
+                """)
         try db.execute(sql: "PRAGMA user_version = \(schemaVersion)")
     }
 
     /// The checks the index runs on a file: the font check, the sample check, the producer,
-    /// the title and the facts. Raise it when they change. A file entry indexed with older
+    /// the title, the facts and the annotations of each page. Raise it when they change. A file entry indexed with older
     /// checks still holds its document, so a cleanup keeps the document's pages, but a read
     /// indexes the file again and runs every check.
-    static let indexChecks = 10
+    static let indexChecks = 11
 
     static func createVersion1(_ db: Database) throws {
         try db.execute(sql: """
@@ -362,10 +374,74 @@ public final class Store: Sendable {
                     INSERT OR REPLACE INTO document_page (doc_id, page_index, page_key) VALUES (?, ?, ?)
                     """, arguments: [id, index, key])
             }
-            let encoded = facts.flatMap { try? JSONEncoder().encode($0) }.map { String(decoding: $0, as: UTF8.self) }
+            // The facts keep to the file's entry; its annotations go per page, in the same transaction,
+            // so a reader sees the old file's or the new file's, never a mix.
+            var kept = facts
+            kept?.annotations = []
+            kept?.moreOnPage = [:]
+            let encoded = kept.flatMap { try? JSONEncoder().encode($0) }.map { String(decoding: $0, as: UTF8.self) }
             try saveEntry(db, path: path, stat: stat, docID: id, failure: nil, facts: encoded ?? "")
+            try Store.saveAnnotations(db, path: path, facts: facts)
         }
         return id
+    }
+
+    /// The annotations of one page of a file, with how many more the page holds past what is kept.
+    public struct PageAnnotations: Equatable, Sendable {
+        public var annotations: [FileFacts.Annotation]
+        public var more: Int
+        public init(annotations: [FileFacts.Annotation] = [], more: Int = 0) {
+            self.annotations = annotations
+            self.more = more
+        }
+    }
+
+    /// Replaces the rows of a file's pages: one per page that holds an annotation or has some past
+    /// the cap. The file's facts are the whole truth about this version of the file.
+    static func saveAnnotations(_ db: Database, path: String, facts: FileFacts?) throws {
+        try db.execute(sql: "DELETE FROM page_annotation WHERE path = ?", arguments: [path])
+        guard let facts else { return }
+        let encoder = JSONEncoder()
+        let byPage = Dictionary(grouping: facts.annotations, by: \.page)
+        for page in Set(byPage.keys).union(facts.moreOnPage.keys).sorted() {
+            guard let data = try? encoder.encode(byPage[page] ?? []) else { continue }
+            try db.execute(
+                sql: "INSERT INTO page_annotation (path, page_index, data, more) VALUES (?, ?, ?, ?)",
+                arguments: [path, page, String(bytes: data, encoding: .utf8) ?? "[]", facts.moreOnPage[page] ?? 0])
+        }
+    }
+
+    /// The annotations of these pages (counted from 0) of the file as it is now, if the cache
+    /// knows this version of it. Only their rows are decoded; a page with none is left out.
+    public func annotations(path: String, stat: FileStat, pages: [Int]) throws -> [Int: PageAnnotations] {
+        let decoder = JSONDecoder()
+        var found: [Int: PageAnnotations] = [:]
+        try pool.read { db in
+            // The entry and its rows are read in one snapshot, so a file indexed again in between
+            // cannot give rows of another version.
+            guard
+                try Bool.fetchOne(
+                    db,
+                    sql: """
+                        SELECT 1 FROM file_entry
+                        WHERE path = ? AND size = ? AND modified_ns = ? AND inode = ? AND device = ? AND checks = ?
+                        """, arguments: [path, stat.size, stat.modifiedNanos, stat.inode, stat.device, Store.indexChecks]) == true
+            else { return }
+            for chunk in stride(from: 0, to: pages.count, by: 500).map({ Array(pages[$0..<min($0 + 500, pages.count)]) }) {
+                let marks = Array(repeating: "?", count: chunk.count).joined(separator: ",")
+                let rows = try Row.fetchAll(
+                    db,
+                    sql: """
+                        SELECT page_index, data, more FROM page_annotation WHERE path = ? AND page_index IN (\(marks))
+                        """, arguments: StatementArguments([path as any DatabaseValueConvertible] + chunk.map { $0 as any DatabaseValueConvertible }))
+                for row in rows {
+                    let data: String = row["data"]
+                    let list = (try? decoder.decode([FileFacts.Annotation].self, from: Data(data.utf8))) ?? []
+                    found[row["page_index"]] = PageAnnotations(annotations: list, more: row["more"])
+                }
+            }
+        }
+        return found
     }
 
     /// The facts of a file as it is now, if the cache knows this version of it.
@@ -387,7 +463,10 @@ public final class Store: Sendable {
     /// Forgets how the cache knows a file, so the next read indexes it again, as after a
     /// password that opens a file cached as locked.
     public func forgetEntry(path: String) throws {
-        try write { db in try db.execute(sql: "DELETE FROM file_entry WHERE path = ?", arguments: [path]) }
+        try write { db in
+            try db.execute(sql: "DELETE FROM file_entry WHERE path = ?", arguments: [path])
+            try db.execute(sql: "DELETE FROM page_annotation WHERE path = ?", arguments: [path])
+        }
     }
 
     /// The title the document's file names, empty when it names none, and its page count.
@@ -399,6 +478,8 @@ public final class Store: Sendable {
     }
 
     func saveEntry(_ db: Database, path: String, stat: FileStat, docID: String?, failure: String?, facts: String = "") throws {
+        // An entry stands for one version of the file; the rows of the version before it go.
+        try db.execute(sql: "DELETE FROM page_annotation WHERE path = ?", arguments: [path])
         try db.execute(sql: """
             INSERT OR REPLACE INTO file_entry
                 (path, size, modified_ns, inode, device, doc_id, failure, indexed_at, checks, facts)
@@ -686,6 +767,7 @@ public final class Store: Sendable {
     /// Drops documents no file uses, and page results no document uses. A runner saves a
     /// document and its file in one transaction, so a parse in progress keeps its rows.
     static func dropUnused(_ db: Database, into removed: inout Removed) throws {
+        try db.execute(sql: "DELETE FROM page_annotation WHERE path NOT IN (SELECT path FROM file_entry)")
         try db.execute(sql: "DELETE FROM document WHERE id NOT IN (SELECT doc_id FROM file_entry WHERE doc_id IS NOT NULL)")
         removed.documents += db.changesCount
         try db.execute(sql: "DELETE FROM document_page WHERE doc_id NOT IN (SELECT id FROM document)")

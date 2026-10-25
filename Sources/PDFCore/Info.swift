@@ -41,7 +41,7 @@ public struct Info: Encodable, Sendable {
     public var highlights: Int?
     public var formFields: Int?
     public var filledFields: Int?
-    /// Annotations past the first `FactReader.maxAnnotations`, or past the time their read may
+    /// Annotations past the first `FactReader.maxAnnotations` of a page, or `maxAnnotationsInFile`, or past the time their read may
     /// take, which `pdf read` does not show.
     public var annotationsLeftOut: Int?
     public var attachments: [FileFacts.Attachment]
@@ -522,7 +522,9 @@ public struct Info: Encodable, Sendable {
             counts = ["comments: \(comments)", "highlights: \(highlights)",
                       "form fields: \(formFields)" + (formFields > 0 ? " (\(filledFields) filled)" : "")]
             if let annotationsLeftOut {
-                counts.append("annotations past the first \(Info.thousands(FactReader.maxAnnotations)) links and as many others: \(Info.thousands(annotationsLeftOut)) not shown by pdf read")
+                counts.append(
+                    "annotations past the first \(Info.thousands(FactReader.maxAnnotations)) links and as many others on a page, or \(Info.thousands(FactReader.maxAnnotationsInFile)) in the file: \(Info.thousands(annotationsLeftOut)) not shown by pdf read"
+                )
             }
             if factsPartial { counts.append("counted in part of the file, which holds more objects than one read visits") }
         }
