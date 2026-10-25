@@ -9,14 +9,13 @@ struct ReparseCommand: ParsableCommand {
         abstract: "Read pages again, and replace their cached results.",
         discussion: """
             Reads every page again with the usual method on the running macOS, or the pages in --page. \
-            --step ocr reads them with Apple's OCR instead: without --page it does every page. The old \
-            results stay until the new ones are all in, so a command that stops half way changes nothing. A page \
-            whose new reading fails keeps its old result, and the command ends 2.
+            --step ocr reads them with Apple's OCR instead: without --page it does every page. The pages \
+            are replaced in chunks of 50, each in one step, so a command that is stopped keeps the chunks \
+            it finished and a page whose new reading fails keeps its old result (the command ends 2). A \
+            run goes on to 90 s and then stops, ends 2 and prints the command for the pages left.
 
-            Speed, as measured: 231 pages plain take about 18 s; OCR takes about 0.4 s a page, so about 300 \
-            OCR pages or 400 pages whose fonts lose spaces pass 120 s, the limit many agents give a command. \
-            Split a big file with --page ranges (pdf reparse big.pdf --page 1-150, then 151-300): a run that \
-            is stopped changes none of its pages.
+            Speed, as measured: 231 pages plain take about 18 s; OCR takes about 0.4 s a page, so about 200 \
+            OCR pages fill the 90 s; run the printed command again for the rest.
 
             It clears the picks on the pages it reads, since a new reading can offer other words. What \
             you transcribed (an equation's LaTeX, a table's Markdown) is kept: it belongs to what the page \
@@ -62,6 +61,19 @@ struct ReparseCommand: ParsableCommand {
         try Contract.guarding(path, json: json) { try reparse() }
     }
 
+    /// Pages as a `--page` list, such as 151-300,305.
+    static func pageList(_ pages: [Int]) -> String {
+        var parts: [String] = []
+        var index = 0
+        while index < pages.count {
+            var end = index
+            while end + 1 < pages.count && pages[end + 1] == pages[end] + 1 { end += 1 }
+            parts.append(end > index ? "\(pages[index])-\(pages[end])" : "\(pages[index])")
+            index = end + 1
+        }
+        return parts.joined(separator: ",")
+    }
+
     /// The most pages the text lists by name, after which it says how many more.
     static let listed = 20
 
@@ -88,7 +100,14 @@ struct ReparseCommand: ParsableCommand {
         let secret = passwordStdin ? Password.read(for: path) : password
         let store = try Store()
         let reader = Reader(store: store, library: try Library())
-        let outcome = try reader.reparse(path: path, pages: wanted, ocr: step == .ocr, password: secret)
+        let outcome = try reader.reparse(
+            path: path, pages: wanted, ocr: step == .ocr, password: secret,
+            progress: { done, total in
+                // A file of several chunks says how far it got as it goes, so a run that is stopped shows it.
+                if total > Env.reparseChunk {
+                    FileHandle.standardError.write(Data("reparsed \(done) of \(total) pages\n".utf8))
+                }
+            })
         guard case .done(let done) = outcome else {
             if case .fileFailed(let reason) = outcome {
                 throw Contract.fail(path, Output.failure(reason, file: path, command: "reparse"), json: json, code: Contract.fileFailed)
@@ -129,6 +148,13 @@ struct ReparseCommand: ParsableCommand {
         let statusChanges = shownChanges.filter { $0.before != $0.after }.count
         let keptPages = done.kept.keys.sorted()
         let method = step == .ocr ? "OCR" : "the usual method"
+        // The pages the time limit came before, and the command that reads them.
+        let left = done.remaining.map { $0 + 1 }
+        let next =
+            left.isEmpty
+            ? nil
+            : "pdf reparse \(Output.quoted(path)) --page \(Self.pageList(left))" + (step == .ocr ? " --step ocr" : "")
+                + (passwordStdin ? " --password-stdin" : "")
 
         if json {
             struct Body: Encodable {
@@ -142,6 +168,8 @@ struct ReparseCommand: ParsableCommand {
                 var changes: [Change]
                 var kept: [Kept]
                 var picksCleared: Int
+                var remaining: [Int]?
+                var next: String?
                 var neverRead: Bool?
                 var changedSinceRead: Bool?
                 var toolUpdated: Bool?
@@ -161,6 +189,7 @@ struct ReparseCommand: ParsableCommand {
                         pages: replaced.map { $0 + 1 }, flagged: flagged.count,
                         flaggedPages: flagged.map { Status(page: $0.page, status: $0.status) }, changes: changes,
                         kept: keptPages.map { Kept(page: $0 + 1, reason: done.kept[$0] ?? "") }, picksCleared: cleared,
+                        remaining: left.isEmpty ? nil : left, next: next,
                         neverRead: done.neverRead ? true : nil, changedSinceRead: done.changedSinceRead ? true : nil,
                         toolUpdated: done.toolUpdated ? true : nil)))
         } else {
@@ -169,6 +198,11 @@ struct ReparseCommand: ParsableCommand {
             parts.append(flagged.isEmpty ? "none flagged" : "\(flagged.count) flagged")
             parts.append(statusChanges == 0 ? "no page changed status" : "\(statusChanges) changed status")
             if cleared > 0 { parts.append("cleared \(count(cleared, "pick"))") }
+            if let next {
+                parts.append(
+                    "stopped at the time limit of \(Int(Env.reparseTimeLimit)) s with \(count(left.count, "page")) not read; the chunks before it are replaced; read the rest: \(next)"
+                )
+            }
             if done.neverRead {
                 parts.append(
                     done.before.isEmpty
@@ -196,6 +230,6 @@ struct ReparseCommand: ParsableCommand {
             if shownChanges.count > Self.listed { print("and \(shownChanges.count - Self.listed) more") }
         }
         if !replaced.isEmpty && whole == replaced.count { throw ExitCode(Contract.fileFailed) }
-        if !flagged.isEmpty || !keptPages.isEmpty { throw ExitCode(2) }
+        if !flagged.isEmpty || !keptPages.isEmpty || next != nil { throw ExitCode(2) }
     }
 }

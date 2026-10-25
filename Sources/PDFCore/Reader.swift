@@ -51,6 +51,9 @@ public struct Reparsed: Sendable {
     public var changedSinceRead: Bool
     /// The cache held this version of the file, indexed by an older `pdf`, which indexed it again.
     public var toolUpdated: Bool
+    /// Pages asked for that were not read, counted from 0, because the time limit came first: the
+    /// chunks before it stay replaced (M2.21). Empty when every page was read.
+    public var remaining: [Int] = []
 }
 
 public enum ReparseOutcome: Sendable {
@@ -208,11 +211,17 @@ public final class Reader: Sendable {
 
     /// Reads pages again and replaces their cached results (nil: every page; `ocr`: with Apple's
     /// OCR instead of the usual method). The file is indexed first if the cache has no current entry
-    /// for it. A file that failed to open is tried again. The reading runs in a runner of its own
-    /// that stops with this command, and leaves nothing behind that parses other pages.
+    /// for it. A file that failed to open is tried again. The pages go in chunks of `chunk` (50), each
+    /// read in a runner of its own that stops with this command and replaced in one transaction
+    /// (DESIGNS.md → Decision: a reparse keeps the page's key and replaces results in one
+    /// transaction, per chunk): a run that is stopped keeps the chunks it finished, and after
+    /// `timeLimit` seconds no new chunk starts, the pages left being `remaining`. `progress` hears
+    /// of each chunk replaced, with the pages done and the pages asked for. The runner leaves
+    /// nothing behind that parses other pages.
     public func reparse(
         path rawPath: String, pages wanted: [Int]?, ocr: Bool, workers: Int? = nil,
-        password: String? = nil
+        password: String? = nil, chunk: Int = Env.reparseChunk, timeLimit: TimeInterval = Env.reparseTimeLimit,
+        progress: ((_ done: Int, _ total: Int) -> Void)? = nil
     ) throws -> ReparseOutcome {
         let path = Reader.resolve(rawPath)
         guard let first = FileStat(path: path) else { throw ReadError.notFound(rawPath) }
@@ -222,10 +231,16 @@ public final class Reader: Sendable {
         let sameVersion = before == nil && known ? try store.hasEntry(path: path, stat: first) : false
         var changedSinceRead = before == nil && known && !sameVersion
         let toolUpdated = sameVersion
+        let started = Date()
         var lastDocument: String?
         var busyWaits = 0
         var retriedFailure = false
         var failures = 0
+        // What the chunks done so far have replaced; all of it is dropped when the file changes.
+        var done: [Int] = []
+        var old: [String: PageResult] = [:]
+        var new: [String: PageResult] = [:]
+        var kept: [Int: String] = [:]
         while failures < 3 {
             guard let stat = FileStat(path: path) else { throw ReadError.notFound(rawPath) }
             let docID: String
@@ -249,34 +264,42 @@ public final class Reader: Sendable {
                 docID = id
             }
             // The file changed while it was read again: another document, and the first is gone.
-            if let lastDocument, lastDocument != docID { changedSinceRead = true }
+            if lastDocument != docID {
+                if lastDocument != nil { changedSinceRead = true }
+                done = []
+                old = [:]
+                new = [:]
+                kept = [:]
+            }
             lastDocument = docID
             let keys = try store.pageKeys(docID: docID)
             let pages = Array(Set(wanted ?? Array(keys.indices))).sorted()
             if let bad = pages.first(where: { !keys.indices.contains($0) }) {
                 throw ReadError.pageOutOfRange(page: bad, pageCount: keys.count)
             }
-            let old = try store.results(keys: pages.map { keys[$0] })
-            let run = try runReparse(path: path, pages: wanted == nil ? nil : pages, ocr: ocr, workers: workers, password: password)
+            // The results before the run, of every page, read once: pages with one key share a result.
+            if old.isEmpty && done.isEmpty { old = try store.results(keys: pages.map { keys[$0] }) }
+            let doneSet = Set(done)
+            let todo = pages.filter { !doneSet.contains($0) }
+            if !todo.isEmpty, !done.isEmpty, Date().timeIntervalSince(started) >= timeLimit {
+                return .done(try finished(path: path, docID: docID, keys: keys, done: done, old: old, new: new, kept: kept, remaining: todo,
+                                      neverRead: neverRead, changedSinceRead: changedSinceRead, toolUpdated: toolUpdated))
+            }
+            let part = Array(todo.prefix(max(1, chunk)))
+            let run = todo.isEmpty ? (status: Int32(0), output: "") : try runReparse(path: path, pages: part, ocr: ocr, workers: workers, password: password)
             switch run.status {
             case 0:
-                let new = try store.results(keys: pages.map { keys[$0] })
-                if let library {
-                    try library.register(
-                        path: path, docID: docID, title: try store.documentInfo(docID: docID)?.title ?? "",
-                        pageCount: keys.count)
-                }
-                var kept: [Int: String] = [:]
+                let replaced = try store.results(keys: part.map { keys[$0] })
+                new.merge(replaced) { _, latest in latest }
                 for line in run.output.split(separator: "\n") {
                     let parts = line.split(separator: "\t", maxSplits: 2, omittingEmptySubsequences: false)
                     if parts.count == 3, parts[0] == "kept", let page = Int(parts[1]) { kept[page] = String(parts[2]) }
                 }
-                return .done(
-                    Reparsed(
-                        docID: docID, pageCount: keys.count, pages: pages,
-                        before: Dictionary(uniqueKeysWithValues: pages.compactMap { page in old[keys[page]].map { (page, $0) } }),
-                        after: Dictionary(uniqueKeysWithValues: pages.compactMap { page in new[keys[page]].map { (page, $0) } }),
-                        kept: kept, neverRead: neverRead, changedSinceRead: changedSinceRead, toolUpdated: toolUpdated))
+                done += part
+                if !part.isEmpty { progress?(done.count, pages.count) }
+                if done.count < pages.count { continue }
+                return .done(try finished(path: path, docID: docID, keys: keys, done: done, old: old, new: new, kept: kept, remaining: [],
+                                      neverRead: neverRead, changedSinceRead: changedSinceRead, toolUpdated: toolUpdated))
             case Runner.exitLocked:
                 // The file's results stay as they were: a password that does not open it is no verdict on it.
                 return .fileFailed(reason: OpenFailure.lockedReason)
@@ -297,6 +320,21 @@ public final class Reader: Sendable {
         throw ReadError.runnerFailed
     }
 
+    private func finished(
+        path: String, docID: String, keys: [String], done: [Int], old: [String: PageResult], new: [String: PageResult], kept: [Int: String],
+        remaining: [Int], neverRead: Bool, changedSinceRead: Bool, toolUpdated: Bool
+    ) throws -> Reparsed {
+        if let library {
+            try library.register(path: path, docID: docID, title: try store.documentInfo(docID: docID)?.title ?? "", pageCount: keys.count)
+        }
+        let pages = done.sorted()
+        return Reparsed(
+            docID: docID, pageCount: keys.count, pages: pages,
+            before: Dictionary(uniqueKeysWithValues: pages.compactMap { page in old[keys[page]].map { (page, $0) } }),
+            after: Dictionary(uniqueKeysWithValues: pages.compactMap { page in new[keys[page]].map { (page, $0) } }),
+            kept: kept, neverRead: neverRead, changedSinceRead: changedSinceRead, toolUpdated: toolUpdated, remaining: remaining)
+    }
+
     /// Starts a runner that indexes the file and stops, and waits for it. Another runner that holds
     /// the file's lock is waited for instead, until the file has an entry.
     private func index(path: String, password: String?) throws {
@@ -315,10 +353,10 @@ public final class Reader: Sendable {
     }
 
     private func runReparse(
-        path: String, pages: [Int]?, ocr: Bool, workers: Int?,
+        path: String, pages: [Int], ocr: Bool, workers: Int?,
         password: String?
     ) throws -> (status: Int32, output: String) {
-        let list = pages.map { $0.map(String.init).joined(separator: ",") } ?? "all"
+        let list = pages.map(String.init).joined(separator: ",")
         return try Reader.run(
             ["__runner", path, "--reparse=" + list] + (ocr ? ["--ocr"] : [])
                 + (workers.map { ["--workers=\($0)"] } ?? []), password: password)
