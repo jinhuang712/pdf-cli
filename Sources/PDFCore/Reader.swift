@@ -14,12 +14,16 @@ public enum ReadError: Error, CustomStringConvertible {
     case pageOutOfRange(page: Int, pageCount: Int)
     case runnerFailed
     case reparseBusy
+    /// The file changed while a reparse read it, and the new version is shorter than the pages asked
+    /// for; the text says what the chunks before the change had done.
+    case changedWhileReading(String)
 
     public var description: String {
         switch self {
         case .notFound(let path): return "no such file: \(path)"
         case .pageOutOfRange(let page, let count): return "page \(page + 1) is out of range: the file has \(count) pages"
         case .runnerFailed: return "the parser stopped before it finished; run the command again"
+        case .changedWhileReading(let text): return text
         case .reparseBusy: return "another reparse of this file is still running; run the command again when it has ended"
         }
     }
@@ -61,8 +65,22 @@ public struct Reparsed: Sendable {
     /// made for, and cleared because it does not (M2.23).
     public var picksKept = 0
     public var picksCleared = 0
-    /// Why the picks of a chunk could not be checked, if so: the next reparse mends them.
+    /// Why the picks of a chunk could not be checked, if so, and the pages of those chunks: a
+    /// reparse of them checks again.
     public var picksFailure: String?
+    public var picksFailedPages: [Int] = []
+    /// Pages replaced in an earlier version of the file, before it changed: their picks are in the counts.
+    public var earlierPages = 0
+}
+
+/// What a reparse learned of the picks, chunk by chunk (M2.23).
+struct PickTally {
+    var kept: [String: Int] = [:]
+    var clearedByKey: [String: Int] = [:]
+    var failure: String?
+    var failedPages: [Int] = []
+    var keptCount: Int { kept.values.reduce(0, +) }
+    var cleared: Int { clearedByKey.values.reduce(0, +) }
 }
 
 public enum ReparseOutcome: Sendable {
@@ -250,7 +268,9 @@ public final class Reader: Sendable {
         var old: [String: PageResult] = [:]
         var new: [String: PageResult] = [:]
         var kept: [Int: String] = [:]
-        var picks = (kept: 0, cleared: 0, failure: String?.none)
+        // Picks by page key, so a key that two pages share counts once; they run on across a change of the file.
+        var picks = PickTally()
+        var earlierPages = 0
         // The document and pages of the pass in hand, so an error after some chunks are replaced can
         // still report them.
         var current: (docID: String, keys: [String], pages: [Int])?
@@ -261,7 +281,7 @@ public final class Reader: Sendable {
                 try finished(
                     path: path, docID: current.docID, keys: current.keys, done: done, old: old, new: new, kept: kept,
                     remaining: current.pages.filter { !doneSet.contains($0) }, stopped: reason, neverRead: neverRead,
-                    changedSinceRead: changedSinceRead, toolUpdated: toolUpdated, picks: picks))
+                    changedSinceRead: changedSinceRead, toolUpdated: toolUpdated, picks: picks, earlierPages: earlierPages))
         }
         while failures < 3 {
             guard let stat = FileStat(path: path) else { throw ReadError.notFound(rawPath) }
@@ -288,16 +308,24 @@ public final class Reader: Sendable {
             // The file changed while it was read again: another document, and the first is gone.
             if lastDocument != docID {
                 if lastDocument != nil { changedSinceRead = true }
+                earlierPages += done.count
                 done = []
                 old = [:]
                 new = [:]
                 kept = [:]
-                picks = (0, 0, nil)
+                picks.failedPages = []
             }
             lastDocument = docID
             let keys = try store.pageKeys(docID: docID)
             let pages = Array(Set(wanted ?? Array(keys.indices))).sorted()
             if let bad = pages.first(where: { !keys.indices.contains($0) }) {
+                let sunk = earlierPages + done.count
+                if sunk > 0 || picks.cleared > 0 || picks.failure != nil {
+                    throw ReadError.changedWhileReading(
+                        "page \(bad + 1) is out of range: the file has \(keys.count) pages; it changed while it was read again, after "
+                            + "\(sunk) pages were replaced and \(picks.cleared) picks cleared"
+                            + (picks.failure.map { "; their picks could not be checked (\($0))" } ?? ""))
+                }
                 throw ReadError.pageOutOfRange(page: bad, pageCount: keys.count)
             }
             current = (docID, keys, pages)
@@ -317,11 +345,17 @@ public final class Reader: Sendable {
                 for line in run.output.split(separator: "\n") {
                     let parts = line.split(separator: "\t", maxSplits: 2, omittingEmptySubsequences: false)
                     if parts.count == 3, parts[0] == "kept", let page = Int(parts[1]) { kept[page] = String(parts[2]) }
-                    if parts.count == 3, parts[0] == "picks", let k = Int(parts[1]), let c = Int(parts[2]) {
-                        picks.kept += k
-                        picks.cleared += c
+                    if parts[0] == "picks" {
+                        let fields = line.split(separator: "\t", omittingEmptySubsequences: false)
+                        if fields.count == 4, let k = Int(fields[2]), let c = Int(fields[3]) {
+                            picks.kept[String(fields[1])] = k
+                            picks.clearedByKey[String(fields[1]), default: 0] += c
+                        }
                     }
-                    if parts.count >= 2, parts[0] == "picks-failed" { picks.failure = parts[1...].joined(separator: " ") }
+                    if parts.count >= 2, parts[0] == "picks-failed" {
+                        picks.failure = parts[1...].joined(separator: " ")
+                        picks.failedPages += part
+                    }
                 }
                 done += part
                 busyWaits = 0
@@ -331,7 +365,7 @@ public final class Reader: Sendable {
                 return .done(
                     try finished(
                         path: path, docID: docID, keys: keys, done: done, old: old, new: new, kept: kept, remaining: [], stopped: nil,
-                        neverRead: neverRead, changedSinceRead: changedSinceRead, toolUpdated: toolUpdated, picks: picks))
+                        neverRead: neverRead, changedSinceRead: changedSinceRead, toolUpdated: toolUpdated, picks: picks, earlierPages: earlierPages))
             case Runner.exitLocked:
                 // The file's results stay as they were: a password that does not open it is no verdict on it.
                 return .fileFailed(reason: OpenFailure.lockedReason)
@@ -362,7 +396,7 @@ public final class Reader: Sendable {
     private func finished(
         path: String, docID: String, keys: [String], done: [Int], old: [String: PageResult], new: [String: PageResult], kept: [Int: String],
         remaining: [Int], stopped: String?, neverRead: Bool, changedSinceRead: Bool, toolUpdated: Bool,
-        picks: (kept: Int, cleared: Int, failure: String?)
+        picks: PickTally, earlierPages: Int
     ) throws -> Reparsed {
         if let library {
             try library.register(path: path, docID: docID, title: try store.documentInfo(docID: docID)?.title ?? "", pageCount: keys.count)
@@ -373,7 +407,8 @@ public final class Reader: Sendable {
             before: Dictionary(uniqueKeysWithValues: pages.compactMap { page in old[keys[page]].map { (page, $0) } }),
             after: Dictionary(uniqueKeysWithValues: pages.compactMap { page in new[keys[page]].map { (page, $0) } }),
             kept: kept, neverRead: neverRead, changedSinceRead: changedSinceRead, toolUpdated: toolUpdated, remaining: remaining, stopped: stopped,
-            picksKept: picks.kept, picksCleared: picks.cleared, picksFailure: picks.failure)
+            picksKept: picks.keptCount, picksCleared: picks.cleared, picksFailure: picks.failure,
+            picksFailedPages: picks.failedPages.sorted(), earlierPages: earlierPages)
     }
 
     /// Starts a runner that indexes the file and stops, and waits for it. Another runner that holds

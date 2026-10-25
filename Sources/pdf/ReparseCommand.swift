@@ -119,14 +119,14 @@ struct ReparseCommand: ParsableCommand {
         // The runner checked the picks of each chunk as it replaced it: a pick stays while its block
         // still offers the readings it was made for. A page that kept its old result keeps its picks.
         let replaced = done.pages.filter { done.kept[$0] == nil }
-        if let failure = done.picksFailure {
-            throw Contract.fail(
-                path,
-                "the results of \(count(replaced.count, "page")) were replaced, but their picks could not be checked (\(failure)); run pdf reparse again to check them",
-                json: json)
-        }
         let cleared = done.picksCleared
         let keptPicks = done.picksKept
+        // The pages whose picks could not be checked, and the command that checks them.
+        let checkAgain: String? = done.picksFailure.map { failure in
+            let pages = done.picksFailedPages.isEmpty ? "" : " --page " + Self.pageList(done.picksFailedPages.map { $0 + 1 })
+            return "the picks of \(done.picksFailedPages.isEmpty ? "some pages" : count(done.picksFailedPages.count, "page")) could not be checked "
+                + "(\(failure)); read them again to check: pdf reparse \(Output.quoted(path))\(pages)"
+        }
 
         func status(_ result: PageResult?) -> String? { result.map { Quality.judge($0).status.rawValue } }
         var changes: [Change] = []
@@ -169,6 +169,7 @@ struct ReparseCommand: ParsableCommand {
                 var kept: [Kept]
                 var picksKept: Int
                 var picksCleared: Int
+                var picksFailed: String?
                 var remaining: [Int]?
                 var next: String?
                 var stopped: String?
@@ -191,15 +192,17 @@ struct ReparseCommand: ParsableCommand {
                         pages: replaced.map { $0 + 1 }, flagged: flagged.count,
                         flaggedPages: flagged.map { Status(page: $0.page, status: $0.status) }, changes: changes,
                         kept: keptPages.map { Kept(page: $0 + 1, reason: done.kept[$0] ?? "") }, picksKept: keptPicks, picksCleared: cleared,
+                        picksFailed: checkAgain,
                         remaining: left.isEmpty ? nil : left, next: next, stopped: done.stopped,
                         neverRead: done.neverRead ? true : nil, changedSinceRead: done.changedSinceRead ? true : nil,
                         toolUpdated: done.toolUpdated ? true : nil)))
         } else {
             var parts = ["reparsed \(count(replaced.count, "page")) of \(done.pageCount) with \(method)"]
-            if !keptPages.isEmpty { parts.append("\(keptPages.count) kept the old result") }
+            if !keptPages.isEmpty { parts.append("\(count(keptPages.count, "page")) kept the old result") }
             parts.append(flagged.isEmpty ? "none flagged" : "\(flagged.count) flagged")
             parts.append(statusChanges == 0 ? "no page changed status" : "\(statusChanges) changed status")
             if keptPicks > 0 { parts.append("kept \(count(keptPicks, "pick")), the readings are the same") }
+            if let checkAgain { parts.append(checkAgain) }
             if cleared > 0 { parts.append("cleared \(count(cleared, "pick")), the readings differ") }
             if let next {
                 parts.append(
@@ -212,7 +215,13 @@ struct ReparseCommand: ParsableCommand {
                         ? "not read before, so these pages are read for the first time"
                         : "not read before, but identical pages another file had cached are replaced")
             }
-            if done.changedSinceRead { parts.append("the file changed since it was read; this is its current version") }
+            if done.changedSinceRead {
+                parts.append(
+                    "the file changed since it was read; this is its current version"
+                        + (done.earlierPages > 0
+                            ? " (\(count(done.earlierPages, "page")) of the version before were replaced, and the picks counted include theirs)" : "")
+                )
+            }
             if done.toolUpdated { parts.append("pdf was updated since it read the file, and indexed it again") }
             parts.append(path)
             print(parts.joined(separator: " · "))
@@ -232,6 +241,7 @@ struct ReparseCommand: ParsableCommand {
             }
             if shownChanges.count > Self.listed { print("and \(shownChanges.count - Self.listed) more") }
         }
+        if checkAgain != nil { throw ExitCode(Contract.couldNotRun) }
         if !replaced.isEmpty && whole == replaced.count { throw ExitCode(Contract.fileFailed) }
         if !flagged.isEmpty || !keptPages.isEmpty || next != nil { throw ExitCode(2) }
     }

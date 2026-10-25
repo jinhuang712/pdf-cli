@@ -113,6 +113,23 @@ import Testing
         #expect(try Self.pdf(["pick", file, "p2.2", "c", "--dry-run"], home: home).status == 64)
     }
 
+    /// A pick that no longer applies (the page offers other words) is no earlier pick: `read` shows the
+    /// page unpicked, and the dry run does not say it would replace one (M2.23 review, L4).
+    @Test func pickDryRunIgnoresAPickThatNoLongerApplies() async throws {
+        let home = try OutputContractTests.freshHome()
+        let file = try ReparseTests.copy(ReparseTests.paper, to: home)
+        let blocks = try ReparseTests.unsureBlocks(file, home: home)
+        try await Self.settle(home)
+        let first = try #require(blocks.first, "no unsure paragraph")
+        let address = "p\(first.page).\(first.block)"
+        #expect(try Self.pdf(["pick", file, address, "b"], home: home).status == 0)
+        let applies = try Self.pdf(["pick", file, address, "a", "--dry-run", "--json"], home: home)
+        #expect(applies.json?["replaces"] as? String == "b", "\(applies.output)")
+        try ReparseTests.picksDB(home, "UPDATE pick SET reading_a = 'planted words'")
+        let stale = try Self.pdf(["pick", file, address, "a", "--dry-run", "--json"], home: home)
+        #expect(stale.json?["replaces"] is NSNull, "\(stale.output)")
+    }
+
     @Test func transcribeDryRunSaysKeptReplacedOrRemovedAndChangesNothing() async throws {
         let home = try OutputContractTests.freshHome()
         let file = Self.regions

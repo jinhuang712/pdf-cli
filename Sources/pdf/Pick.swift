@@ -66,7 +66,9 @@ struct PickCommand: ParsableCommand {
             let key = try store.pageKeys(docID: docID)[page]
             var replaces: String?
             if dryRun {
-                if Library.exists(), let earlier = try Picks(readOnly: true).picks(keys: [key])[key]?.first(where: { $0.block == index }) {
+                if Library.exists(),
+                    let earlier = try Picks(readOnly: true).picks(keys: [key])[key]?.first(where: { $0.block == index && $0.readings == readings })
+                {
                     replaces = ["a", "b"][earlier.chosen]
                 }
             } else {

@@ -143,13 +143,15 @@ public final class Runner: @unchecked Sendable {
         }
         // Right after the replacement, in this runner: a pick stays only while its block still offers
         // the readings it was made for (M2.23). What the cache holds now decides, so a page that
-        // kept its old result keeps its picks.
-        if Library.exists(), let now = try? store.results(keys: Array(reparsed.keys)) {
+        // kept its old result keeps its picks. One line for each page key that had picks.
+        if Library.exists() {
             do {
-                let picks = try Picks().reconcile(results: now)
-                print("picks\t\(picks.kept)\t\(picks.cleared)")
+                let now = try store.results(keys: Array(reparsed.keys))
+                for (key, count) in try Picks().reconcile(results: now).sorted(by: { $0.key < $1.key }) {
+                    print("picks\t\(key)\t\(count.kept)\t\(count.cleared)")
+                }
             } catch {
-                print("picks-failed\t" + String(describing: error).replacingOccurrences(of: "\n", with: " "))
+                print("picks-failed\t" + Picks.reason(of: error).replacingOccurrences(of: "\n", with: " "))
             }
         }
         fflush(stdout)

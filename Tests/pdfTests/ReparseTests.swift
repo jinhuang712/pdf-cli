@@ -122,35 +122,132 @@ import Testing
         #expect(try Self.cache(home, "SELECT count(*) FROM page_result WHERE reason = 'planted'") == String((Int(cached) ?? 0) - 1))
     }
 
+    /// The unsure paragraphs of a file as `read` lists them, `(page, paragraph)` counted from 1.
+    static func unsureBlocks(_ file: String, home: URL) throws -> [(page: Int, block: Int)] {
+        let read = try Self.pdf(["read", file, "--budget", "all"], home: home).output
+        let pattern = try NSRegularExpression(pattern: "⚠ p\\.(\\d+) ¶(\\d+) unsure")
+        let range = NSRange(read.startIndex..., in: read)
+        return pattern.matches(in: read, range: range).compactMap { match in
+            guard let page = Range(match.range(at: 1), in: read).flatMap({ Int(read[$0]) }),
+                let block = Range(match.range(at: 2), in: read).flatMap({ Int(read[$0]) })
+            else { return nil }
+            return (page, block)
+        }
+    }
+
+    static func picksDB(_ home: URL, _ statement: String) throws -> String { try sql(home, "Support/library.sqlite", statement) }
+
     /// Picks and reparse (M2.23): a pick stays while the page still offers the readings it was made
     /// for, and goes when it does not; the summary and `--json` count both. A chunk of one page
     /// checks its own pick, and the runner has settled it before the command ends.
     @Test func aReparseKeepsPicksOfTheSameReadingsAndClearsTheOthersChunkByChunk() async throws {
         let home = try OutputContractTests.freshHome()
         let file = try Self.copy(Self.paper, to: home)
-        _ = try Self.pdf(["read", file, "--budget", "all"], home: home)
+        let blocks = try Self.unsureBlocks(file, home: home)
         try await DryRunTests.settle(home)
-        #expect(try Self.pdf(["pick", file, "p2.2", "b"], home: home).status == 0)
-        #expect(try Self.pdf(["pick", file, "p3.5", "a"], home: home).status == 0)
-        #expect(try Self.pdf(["pick", file, "p6.38", "b"], home: home).status == 0)
-        // Page 3's pick was made for other words than the page offers now: planted in the pick's own table.
-        try Self.sql(home, "Support/library.sqlite", "UPDATE pick SET reading_a = 'planted words' WHERE block = 4")
-        #expect(try Self.sql(home, "Support/library.sqlite", "SELECT count(*) FROM pick WHERE reading_a = 'planted words'") == "1")
+        // The first unsure paragraph of three different pages.
+        var chosen: [(page: Int, block: Int)] = []
+        for entry in blocks where !chosen.contains(where: { $0.page == entry.page }) && chosen.count < 3 { chosen.append(entry) }
+        try #require(chosen.count == 3, "\(blocks)")
+        for (index, entry) in chosen.enumerated() {
+            #expect(try Self.pdf(["pick", file, "p\(entry.page).\(entry.block)", index == 1 ? "a" : "b"], home: home).status == 0)
+        }
+        // The second pick was made for other words than its page offers now: planted in the pick's own table.
+        try Self.picksDB(
+            home, "UPDATE pick SET reading_a = 'planted words' WHERE rowid IN (SELECT rowid FROM pick ORDER BY picked_at LIMIT 1 OFFSET 1)")
+        #expect(try Self.picksDB(home, "SELECT count(*) FROM pick WHERE reading_a = 'planted words'") == "1")
 
         // Chunks of one page: each page's pick is checked as its chunk is replaced.
-        let run = try Self.pdf(["reparse", file, "--page", "2,3,6", "--json"], home: home, environment: ["PDF_CLI_REPARSE_CHUNK": "1"])
+        let pages = chosen.map { String($0.page) }.joined(separator: ",")
+        let run = try Self.pdf(["reparse", file, "--page", pages, "--json"], home: home, environment: ["PDF_CLI_REPARSE_CHUNK": "1"])
         let object = try #require(run.json, "\(run.output.prefix(300))")
         #expect(object["picksKept"] as? Int == 2 && object["picksCleared"] as? Int == 1, "\(object)")
-        #expect(try Self.sql(home, "Support/library.sqlite", "SELECT count(*) FROM pick") == "2")
-        #expect(try Self.sql(home, "Support/library.sqlite", "SELECT count(*) FROM pick WHERE block = 4") == "0")
-        let text = try Self.pdf(["reparse", file, "--page", "2"], home: home)
+        #expect(try Self.picksDB(home, "SELECT count(*) FROM pick") == "2")
+        #expect(try Self.picksDB(home, "SELECT count(*) FROM pick WHERE reading_a = 'planted words'") == "0")
+        let text = try Self.pdf(["reparse", file, "--page", String(chosen[0].page)], home: home)
         #expect(text.output.contains("kept 1 pick") && !text.output.contains("cleared"), "\(text.output.prefix(300))")
-        let read = try Self.pdf(["read", file, "--page", "2", "--budget", "all"], home: home)
+        let read = try Self.pdf(["read", file, "--page", String(chosen[0].page), "--budget", "all"], home: home)
         #expect(read.output.contains("[picked"))
         // OCR reads the page by another method: its readings are not the layer's, so the pick goes.
-        let ocr = try Self.pdf(["reparse", file, "--page", "2", "--step", "ocr"], home: home)
+        let ocr = try Self.pdf(["reparse", file, "--page", String(chosen[0].page), "--step", "ocr"], home: home)
         #expect(ocr.output.contains("cleared 1 pick") && !ocr.output.contains("kept 1 pick"), "\(ocr.output.prefix(300))")
-        #expect(try Self.sql(home, "Support/library.sqlite", "SELECT count(*) FROM pick WHERE block = 1") == "0")
+        #expect(!Self.running(file))
+    }
+
+    /// A page whose new reading failed keeps its old result, so it keeps its picks, and the picks are
+    /// counted as kept; the summary names the page (M2.23 review, L8).
+    @Test func aPageThatKeptItsOldResultKeepsItsPicks() async throws {
+        let home = try OutputContractTests.freshHome()
+        let file = try Self.copy(Self.paper, to: home)
+        let blocks = try Self.unsureBlocks(file, home: home)
+        try await DryRunTests.settle(home)
+        let second = try #require(blocks.first { $0.page == 2 }, "\(blocks)")
+        #expect(try Self.pdf(["pick", file, "p2.\(second.block)", "b"], home: home).status == 0)
+        let run = try Self.pdf(["reparse", file, "--page", "2,3", "--json"], home: home, environment: ["PDF_CLI_TEST_FAULT": "crash:1"])
+        let object = try #require(run.json, "\(run.output.prefix(300))")
+        #expect((object["kept"] as? [[String: Any]])?.first?["page"] as? Int == 2, "\(object)")
+        #expect(object["picksKept"] as? Int == 1 && object["picksCleared"] as? Int == 0, "\(object)")
+        #expect(try Self.picksDB(home, "SELECT count(*) FROM pick") == "1")
+        let text = try Self.pdf(["reparse", file, "--page", "2,3"], home: home, environment: ["PDF_CLI_TEST_FAULT": "crash:1"])
+        #expect(text.output.contains("1 page kept the old result") && text.output.contains("kept 1 pick"), "\(text.output.prefix(300))")
+    }
+
+    /// The picks' database is locked when the runner checks them: the command still prints its summary,
+    /// says which pages to read again, in one clean sentence, and ends 1 (M2.23 review, L3, L5).
+    @Test func picksThatCannotBeCheckedAreNamedWithThePagesAndTheCommand() async throws {
+        let home = try OutputContractTests.freshHome()
+        let file = try Self.copy(Self.paper, to: home)
+        let blocks = try Self.unsureBlocks(file, home: home)
+        try await DryRunTests.settle(home)
+        let second = try #require(blocks.first { $0.page == 2 }, "\(blocks)")
+        #expect(try Self.pdf(["pick", file, "p2.\(second.block)", "b"], home: home).status == 0)
+        let holder = Process()
+        holder.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+        holder.arguments = [
+            "-I", "-c",
+            "import sqlite3,sys,time\nc=sqlite3.connect(sys.argv[1],isolation_level=None,timeout=30)\nc.execute('BEGIN EXCLUSIVE')\ntime.sleep(15)\n",
+            home.appendingPathComponent("Support/library.sqlite").path,
+        ]
+        let job = Task.detached { try Self.pdf(["reparse", file, "--page", "2-6", "--step", "ocr", "--json"], home: home) }
+        // The command opens the library first; the lock comes while the pages are read.
+        try await Task.sleep(nanoseconds: 1_500_000_000)
+        try holder.run()
+        let run = try await job.value
+        holder.terminate()
+        let object = try #require(run.json, "\(run.output.prefix(400))")
+        #expect(run.status == 1, "\(run.output.prefix(400))")
+        #expect(object["reparsed"] as? Int == 5, "\(object)")
+        let failed = try #require(object["picksFailed"] as? String, "\(object)")
+        #expect(failed.contains("database is locked") && !failed.contains("SQLite error") && failed.contains("--page 2-6"), "\(failed)")
+        #expect(!Self.running(file))
+    }
+
+    /// The file changes between chunks, after a chunk cleared a pick: the clearing stays in the summary,
+    /// or in the error when the new version is shorter (M2.23 review, L1).
+    @Test func aPickClearedBeforeTheFileChangedStaysInTheAccount() async throws {
+        let home = try OutputContractTests.freshHome()
+        let file = try Self.copy(Self.paper, to: home)
+        let other = Self.root.appendingPathComponent("testdata/smoke/arxiv-2608.04589.pdf")
+        let blocks = try Self.unsureBlocks(file, home: home)
+        try await DryRunTests.settle(home)
+        let second = try #require(blocks.first { $0.page == 2 }, "\(blocks)")
+        #expect(try Self.pdf(["pick", file, "p2.\(second.block)", "b"], home: home).status == 0)
+        try Self.picksDB(home, "UPDATE pick SET reading_a = 'planted words'")
+        let job = Task.detached { try Self.pdf(["reparse", file, "--page", "2-10"], home: home, environment: ["PDF_CLI_REPARSE_CHUNK": "1"]) }
+        var gone = false
+        for _ in 0..<1500 where !gone {
+            try await Task.sleep(nanoseconds: 20_000_000)
+            gone = try Self.picksDB(home, "SELECT count(*) FROM pick") == "0"
+        }
+        #expect(gone)
+        try Data(contentsOf: other).write(to: URL(fileURLWithPath: file))
+        let run = try await job.value
+        let longer = (PDFDocument(url: other)?.pageCount ?? 0) >= 10
+        if longer {
+            #expect(run.output.contains("cleared 1 pick") && run.output.contains("of the version before"), "\(run.output.prefix(500))")
+        } else {
+            #expect(run.status == 1 && run.output.contains("1 picks cleared"), "\(run.output.prefix(500))")
+        }
         #expect(!Self.running(file))
     }
 
@@ -372,7 +469,7 @@ import Testing
         let fault = ["PDF_CLI_TEST_FAULT": "crash:0"]
         let text = try Self.pdf(["reparse", file], home: home, environment: fault)
         #expect(text.status == 2, "\(text.output)")
-        #expect(text.output.contains("1 kept the old result") && text.output.contains("reparsed 0 pages"), "\(text.output)")
+        #expect(text.output.contains("1 page kept the old result") && text.output.contains("reparsed 0 pages"), "\(text.output)")
         #expect(text.output.contains("p.1: kept the old result, the new reading failed"), "\(text.output)")
         let json = try Self.pdf(["reparse", file, "--json"], home: home, environment: fault)
         #expect(json.status == 2)
