@@ -33,21 +33,21 @@ public enum AgentGuide {
         | `pdf dump <pdf> --markdown` | Writes files, prints their paths: `--markdown`, `--text`, `--figures`, `--tables`, `--notes`, `--refs`, `--attachments`, `--scripts`, `-o <folder>`. |
         | `pdf pick <pdf> p2.5 a` | Keeps reading `a` or `b` of an unsure block's words. |
         | `pdf transcribe <pdf> --page N --equation 5` | Keeps an equation's LaTeX or a table's Markdown, from standard input; `--clear` removes it. |
-        | `pdf add <pdfs or folders>` | Parses PDFs ahead, `-j N` at once. |
+        | `pdf add <pdfs or folders>` | Parses PDFs ahead. |
         | `pdf reparse <pdf>` | Reads pages again: `--page 7`, or `--step ocr` for a scan read badly. Clears their picks. |
         | `pdf ls`, `pdf rm <pdf or ID>` | Lists the PDFs read; forgets one. |
         | `pdf doctor` | What works, what is wrong; `--clean` removes what no read can use. |
         | `pdf setup` | Parsing's memory is the user's call: ask, then `pdf setup --memory balanced` (or `light`, `fastest`). |
         | `pdf agent-guide` | Prints this guide; `--install claude-code` installs it as a skill. |
 
-                ## Reading the output
+        ## Reading the output
 
         - `## p.4` starts a page and `¶7` its seventh block, most often a paragraph. Cite "p.4 ¶7"; `pdf read paper.pdf --from p4.7` reads on from there. Pages count from the file's first page; `## p.12 (printed 237)` gives the number printed on it. `--json` gives each block's position, in `crop`'s fractions.
         - The first line sums up the read: pages read and flagged, what was set aside or hidden with its flag, `provisional` while the file parses.
         - Columns read one after the other. Running headers, footers and page numbers are left out and counted in the first line; `--show headers` shows them, as `[header] …`.
         - Output stops at about 5,000 tokens with a `next:` line: run that command as given.
         - `^{...}` and `_{...}` mark raised and lowered characters, as in `10^{-5}` and `x_{2}`.
-        - `pick`, `transcribe`, `rm`, `doctor` take `--dry-run`: they say what they would do. Every command takes `--json`. Exit 0 done; 2 pages flagged, rest valid (`read`, `add`, `reparse`, `dump` only; `info`, `search`, `crop` end 0 and name them); 3 the file failed, or `read` found no text; 1 could not run, as on a missing file; 64 used wrongly. A failure reads `<path>: failed: <reason>`, in `--json` `{"file": …, "failed": …}`.
+        - `pick`, `transcribe`, `rm`, `doctor` (with `--clean`) take `--dry-run`: they say what they would do. Every command takes `--json`. Exit 0 done; 2 pages flagged, rest valid (`read`, `add`, `reparse`, `dump` only; `info`, `search`, `crop` end 0 and name them); 3 the file failed, or `read` found no text; 1 could not run, as on a missing file; 64 used wrongly. A failure reads `<path>: failed: <reason>`, in `--json` `{"file": …, "failed": …}`.
 
         ## Beside the text
 

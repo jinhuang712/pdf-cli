@@ -40,3 +40,4 @@ The spike's reports (M0) are in [spike/](../spike/README.md).
 | M2.17 `--show raw,hidden,headers` | 2026-10-25 | 0 high, 0 medium; 6 fixed, 3 kept | [M2.17](M2.17-show.md) |
 | M2.18 `--dry-run` | 2026-10-25 | 0 high; 10 fixed, 1 kept | [M2.18](M2.18-dry-run.md) |
 | M2.10 `pdf reparse` | 2026-10-25 | 1 high, 4 medium, 5 low; 10 fixed, 5 kept | [M2.10](M2.10-reparse.md) |
+| M2.11 `pdf setup`, `pdf doctor`, `gc` into `doctor --clean` | 2026-10-25 | 1 high, 5 medium, 9 low; 15 fixed | [M2.11](M2.11-setup-doctor.md) |

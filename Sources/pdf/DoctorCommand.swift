@@ -11,7 +11,7 @@ struct DoctorCommand: ParsableCommand {
         discussion: """
             Shows the macOS version and what a newer one unlocks, the parser version, the models installed, the size \
             and counts of the cache and the library, the parsing settings in force and where each comes from, what \
-            runs now, and the problems found. Ends 2 when it found a problem. Without --clean it changes nothing.
+            runs now, and the problems found. It ends 0 and lists the problems it found. Without --clean it changes nothing.
 
             --clean removes cached results for files that no longer exist or changed and for old parser versions, \
             the library entries of files that no longer exist, leftover runner locks and crops older than 7 days, \
@@ -61,14 +61,13 @@ struct DoctorCommand: ParsableCommand {
             print(Contract.json(Body(report: report, clean: cleaned)))
         } else if let cleaned {
             print(Self.cleanLine(cleaned))
+            for note in report.notes { print("note: \(note)") }
             let left = dryRun ? report.problems.filter { !report.fixedByClean.contains($0) } : report.problems
             for problem in left { print("problem: \(problem)") }
         } else {
             print(Self.render(report))
         }
-        // With --clean, the problems it fixes are not left to report: a dry run ends as the real run.
-        let left = clean ? report.problems.filter { !report.fixedByClean.contains($0) } : report.problems
-        if !left.isEmpty { throw ExitCode(2) }
+        // Like info, search and crop, it ends 0 and lists what it found; --clean ends as the clean did.
     }
 
     static func size(_ bytes: Int64) -> String {
@@ -90,13 +89,13 @@ struct DoctorCommand: ParsableCommand {
         ].joined(separator: ", ")
         if clean.dryRun == true {
             return "dry run: would remove \(counts) · compacting would give back at least \(size(clean.freedBytes)), more once the rows are gone"
-                + (clean.compacted ? "" : "; a parse is running, so it would wait") + "; nothing was removed"
+                + (clean.parseRunning ? "; a parse is running, so it would wait" : "") + "; nothing was removed"
         }
         return "removed \(counts)"
             + (clean.compacted
                 ? " · compacted the cache, freed \(size(clean.freedBytes))"
                 : (clean.freedBytes > 0 ? " · freed \(size(clean.freedBytes)) of crops" : ""))
-            + (clean.compacted ? "" : "\na parse is running, so the rest of the space returns after the next pdf doctor --clean")
+            + (clean.parseRunning ? "\na parse is running, so the rest of the space returns after the next pdf doctor --clean" : "")
     }
 
     /// Where a setting comes from, in words.
@@ -134,11 +133,13 @@ struct DoctorCommand: ParsableCommand {
         }
         lines.append(libraryLine + " · \(library.path)")
         let parsing = report.parsing
-        let budget = parsing.memoryBudgetMB.value.map { size(Int64($0) << 20) + " (" + from(parsing.memoryBudgetMB) + ")" } ?? "not set (the default)"
-        var parse = "parsing: memory budget \(budget) · \(count(parsing.workers.value ?? 0, "worker")) at once, \(from(parsing.workers))"
-        parse += " · a worker is stopped at \(parsing.workerLimitMB.value ?? 0) MB, \(from(parsing.workerLimitMB))"
+        let budgetValue = parsing.memoryBudgetMB.value.value
+        let workers = parsing.workers.value.value ?? 0
+        let budget = budgetValue.map { Settings.format($0) + " (" + from(parsing.memoryBudgetMB) + ")" } ?? "not set (the default)"
+        var parse = "parsing: memory budget \(budget) · \(count(workers, "worker")) at once, \(from(parsing.workers))"
+        parse += " · a worker is stopped at \(Settings.format(parsing.workerLimitMB.value.value ?? 0)), \(from(parsing.workerLimitMB))"
         parse += " · \(parsing.performanceCores) performance cores · load \(parsing.load)"
-        if parsing.workersNow != parsing.workers.value {
+        if parsing.workersNow != workers {
             parse += " (\(parsing.loadReasons.joined(separator: ", ")): \(parsing.workersNow) worker\(parsing.workersNow == 1 ? "" : "s") for now)"
         }
         lines.append(parse)
@@ -155,8 +156,12 @@ struct DoctorCommand: ParsableCommand {
             clean.runnerLocks > 0 ? count(clean.runnerLocks, "runner lock") : nil, clean.crops > 0 ? count(clean.crops, "old crop") : nil,
         ].compactMap { $0 }
         if !would.isEmpty {
-            lines.append("pdf doctor --clean would remove \(would.joined(separator: ", ")); see first: pdf doctor --clean --dry-run")
+            // A dry run needs a cache it can open read-only; with any other state, say only what the clean does.
+            lines.append(
+                "pdf doctor --clean would remove \(would.joined(separator: ", "))"
+                    + (cache.state == "ok" ? "; to see first: pdf doctor --clean --dry-run" : ""))
         }
+        for note in report.notes { lines.append("note: \(note)") }
         lines.append(report.problems.isEmpty ? "problems: none" : report.problems.map { "problem: \($0)" }.joined(separator: "\n"))
         return lines.joined(separator: "\n")
     }

@@ -52,7 +52,7 @@ public enum Env {
     }
 
     /// How much memory one worker may hold before it is stopped and its page fails.
-    public static var memoryLimitBytes: UInt64 { UInt64(parsing.workerLimitMB) << 20 }
+    public static var memoryLimitBytes: UInt64 { UInt64(min(max(parsing.workerLimitMB, 1), Settings.maximumMB)) << 20 }
 
     /// The password that `pdf add --password` gives for a locked file. It reaches the runner
     /// and its workers in their environment, which other users cannot read, unlike a command

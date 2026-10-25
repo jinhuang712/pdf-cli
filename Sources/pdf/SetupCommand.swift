@@ -46,7 +46,7 @@ struct SetupCommand: ParsableCommand {
     static func choice(_ text: String) -> Result<Choice, ValidationError> {
         let word = text.trimmingCharacters(in: .whitespaces).lowercased()
         if word == "default" { return .success(.budget(nil)) }
-        if let preset = Settings.Preset(rawValue: word) { return .success(.budget(preset.megabytes)) }
+        if let preset = Settings.Preset(rawValue: word) { return .success(.budget(preset.megabytes(performanceCores: Env.performanceCores))) }
         switch Settings.parseMemory(word) {
         case .success(let megabytes): return .success(.budget(megabytes))
         case .failure(let error): return .failure(ValidationError(error.description))
@@ -58,29 +58,26 @@ struct SetupCommand: ParsableCommand {
         let word = line.trimmingCharacters(in: .whitespaces).lowercased()
         if word.isEmpty { return .success(nil) }
         if let number = Int(word), (1...Settings.Preset.allCases.count).contains(number) {
-            return .success(.budget(Settings.Preset.allCases[number - 1].megabytes))
+            return .success(.budget(Settings.Preset.allCases[number - 1].megabytes(performanceCores: Env.performanceCores)))
         }
         return choice(word).map { $0 }
-    }
-
-    static func size(_ megabytes: Int) -> String {
-        megabytes % 1024 == 0 ? "\(megabytes / 1024) GB" : "\(megabytes) MB"
     }
 
     static func prompt(current: Int?, cores: Int) -> String {
         var lines = ["How much memory may parsing take? Workers at once follow from it and this Mac's \(cores) performance cores."]
         for (index, preset) in Settings.Preset.allCases.enumerated() {
-            let plan = Settings.plan(budgetMB: preset.megabytes, performanceCores: cores)
-            lines.append("  \(index + 1)  \(preset.rawValue)  \(size(preset.megabytes))  up to \(count(plan.workers, "worker")): \(preset.summary)")
+            let megabytes = preset.megabytes(performanceCores: cores)
+            let workers = Settings.plan(budgetMB: megabytes, performanceCores: cores).workers
+            lines.append("  \(index + 1)  \(preset.rawValue)  \(Settings.format(megabytes))  \(count(workers, "worker")): \(preset.summary)")
         }
-        let now = current.map { "now \(size($0))" } ?? "now the default"
-        lines.append("Or a size such as 3GB, or \"default\". Enter keeps it (\(now)).")
+        let now = current.map { "now \(Settings.format($0))" } ?? "now the default, as balanced"
+        lines.append("Or a size such as 3GB, or \"default\". Enter keeps it (\(now)). Fewer workers run when the Mac is under pressure.")
         return lines.joined(separator: "\n")
     }
 
     struct Body: Encodable {
-        var memoryMB: Int?
-        var preset: String?
+        var memoryMB: Nullable<Int>
+        var preset: Nullable<String>
         var workers: Int
         var workerLimitMB: Int
         var performanceCores: Int
@@ -100,7 +97,7 @@ struct SetupCommand: ParsableCommand {
     }
 
     func setup() throws {
-        let stored = Settings.load().stored
+        let (stored, loadProblem) = Settings.load()
         let cores = Env.performanceCores
         var chosen: Choice?
         var prompted = false
@@ -125,7 +122,7 @@ struct SetupCommand: ParsableCommand {
         var budget = stored.memoryMB
         var changed = false
         if case .budget(let new)? = chosen {
-            changed = new != stored.memoryMB
+            changed = new != stored.memoryMB || loadProblem != nil
             budget = new
             if changed { try Settings.save(Settings.Stored(memoryMB: new)) }
         }
@@ -133,10 +130,10 @@ struct SetupCommand: ParsableCommand {
         var overridden: [String] = []
         if Env.parsing.workersSource == .environment { overridden.append("PDF_CLI_WORKERS") }
         if Env.parsing.workerLimitSource == .environment { overridden.append("PDF_CLI_MEMORY_LIMIT_MB") }
-        var warnings: [String] = []
+        var warnings: [String] = loadProblem.map { [$0] } ?? []
         let physical = Int(ProcessInfo.processInfo.physicalMemory >> 20)
         if let budget, budget * 2 > physical {
-            warnings.append("\(Self.size(budget)) is more than half of this Mac's \(Self.size(physical)) of memory")
+            warnings.append("\(Settings.format(budget)) is more than half of this Mac's \(Settings.format(physical)) of memory")
         }
         if let budget, budget < Settings.workerLimitMB {
             warnings.append("under 2 GB, a page that needs more fails with a memory-limit failure")
@@ -148,7 +145,8 @@ struct SetupCommand: ParsableCommand {
             ? "no models to download: none is built yet, and nothing built needs one"
             : "\(models.count) to download; each shows its licence first and downloads only after you accept it"
         let body = Body(
-            memoryMB: budget, preset: budget.flatMap { Settings.preset(forMB: $0)?.rawValue }, workers: plan.workers,
+            memoryMB: Nullable(budget), preset: Nullable(budget.flatMap { Settings.preset(forMB: $0, performanceCores: cores)?.rawValue }),
+            workers: plan.workers,
             workerLimitMB: plan.workerLimitMB, performanceCores: cores, changed: changed, prompted: prompted,
             file: Settings.file().path, overriddenBy: overridden, warnings: warnings,
             models: ModelsBody(available: models.map(\.name), installed: installed, downloaded: [], note: note))
@@ -156,8 +154,8 @@ struct SetupCommand: ParsableCommand {
             print(Contract.json(body))
             return
         }
-        let name = body.preset.map { " (\($0))" } ?? ""
-        let now = budget.map { "parsing may take \(Self.size($0))\(name)" } ?? "parsing's memory is not set: the default holds"
+        let name = body.preset.value.map { " (\($0))" } ?? ""
+        let now = budget.map { "parsing may take \(Settings.format($0))\(name)" } ?? "parsing's memory is not set: the default holds"
         let how = changed ? "saved" : (chosen == nil ? "unchanged" : "already set")
         print("\(now) · \(count(plan.workers, "worker")) at once, each stopped at \(plan.workerLimitMB) MB · \(how)")
         if chosen == nil && !prompted { print("to set it: pdf setup --memory light|balanced|fastest|<size>|default") }

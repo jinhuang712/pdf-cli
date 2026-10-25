@@ -13,10 +13,10 @@ import Testing
         .map { ($0._commandName, $0) })
 
     /// Flags a command has that the guide leaves out, on purpose: `--full` reads as a read with
-    /// no page flag does, `--password` shows the password to every user of the Mac, and `dump`'s
+    /// no page flag does, `--password` shows the password to every user of the Mac, `add -j` sets a worker count, which an agent never does (the user's budget sets it), and `dump`'s
     /// `--page` and `--password-stdin` work as they do for the other commands.
     static let leftOut: [String: Set<String>] = [
-        "read": ["--full"], "add": ["--password"], "dump": ["--page", "--password-stdin"],
+        "read": ["--full"], "add": ["--password", "-j"], "dump": ["--page", "--password-stdin"],
         "reparse": ["--password", "--password-stdin"],
     ]
     /// `--json` is on every command (FEATURES.md → F7), and the guide says so once, in its line

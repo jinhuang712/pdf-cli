@@ -145,7 +145,7 @@ public final class Store: Sendable {
     /// A dry run says why it cannot open the cache without changing it.
     public struct OlderCache: Error, CustomStringConvertible {
         public var description: String {
-            "the cache is from an older version of pdf, which the next normal command brings up to date; a dry run changes nothing: run pdf read on the file first"
+            "the cache is from an older version of pdf, which the next normal command brings up to date; a dry run changes nothing: run pdf ls, then again"
         }
     }
 
@@ -660,6 +660,9 @@ public final class Store: Sendable {
     /// of runners that are gone. A file out of reach, as on an unplugged drive, keeps its rows.
     public func collectGarbage() throws -> Removed {
         let stale = try staleFiles()
+        // Which locks are left over is decided before anything is deleted, from the processes as
+        // they are now: a lock whose process exists is not left over, however long it is silent.
+        let leftover = try runners().leftover
         return try write { db in
             var removed = Removed()
             // Only an entry that still holds the stat read above goes: a runner may have indexed
@@ -673,9 +676,8 @@ public final class Store: Sendable {
             try db.execute(sql: "DELETE FROM page_result WHERE parser_version <> ?", arguments: [Env.parserVersion])
             removed.pages += db.changesCount
             try Store.dropUnused(db, into: &removed)
-            for row in try Row.fetchAll(db, sql: "SELECT lock_key, pid, heartbeat_at FROM runner_lock")
-            where !Store.isAlive(pid: row["pid"], heartbeat: row["heartbeat_at"]) {
-                try db.execute(sql: "DELETE FROM runner_lock WHERE lock_key = ?", arguments: [row["lock_key"] as String])
+            for key in leftover {
+                try db.execute(sql: "DELETE FROM runner_lock WHERE lock_key = ?", arguments: [key])
             }
             return removed
         }
@@ -697,10 +699,7 @@ public final class Store: Sendable {
     /// runs only while no runner is alive: false means it did not run. VACUUM writes
     /// the rebuilt database through the write-ahead log, so the log is emptied again after it.
     public func compact() -> Bool {
-        let busy = (try? pool.read { db in
-            try Row.fetchAll(db, sql: "SELECT pid, heartbeat_at FROM runner_lock")
-                .contains { Store.isAlive(pid: $0["pid"], heartbeat: $0["heartbeat_at"]) }
-        }) ?? true
+        let busy = (try? runners().alive.isEmpty == false) ?? true
         guard !busy else { return false }
         do {
             try pool.writeWithoutTransaction { db in
@@ -799,6 +798,17 @@ public final class Store: Sendable {
         }
     }
 
+    /// How long a lock's heartbeat may be silent before the lock is judged left over even though
+    /// its process exists: a runner that was stopped (SIGSTOP) or a pid that another process
+    /// took after a reboot. Minutes, not seconds, so a stopped runner is not cleaned from under it.
+    static let leftoverAfter: TimeInterval = 600
+
+    /// Whether a lock still belongs to a runner: its process exists and its heartbeat is not minutes old.
+    static func isHeld(pid: Int32, heartbeat: Double) -> Bool {
+        guard Date().timeIntervalSince1970 - heartbeat < leftoverAfter else { return false }
+        return kill(pid, 0) == 0 || errno == EPERM
+    }
+
     static func isAlive(pid: Int32, heartbeat: Double) -> Bool {
         guard Date().timeIntervalSince1970 - heartbeat < heartbeatTimeout else { return false }
         return kill(pid, 0) == 0 || errno == EPERM
@@ -844,7 +854,7 @@ extension Store {
             var alive: [LiveRunner] = []
             var leftover: [String] = []
             for row in try Row.fetchAll(db, sql: "SELECT lock_key, pid, heartbeat_at FROM runner_lock ORDER BY lock_key") {
-                if Store.isAlive(pid: row["pid"], heartbeat: row["heartbeat_at"]) {
+                if Store.isHeld(pid: row["pid"], heartbeat: row["heartbeat_at"]) {
                     alive.append(LiveRunner(pid: row["pid"], lock: row["lock_key"]))
                 } else {
                     leftover.append(row["lock_key"])

@@ -440,6 +440,12 @@ public final class Runner: @unchecked Sendable {
                 (reparse == nil ? requestedPages(docID: docID, keys: keys, firstIndex: firstIndex) : waitedOn)
                 + fullSpeed.sorted()
             promote(workers, requested: requested)
+            // With a pool of one slot, a worker nobody waits on yields it to a command that does.
+            if Pressure.reduced(poolSize) < 2, WorkerPool.foregroundWaiting() {
+                for worker in workers where worker.inBackground && worker.exitStatus == nil {
+                    stop(worker, reason: "yielded its slot to a page a command waits on", kind: .yielded)
+                }
+            }
             var waitingForSlot = false
             while workers.count < capacity, !(pending.isEmpty && alone.isEmpty) {
                 let fromAlone = !alone.isEmpty
@@ -505,6 +511,11 @@ public final class Runner: @unchecked Sendable {
                     // The file opened when it was indexed, so a failure now usually means it
                     // moved or changed. `save` checks that before it caches anything.
                     unreported.forEach { save($0, .failed(failure)) }
+                    continue
+                }
+                if worker.stopKind == .yielded {
+                    // Nothing failed: the pages wait their turn again, and no try is counted.
+                    pending.insert(contentsOf: unreported, at: 0)
                     continue
                 }
                 if worker.endedCleanly {
@@ -583,7 +594,7 @@ public final class Runner: @unchecked Sendable {
 
     // MARK: Workers
 
-    enum StopKind { case pageTime, silence, opening, memory, runner }
+    enum StopKind { case pageTime, silence, opening, memory, runner, yielded }
 
     final class Supervised {
         let id: Int

@@ -218,9 +218,10 @@ import Testing
         #expect(reason != nil && !reason!.contains("Error Domain") && !reason!.contains("NSCocoa"), "\(run.output)")
     }
 
-    @Test func aCompactingCleanDoesNotBlameARemovalThatNeverHappened() throws {
+    @Test func aCompactingCleanDoesNotBlameARemovalThatNeverHappened() async throws {
         let home = try Self.freshHome()
         _ = try Self.pdf(["add", Self.fixture], home: home)
+        try await DryRunTests.settle(home)
         for _ in 0..<2 {
             let run = try Self.pdf(["doctor", "--clean"], home: home)
             #expect(run.status == 0 && run.output.contains("freed") && !run.output.contains("pdf rm"), "\(run.output)")

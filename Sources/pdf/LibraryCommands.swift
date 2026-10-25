@@ -20,9 +20,11 @@ struct AddCommand: ParsableCommand {
     )
 
     @Argument(help: "PDF files, folders or glob patterns.") var paths: [String]
-    @Option(name: .customShort("j"),
-            help: ArgumentHelp("Parse with up to N workers at once. By default, every parse on the Mac shares half the performance cores.",
-                               valueName: "N"))
+    @Option(
+        name: .customShort("j"),
+        help: ArgumentHelp(
+            "Parse with fewer workers than the Mac allows: at most the number pdf setup's memory budget gives, which is half the performance cores until it is set.",
+            valueName: "N"))
     var workers: Int?
     @Option(help: "The password that opens a locked PDF. Other users of the Mac can see it in this command's line while it runs; --password-stdin keeps it out.")
     var password: String?
@@ -80,7 +82,7 @@ struct AddCommand: ParsableCommand {
         var flagged = 0, failed = missing
         for file in files {
             do {
-                switch try reader.read(path: file, pages: nil, workers: workers, password: password) {
+                switch try reader.read(path: file, pages: nil, workers: workers.map { min($0, Env.workerCount) }, password: password) {
                 case .fileFailed(let reason):
                     failed += 1
                     unopenable += 1

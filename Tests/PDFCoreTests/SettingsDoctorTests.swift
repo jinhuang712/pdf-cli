@@ -13,7 +13,10 @@ import Testing
     }
 
     @Test func aMemorySizeReadsAsAPersonWritesIt() {
-        for (text, megabytes) in [("4GB", 4096), ("4gb", 4096), ("4 GB", 4096), ("2.5GB", 2560), ("3072MB", 3072), ("3072", 3072), ("1g", 1024)] {
+        for (text, megabytes) in [
+            ("4GB", 4096), ("4gb", 4096), ("4 GB", 4096), ("2.5GB", 2560), ("3072MB", 3072), ("3072", 3072), ("1g", 1024), ("1TB", 1_048_576),
+            ("1 tb", 1_048_576), ("0.5TB", 524_288),
+        ] {
             #expect(Settings.parseMemory(text) == .success(megabytes), "\(text)")
         }
         #expect(Settings.parseMemory("banana") == .failure(.notANumber("banana")))
@@ -22,16 +25,32 @@ import Testing
         #expect(Settings.parseMemory("4") == .failure(.ambiguous("4")))
         #expect(Settings.parseMemory("100MB") == .failure(.tooSmall(100)))
         #expect(Settings.parseMemory("511") == .failure(.tooSmall(511)))
+        // No overflow, whatever is written: too large, or not a plain number at all.
+        for huge in ["1.0000001TB", "2TB", "9223372036854775807", "4611686018427387904", "99999999999999999999GB"] {
+            #expect(Settings.parseMemory(huge) == .failure(.tooLarge), "\(huge)")
+        }
+        for odd in ["1e19", "1e3GB", "0x10", "0x10GB", "inf", "nan", "+4GB", "4GB4", "", "GB", "4.GB"] {
+            #expect(Settings.parseMemory(odd) == .failure(.notANumber(odd)), "\(odd)")
+        }
+        #expect(Settings.format(4096) == "4 GB" && Settings.format(512) == "512 MB" && Settings.format(1_048_576) == "1 TB")
+        #expect(Settings.format(2560) == "2.5 GB")
     }
 
     @Test func theWorkerCountFollowsFromTheBudgetAndTheCores() {
         // The default is what the pool always gave: half the performance cores, at least 2, each 2 GB.
         #expect(Settings.plan(budgetMB: nil, performanceCores: 4) == .init(workers: 2, workerLimitMB: 2048))
         #expect(Settings.plan(budgetMB: nil, performanceCores: 8) == .init(workers: 4, workerLimitMB: 2048))
-        for cores in [2, 4, 6, 8, 12] {
-            #expect(Settings.plan(budgetMB: Settings.Preset.light.megabytes, performanceCores: cores).workers == 1)
-            #expect(Settings.plan(budgetMB: Settings.Preset.balanced.megabytes, performanceCores: cores).workers == 2)
-            #expect(Settings.plan(budgetMB: Settings.Preset.fastest.megabytes, performanceCores: cores).workers == min(4, max(2, cores)))
+        // The presets scale with the cores: light is one worker, balanced is the default, fastest a
+        // worker for each performance core, so the default is never above fastest or below balanced.
+        for cores in [1, 2, 3, 4, 6, 8, 10, 12, 16, 24, 32] {
+            let light = Settings.plan(budgetMB: Settings.Preset.light.megabytes(performanceCores: cores), performanceCores: cores)
+            let balanced = Settings.plan(budgetMB: Settings.Preset.balanced.megabytes(performanceCores: cores), performanceCores: cores)
+            let fastest = Settings.plan(budgetMB: Settings.Preset.fastest.megabytes(performanceCores: cores), performanceCores: cores)
+            let unset = Settings.plan(budgetMB: nil, performanceCores: cores)
+            #expect(light.workers == 1)
+            #expect(balanced == unset, "\(cores) cores")
+            #expect(fastest.workers == max(2, cores) && unset.workers <= fastest.workers && light.workers <= unset.workers)
+            #expect(unset.workers * unset.workerLimitMB <= Settings.Preset.fastest.megabytes(performanceCores: cores))
         }
         // The workers' limits never add up past the budget, and a budget below 2 GB is one smaller worker.
         for budget in [512, 1024, 2048, 3000, 4096, 6000, 8192, 65536] {
@@ -41,6 +60,7 @@ import Testing
         }
         #expect(Settings.plan(budgetMB: 1024, performanceCores: 8) == .init(workers: 1, workerLimitMB: 1024))
         #expect(Settings.plan(budgetMB: 65536, performanceCores: 4).workers == 4)
+        #expect(Settings.plan(budgetMB: Settings.maximumMB, performanceCores: 8).workers == 8)
     }
 
     @Test func theSettingIsStoredAndEnvReadsItBack() throws {
@@ -70,9 +90,46 @@ import Testing
         let (stored, problem) = Settings.load(from: support)
         #expect(stored == Settings.Stored() && problem?.contains("is not valid") == true)
         try Data(#"{"memoryMB": 64}"#.utf8).write(to: Settings.file(in: support))
-        #expect(Settings.load(from: support).problem?.contains("under the least") == true)
+        #expect(Settings.load(from: support).problem?.contains("outside 512 MB to 1 TB") == true)
         #expect(Env.resolveParsing(supportDirectory: support, variables: [:]).problem != nil)
-        #expect(Doctor.inspect(cache: folder("c"), support: support).problems.contains { $0.contains("under the least") })
+        // Values that would overflow a shift or a product are a problem, never a crash.
+        for huge in ["1e19", "4611686018427387904", "9223372036854775807", "-5", "1.5"] {
+            try Data(#"{"memoryMB": \#(huge)}"#.utf8).write(to: Settings.file(in: support))
+            let problem = Settings.load(from: support).problem
+            #expect(problem != nil, "\(huge)")
+            let parsing = Env.resolveParsing(supportDirectory: support, variables: [:])
+            #expect(parsing.memoryBudgetMB == nil && parsing.workers >= 1 && UInt64(parsing.workerLimitMB) << 20 > 0)
+            #expect(Doctor.inspect(cache: folder("c"), support: support).problems.contains { $0.contains("settings.json") }, "\(huge)")
+        }
+    }
+
+    @Test func aSettingsFileThatCannotBeReadIsAProblemAndOnlyNotFoundMeansNotSet() throws {
+        let support = folder("unreadable")
+        try Settings.save(.init(memoryMB: 4096), to: support)
+        let file = Settings.file(in: support)
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: file.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path) }
+        if getuid() != 0 {
+            #expect(Settings.load(from: support).problem?.contains("cannot be read") == true)
+            #expect(Doctor.inspect(cache: folder("c"), support: support).problems.contains { $0.contains("cannot be read") })
+        }
+        #expect(Settings.load(from: folder("none")).problem == nil)
+    }
+
+    @Test func aLinkedSettingsFileIsWrittenThroughAndKept() throws {
+        let support = folder("link-support")
+        let elsewhere = folder("link-target")
+        let target = elsewhere.appendingPathComponent("my-settings.json")
+        try Data(#"{"memoryMB": 3072}"#.utf8).write(to: target)
+        try FileManager.default.createSymbolicLink(at: Settings.file(in: support), withDestinationURL: target)
+        try Settings.save(.init(memoryMB: 8192), to: support)
+        #expect((try? FileManager.default.destinationOfSymbolicLink(atPath: Settings.file(in: support).path)) != nil)
+        #expect(Settings.load(from: support).stored.memoryMB == 8192)
+        #expect(String(data: try Data(contentsOf: target), encoding: .utf8)?.contains("8192") == true)
+        // Clearing writes an empty object through the link: the link and its target stay.
+        try Settings.save(.init(), to: support)
+        #expect((try? FileManager.default.destinationOfSymbolicLink(atPath: Settings.file(in: support).path)) != nil)
+        #expect(FileManager.default.fileExists(atPath: target.path) && Settings.load(from: support).stored == Settings.Stored())
     }
 
     @Test func fewerWorkersRunUnderPressureAndOCRPagesWeighMore() {
@@ -119,7 +176,7 @@ import Testing
                 == "text recognizer")
     }
 
-    @Test func doctorOnNothingSaysNoneYetAndCreatesNothing() {
+    @Test func doctorOnNothingSaysNoneYetAndCreatesNothing() throws {
         let cache = folder("empty-cache")
         let support = folder("empty-support")
         let report = Doctor.inspect(cache: cache, support: support)
@@ -128,6 +185,74 @@ import Testing
         #expect(report.models.installed.isEmpty && report.models.available.isEmpty)
         #expect(((try? FileManager.default.contentsOfDirectory(atPath: cache.path)) ?? []).isEmpty)
         #expect(((try? FileManager.default.contentsOfDirectory(atPath: support.path)) ?? []).isEmpty)
+        // A clean of nothing does not claim a parse is running.
+        let clean = try Doctor.clean(dryRun: false, cache: cache, support: support)
+        #expect(clean.parseRunning == false)
+        let dry = try Doctor.clean(dryRun: true, cache: folder("empty-cache2"), support: folder("empty-support2"))
+        #expect(dry.parseRunning == false)
+    }
+
+    @Test func aStateTheNextCommandRepairsIsANoteAndAnUnopenableCacheIsAProblemWithANextStep() throws {
+        let world = try makeWorld()
+        defer { try? FileManager.default.removeItem(atPath: world.here) }
+        let store = try Store(directory: world.cache)
+        try store.pool.writeWithoutTransaction { try $0.execute(sql: "PRAGMA user_version = 3") }
+        let older = Doctor.inspect(cache: world.cache, support: world.support)
+        #expect(older.cache.state == "older schema" && older.notes.count == 1)
+        #expect(!older.problems.contains { $0.contains("older version") })
+        // A database that is not one: a problem, with the folder to remove and no raw SQLite text alone.
+        let broken = folder("broken-cache")
+        try Data(repeating: 7, count: 4096).write(to: broken.appendingPathComponent("cache.sqlite"))
+        let report = Doctor.inspect(cache: broken, support: folder("s"))
+        #expect(report.cache.state == "cannot open")
+        #expect(report.problems.contains { $0.contains("rm -r") && $0.contains(broken.path) })
+        let json =
+            try JSONSerialization.jsonObject(with: JSONEncoder().encode(Doctor.inspect(cache: folder("c"), support: folder("s")))) as? [String: Any]
+        #expect((json?["cache"] as? [String: Any])?.keys.contains("schema") == true)
+        #expect((((json?["parsing"] as? [String: Any])?["memoryBudgetMB"]) as? [String: Any])?.keys.contains("value") == true)
+    }
+
+    @Test func everySlotFileIsCounted() throws {
+        let cache = folder("slots")
+        let held = (0..<6).compactMap { _ in WorkerPool.acquire(foreground: true, size: 6, directory: cache) }
+        #expect(held.count == 6 && Doctor.slotsInUse(cache) == 6)
+        held.last?.release()
+        #expect(Doctor.slotsInUse(cache) == 5)
+    }
+
+    /// A runner that was stopped (SIGSTOP) keeps its pid and stops its heartbeat: its lock is not left
+    /// over, and the cache is not compacted from under it. A lock whose process is gone is left over.
+    @Test func aStoppedRunnersLockIsNotLeftOverButADeadOnesIs() throws {
+        let cache = folder("stopped")
+        let store = try Store(directory: cache)
+        // Spawned with posix_spawn, not Foundation's Process, whose child watching a stopped child can stall other tests.
+        let child = try Processes.spawn("/bin/sleep", ["60"], detached: false, captureOutput: false).pid
+        defer {
+            kill(child, SIGCONT)
+            kill(child, SIGKILL)
+            var status: Int32 = 0
+            waitpid(child, &status, 0)
+        }
+        kill(child, SIGSTOP)
+        let now = Date().timeIntervalSince1970
+        try store.write { db in
+            // Silent for a minute, as a stopped runner is, but its process exists.
+            try db.execute(
+                sql: "INSERT INTO runner_lock (lock_key, pid, heartbeat_at) VALUES ('path:/stopped', ?, ?)",
+                arguments: [child, now - 60])
+            try db.execute(
+                sql: "INSERT INTO runner_lock (lock_key, pid, heartbeat_at) VALUES ('path:/dead', 999999, ?)",
+                arguments: [now])
+        }
+        let locks = try store.runners()
+        #expect(locks.alive.map(\.lock) == ["path:/stopped"] && locks.leftover == ["path:/dead"])
+        let report = try Doctor.clean(dryRun: false, cache: cache, support: folder("s"))
+        #expect(report.removed["runnerLocks"] == 1 && report.compacted == false && report.parseRunning)
+        let after = try store.runners()
+        #expect(after.alive.map(\.lock) == ["path:/stopped"] && after.leftover.isEmpty)
+        // Minutes of silence make even that one leftover.
+        try store.write { db in try db.execute(sql: "UPDATE runner_lock SET heartbeat_at = ?", arguments: [now - 3600]) }
+        #expect(try store.runners().alive.isEmpty)
     }
 
     /// A cache with a file that is gone, a file that stays, an old parser's page and a leftover lock;

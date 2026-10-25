@@ -1,10 +1,22 @@
 import Darwin
 import Foundation
+import GRDB
 
 /// What `pdf doctor` shows (FEATURES.md → F12): the Mac, the parser, the models, what the cache and
 /// the library hold, the parsing settings in force, what is running, and what is wrong. It reads
 /// everything read-only, so it changes nothing and never parses; `Doctor.clean` is what `--clean`
 /// adds, the job `pdf gc` had.
+/// A value that encodes as `null` when it is missing, where a plain optional would leave its key out:
+/// every key of a command's JSON is always there (FEATURES.md → F7).
+public struct Nullable<Value: Encodable>: Encodable {
+    public var value: Value?
+    public init(_ value: Value?) { self.value = value }
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        if let value { try container.encode(value) } else { try container.encodeNil() }
+    }
+}
+
 public struct DoctorReport: Encodable {
     public struct MacOS: Encodable {
         public var version: String
@@ -29,12 +41,13 @@ public struct DoctorReport: Encodable {
 
     public struct Cache: Encodable {
         public var path: String
-        /// "ok", "none yet", "older schema" or "cannot open".
+        /// "ok", "none yet", "older schema" or "log files gone" (the next normal command repairs both),
+        /// "cut off" (a runner left work half written; the next normal command repairs it), or "cannot open".
         public var state: String
         /// The whole folder: the database, the crop images and the pool's slot files.
         public var bytes: Int64
         public var databaseBytes: Int64
-        public var schema: Int?
+        public var schema: Nullable<Int>
         public var files: Int
         public var documents: Int
         public var pages: Int
@@ -52,7 +65,7 @@ public struct DoctorReport: Encodable {
     }
 
     public struct Setting: Encodable {
-        public var value: Int?
+        public var value: Nullable<Int>
         /// "setup", "environment" or "default", with the variable's name for the environment.
         public var source: String
     }
@@ -104,7 +117,9 @@ public struct DoctorReport: Encodable {
     /// What `pdf doctor --clean` would remove now.
     public var cleanable: Cleanable
     public var missing: [Missing]
+    /// What is wrong and needs the user. A state the next normal command repairs is a note, not a problem.
     public var problems: [String]
+    public var notes: [String]
     /// The problems that `--clean` fixes: a subset of `problems`.
     public var fixedByClean: [String]
 }
@@ -116,6 +131,8 @@ public struct CleanReport: Encodable {
     /// the database now; compacting gives back more once the rows are gone.
     public var freedBytes: Int64
     public var compacted: Bool
+    /// Compacting waited because a parse is running; the space returns at the next clean.
+    public var parseRunning: Bool
     public var dryRun: Bool?
 }
 
@@ -126,13 +143,14 @@ public enum Doctor {
         modelList: [ModelSpec] = Models.available
     ) -> DoctorReport {
         var problems: [String] = []
+        var notes: [String] = []
         var fixable: [String] = []
         let macOS = macOSReport()
 
         // The cache.
         var cache = DoctorReport.Cache(
             path: cacheDirectory.path, state: "none yet", bytes: folderSize(cacheDirectory),
-            databaseBytes: databaseBytes(cacheDirectory, "cache.sqlite"), schema: nil, files: 0,
+            databaseBytes: databaseBytes(cacheDirectory, "cache.sqlite"), schema: Nullable(nil), files: 0,
             documents: 0, pages: 0, crops: 0, cropBytes: 0)
         let crops = Crop.usage(in: cacheDirectory.appendingPathComponent("crops", isDirectory: true))
         cache.crops = crops.images
@@ -146,7 +164,7 @@ public enum Doctor {
                 let store = try Store(directory: cacheDirectory, readOnly: true)
                 let counts = try store.counts()
                 cache.state = "ok"
-                cache.schema = Store.schemaVersion
+                cache.schema = Nullable(Store.schemaVersion)
                 cache.files = counts.files
                 cache.documents = counts.documents
                 cache.pages = counts.pages
@@ -162,11 +180,21 @@ public enum Doctor {
                 }
             } catch is Store.OlderCache {
                 cache.state = "older schema"
-                problems.append("the cache is from an older version of pdf; the next normal command brings it up to date")
+                notes.append("the cache is from an older version of pdf; the next normal command (pdf ls) brings it up to date")
+            } catch let error as DatabaseError where error.resultCode == .SQLITE_CANTOPEN {
+                cache.state = "log files gone"
+                notes.append("the cache's log files are gone; the next normal command (pdf ls) recreates them")
+            } catch let error as DatabaseError where error.resultCode == .SQLITE_READONLY {
+                cache.state = "cut off"
+                notes.append("another pdf run was cut off and left its work half written; the next normal command (pdf ls) repairs it")
             } catch {
                 cache.state = "cannot open"
-                problems.append("the cache cannot be opened: \(Store.readOnlyFailure(error) ?? "\(error)")")
+                problems.append(
+                    "the cache cannot be opened (\(Doctor.shortReason(error))); it holds only what pdf can rebuild, so remove the folder and read the files again: rm -r \(Doctor.quoted(cacheDirectory.path))"
+                )
             }
+        } else if let unreadable = unreadable(cacheDirectory) {
+            problems.append(unreadable)
         }
 
         // The library.
@@ -192,8 +220,12 @@ public enum Doctor {
                 }
             } catch {
                 library.state = "cannot open"
-                problems.append("the library cannot be opened: \(Store.readOnlyFailure(error) ?? "\(error)")")
+                problems.append(
+                    "the library cannot be opened (\(Doctor.shortReason(error))); its list can be made again with pdf add, but the picks and transcripts beside it are the agent's work: move \(Doctor.quoted(supportDirectory.appendingPathComponent("library.sqlite").path)) aside rather than delete it"
+                )
             }
+        } else if let unreadable = unreadable(supportDirectory) {
+            problems.append(unreadable)
         }
 
         // The settings in force.
@@ -204,9 +236,10 @@ public enum Doctor {
             source == .environment ? "environment (\(variable))" : source.rawValue
         }
         let settings = DoctorReport.Parsing(
-            memoryBudgetMB: .init(value: parsing.memoryBudgetMB, source: source(parsing.memorySource, "")),
-            workers: .init(value: parsing.workers, source: source(parsing.workersSource, "PDF_CLI_WORKERS")),
-            workerLimitMB: .init(value: parsing.workerLimitMB, source: source(parsing.workerLimitSource, "PDF_CLI_MEMORY_LIMIT_MB")),
+            memoryBudgetMB: .init(value: Nullable(parsing.memoryBudgetMB), source: source(parsing.memorySource, "")),
+            workers: .init(value: Nullable(parsing.workers), source: source(parsing.workersSource, "PDF_CLI_WORKERS")),
+            workerLimitMB: .init(
+                value: Nullable(parsing.workerLimitMB), source: source(parsing.workerLimitSource, "PDF_CLI_MEMORY_LIMIT_MB")),
             performanceCores: Env.performanceCores, workersNow: Pressure.reduced(parsing.workers, pressure.level),
             load: ["normal", "high", "critical"][pressure.level.rawValue], loadReasons: pressure.reasons,
             settingsFile: Settings.file(in: supportDirectory).path)
@@ -214,7 +247,7 @@ public enum Doctor {
         // What runs.
         let running = DoctorReport.Running(
             runners: runners.map { .init(pid: $0.pid, lock: $0.lock) },
-            slotsInUse: slotsInUse(cacheDirectory, upTo: parsing.workers), slots: parsing.workers)
+            slotsInUse: slotsInUse(cacheDirectory), slots: parsing.workers)
 
         let installed = Models.installed(in: supportDirectory.appendingPathComponent("models", isDirectory: true))
         let models = DoctorReport.Models(
@@ -233,7 +266,7 @@ public enum Doctor {
         return DoctorReport(
             macOS: macOS.report, parserVersion: Env.parserVersion, models: models, cache: cache, library: library,
             parsing: settings, running: running, cleanable: cleanable, missing: missing, problems: problems,
-            fixedByClean: fixable)
+            notes: notes, fixedByClean: fixable)
     }
 
     // MARK: macOS
@@ -291,19 +324,43 @@ public enum Doctor {
         }
     }
 
-    /// How many of the pool's slots are held now. A slot file is opened read-only and locked for
-    /// a moment, which creates and writes nothing; a slot that no one has made is free.
-    static func slotsInUse(_ cacheDirectory: URL, upTo size: Int) -> Int {
+    /// How many of the pool's slots are held now, counting every slot file there is. A slot file is
+    /// opened read-only and locked for a moment, which creates and writes nothing; a slot that
+    /// no one has made is free.
+    static func slotsInUse(_ cacheDirectory: URL) -> Int {
+        let folder = cacheDirectory.appendingPathComponent("slots", isDirectory: true)
         var used = 0
-        for number in 0..<max(size, 1) {
-            let path = cacheDirectory.appendingPathComponent("slots", isDirectory: true)
-                .appendingPathComponent("slot-\(number).lock").path
-            let descriptor = open(path, O_RDONLY | O_CLOEXEC)
+        for name in (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+        where name.hasPrefix("slot-") && name.hasSuffix(".lock") {
+            let descriptor = open(folder.appendingPathComponent(name).path, O_RDONLY | O_CLOEXEC)
             guard descriptor >= 0 else { continue }
             if flock(descriptor, LOCK_SH | LOCK_NB) == 0 { flock(descriptor, LOCK_UN) } else { used += 1 }
             close(descriptor)
         }
         return used
+    }
+
+    /// A folder that exists but cannot be read, which is not the same as one that is not there.
+    static func unreadable(_ folder: URL) -> String? {
+        var isFolder: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: folder.path, isDirectory: &isFolder) else {
+            // Not found, or behind a folder that cannot be searched.
+            let parent = folder.deletingLastPathComponent()
+            return FileManager.default.fileExists(atPath: parent.path) && !FileManager.default.isReadableFile(atPath: parent.path)
+                ? "\(parent.path) cannot be read" : nil
+        }
+        guard isFolder.boolValue else { return "\(folder.path) is a file, not a folder" }
+        return (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) == nil
+            ? "\(folder.path) cannot be read; pdf cannot see what it holds" : nil
+    }
+
+    static func shortReason(_ error: Error) -> String {
+        if let error = error as? DatabaseError { return error.message ?? "SQLite error \(error.resultCode.rawValue)" }
+        return "\(error)"
+    }
+
+    static func quoted(_ path: String) -> String {
+        path.contains(" ") ? "'\(path)'" : path
     }
 
     // MARK: Clean
@@ -323,19 +380,22 @@ public enum Doctor {
         var locks = 0
         var freed: Int64 = 0
         var compacted = false
+        var parseRunning = false
         if Store.exists(directory: cacheDirectory) {
             if dryRun {
                 let store = try Store(directory: cacheDirectory, readOnly: true)
                 removed = try store.wouldCollectGarbage()
                 locks = try store.runners().leftover.count
                 freed = try store.freePageBytes()
-                compacted = try store.runners().alive.isEmpty
+                parseRunning = !(try store.runners().alive.isEmpty)
+                compacted = !parseRunning
             } else {
                 let store = try Store(directory: cacheDirectory)
                 let before = store.size
                 locks = try store.runners().leftover.count
                 removed = try store.collectGarbage()
                 compacted = store.compact()
+                parseRunning = !compacted
                 // What compacting gave back includes the space that rows removed earlier left and
                 // the write-ahead log; the counts are only what this run removed.
                 freed = compacted ? max(0, before - store.size) : 0
@@ -352,6 +412,7 @@ public enum Doctor {
                 "files": removed.files, "documents": removed.documents, "pages": removed.pages,
                 "libraryEntries": gone.count, "crops": crops.images, "runnerLocks": locks,
             ],
-            freedBytes: freed + crops.bytes, compacted: compacted, dryRun: dryRun ? true : nil)
+            freedBytes: freed + crops.bytes, compacted: compacted, parseRunning: parseRunning,
+            dryRun: dryRun ? true : nil)
     }
 }
