@@ -8,8 +8,10 @@ enum StreamGuard {
     /// Operators in one content stream past which a page is not read: 20 million are 80 MB or
     /// more of decoded commands, where the largest maps and CAD drawings hold a few million.
     static let operatorLimit = 20_000_000
-    /// A stream stored in this many bytes or fewer decodes to 130 MB at most (Flate holds at most
-    /// 1,032 bytes to a byte), so it is copied without counting.
+    /// A stream with no filter, or a single Flate or RunLength one (ASCII filters only shrink), stored
+    /// in this many bytes or fewer decodes to 130 MB at most (Flate holds at most 1,032 bytes to a
+    /// byte), so it is copied without counting. Any other filters, such as two Flate ones in an
+    /// array, or LZW, multiply the bound and are always counted.
     static let storedBytesChecked = 128 * 1024
 
     private final class Counter {
@@ -37,7 +39,7 @@ enum StreamGuard {
         var declared: CGPDFReal = 0
         guard let dictionary = CGPDFStreamGetDictionary(stream) else { return nil }
         // A length that is missing or no number does not say how big the stream is: it is counted.
-        if CGPDFDictionaryGetNumber(dictionary, "Length", &declared), declared <= CGPDFReal(above) { return nil }
+        if CGPDFDictionaryGetNumber(dictionary, "Length", &declared), declared <= CGPDFReal(above), boundedFilters(dictionary) { return nil }
         guard let create = FontCheck.createContentStream, let content = create(stream, dictionary, nil) else { return nil }
         defer { CGPDFContentStreamRelease(content) }
         let counter = Counter(limit: limit)
@@ -45,6 +47,13 @@ enum StreamGuard {
         defer { CGPDFScannerRelease(scanner) }
         CGPDFScannerScan(scanner)
         return counter.count
+    }
+
+    /// Whether the stream's filters expand it at most 1,032 times: none, or one of Flate and RunLength,
+    /// with any ASCII85 or ASCIIHex ones, which only shrink it.
+    static func boundedFilters(_ dictionary: CGPDFDictionaryRef) -> Bool {
+        let expanding = Drawing.filters(dictionary).filter { !["ASCII85Decode", "A85", "ASCIIHexDecode", "AHx"].contains($0) }
+        return expanding.isEmpty || (expanding.count == 1 && ["FlateDecode", "Fl", "RunLengthDecode", "RL"].contains(expanding[0]))
     }
 
     /// The failure of a page whose content holds more operators than `limit`.

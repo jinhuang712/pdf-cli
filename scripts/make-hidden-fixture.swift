@@ -13,6 +13,7 @@
 // The PDFs are written by hand, so each trick is exactly the drawing command it names.
 //
 // Run from the repo root: swift scripts/make-hidden-fixture.swift
+import Compression
 import CoreText
 import Foundation
 
@@ -1012,3 +1013,18 @@ try bombed.write(
             contentBytes: bomb(megabytes: 600)),
     ],
     resources: "<< /Font << /F1 \(bombFont) 0 R >> >>", to: "broken-content-bomb.pdf", folder: "testdata/safety")
+
+// Two more bombs (M2.21 review, M3): a content stream with two Flate filters in an array, which
+// the stored length (about 1 KB) does not bound, and a Type 3 glyph procedure of 600 MB, which is a
+// content stream that is not a page's or a form's.
+let more = Writer()
+let moreFont = more.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>")
+let glyph = more.add(stream: "/Filter /FlateDecode", bomb(megabytes: 600))
+let type3 = more.add("<< /Type /Font /Subtype /Type3 /FontBBox [0 0 500 700] /FontMatrix [0.001 0 0 0.001 0 0] "
+                     + "/CharProcs << /a \(glyph) 0 R >> /Encoding << /Type /Encoding /Differences [97 /a] >> "
+                     + "/FirstChar 97 /LastChar 97 /Widths [500] >>")
+try more.write([Page(name: "visible words", content: visible),
+                Page(name: "a page of two Flate filters in an array", content: "",
+                     contentDictionary: "/Filter [/FlateDecode /FlateDecode]", contentBytes: try flate(bomb(megabytes: 600))),
+                Page(name: "a Type 3 glyph procedure that is a bomb", content: "BT /T3 12 Tf 72 700 Td (a) Tj ET\n")],
+               resources: "<< /Font << /F1 \(moreFont) 0 R /T3 \(type3) 0 R >> >>", to: "broken-content-bomb-more.pdf", folder: "testdata/safety")
