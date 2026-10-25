@@ -583,10 +583,27 @@ enum TextLayer {
         }
         // Words as the line will show them: a space in the text or one the repair puts back
         // ends a word.
+        //
+        // PDFKit glues a run to the one before it when the second starts back to the left, as a
+        // label drawn over the line, and then gives the characters at the join boxes many ems
+        // wide ("." 140 points wide at 12 points, on p.38 of testdata/hidden/hidden.pdf, macOS
+        // 27). A word that PDFKit joins so is judged as two, the join before the first such
+        // character, so the box of the join does not make the hidden half read as seen. The
+        // text shows no space there.
+        func joined(_ index: Int) -> Bool {
+            guard let box = glyphs.boxes[index], glyphs.sizes.indices.contains(index), glyphs.sizes[index] >= 2 else { return false }
+            return box.width > 3 * glyphs.sizes[index]
+        }
         var words: [[Int]] = [[]]
+        var afterJoin = false
         for character in characters {
             if character.isSpace || spacesBefore.contains(character.index) { words.append([]) }
-            if !character.isSpace { words[words.count - 1].append(character.index) }
+            if !character.isSpace {
+                let wide = joined(character.index)
+                if wide, !afterJoin, !words[words.count - 1].isEmpty { words.append([]) }
+                afterJoin = wide
+                words[words.count - 1].append(character.index)
+            }
         }
         let marks = glyphs.marks(characters.filter { !$0.isSpace }.map(\.index), words: words.filter { !$0.isEmpty })
         // Each word a reader cannot see, by its first and last character, with the reason.
