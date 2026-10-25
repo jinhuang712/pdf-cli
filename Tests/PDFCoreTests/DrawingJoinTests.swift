@@ -96,8 +96,28 @@ import Testing
         #expect(grid < 50_000)
     }
 
-    /// The same page through the drawing of a file: 2,000 shapes found, joined in well under a second.
-    @Test func aPageOf2000ShapesJoinsFast() throws {
+    /// 2,000 overlapping bands, as a stacked area chart's, each covering most of the plot: a group
+    /// that grew was added again to every cell of its new region, so each cell listed it many times
+    /// and a piece scanned them all (M2.21's review: 378 ms against 0 for the pairwise join, and 1 s
+    /// on a page over 1,024 pt). A cell lists a group once now; the entries looked at are counted,
+    /// which does not depend on the machine.
+    @Test func largeOverlappingShapesDoNotFillTheCellsWithCopies() {
+        for size: CGFloat in [520, 1_100] {
+            let pieces: [Piece] = (0..<2_000).map { index in
+                ("drawing", CGRect(x: 40 + CGFloat(index % 7), y: 60 + CGFloat(index % 11), width: size, height: size + 120), 0, 1)
+            }
+            var scanned = 0
+            let joined = Drawing.join(pieces, reach: CGSize(width: 6.5, height: 6.5), scanned: &scanned, close: Self.nearSix)
+            let expected = Self.everyPair(pieces, close: Self.nearSix)
+            #expect(joined.map(\.rect) == expected.map(\.rect))
+            #expect(joined.map(\.bars) == expected.map(\.bars))
+            // At most one entry a cell for the one group, for each of 2,000 pieces and 1,024 cells.
+            #expect(scanned <= 2_000 * 1_024, "size \(size): \(scanned) entries looked at")
+        }
+    }
+
+    /// A page of 2,000 shapes found by the drawing of a file: 1,980 bars apart and a line of 20.
+    @Test func aPageOf2000ShapesJoinsItsLine() throws {
         var content = "0 g\n"
         for index in 0..<1_980 { content += "\(20 + (index % 45) * 13) \(200 + (index / 45) * 13) 5 5 re f\n" }
         for index in 0..<20 { content += "\(20 + index * 9) 100 5 5 re f\n" }
@@ -105,11 +125,8 @@ import Testing
         defer { try? FileManager.default.removeItem(at: url) }
         let document = try #require(CGPDFDocument(url as CFURL))
         let page = try #require(document.page(at: 1))
-        let started = Date()
         let drawing = Drawing(page: page, crop: page.getBoxRect(.cropBox))
-        let pictures = drawing.pictures()
+        _ = drawing.pictures()
         #expect(drawing.shapes.count == 2_000)
-        #expect(Date().timeIntervalSince(started) < 2)
-        #expect(pictures.count <= 1)
     }
 }

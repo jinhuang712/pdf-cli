@@ -1719,13 +1719,16 @@ final class Drawing {
     /// Joins the pieces whose regions are `close`, pass after pass until a pass joins none: each
     /// piece, in turn, joins the first group before it that it is close to. This is the join that
     /// compared every pair on each pass, with the same groups in the same order, but a piece looks
-    /// only at the groups in its neighbourhood, found through a grid of at most 32 by 32 cells, so
-    /// a page of 2,000 shapes in a spiral takes milliseconds (M2.21). It stays that join, not a
+    /// only at the groups in its neighbourhood, found through a grid of at most 32 by 32 cells
+    /// (M2.21; `scanned` counts the grid entries looked at, for the tests). It stays that join, not a
     /// union-find, because a group that grows can stop being close to a piece it was close to
     /// (`close` may compare heights), so the order of joins shows in the groups. `reach` is how far
     /// a group's neighbours can lie, a little over what `close` accepts; `close` takes the group
     /// first.
-    static func join(_ pieces: [Piece], reach: CGSize, close: (CGRect, CGRect) -> Bool) -> [Piece] {
+    static func join(
+        _ pieces: [Piece], reach: CGSize, scanned: UnsafeMutablePointer<Int>? = nil,
+        close: (CGRect, CGRect) -> Bool
+    ) -> [Piece] {
         guard pieces.count > 1 else { return pieces }
         let bounds = pieces.dropFirst().reduce(pieces[0].rect) { $0.union($1.rect) }
         let size = max(32, max(bounds.width, bounds.height) / 32)
@@ -1738,12 +1741,19 @@ final class Drawing {
         while merged {
             merged = false
             var next: [Piece] = []
-            // The groups of `next` that touch each cell; a group that grew is added to its new cells.
+            // The groups of `next` that touch each cell, and the cells each one is in: a group that
+            // grows is added to the cells it newly covers only, so a cell lists a group once
+            // (otherwise large overlapping shapes fill the lists with copies).
             var grid = [[Int]](repeating: [], count: 32 * 32)
+            var covered: [(x: ClosedRange<Int>, y: ClosedRange<Int>)] = []
             func place(_ index: Int, in rect: CGRect) {
-                for y in row(rect.minY)...row(rect.maxY) {
-                    for x in column(rect.minX)...column(rect.maxX) { grid[y * 32 + x].append(index) }
+                let xs = column(rect.minX)...column(rect.maxX)
+                let ys = row(rect.minY)...row(rect.maxY)
+                let before = index < covered.count ? covered[index] : nil
+                for y in ys {
+                    for x in xs where !(before.map { $0.x.contains(x) && $0.y.contains(y) } ?? false) { grid[y * 32 + x].append(index) }
                 }
+                if index < covered.count { covered[index] = (xs, ys) } else { covered.append((xs, ys)) }
             }
             for item in found {
                 let near = item.rect.insetBy(dx: -reach.width, dy: -reach.height)
@@ -1751,6 +1761,7 @@ final class Drawing {
                 var first: Int?
                 for y in row(near.minY)...row(near.maxY) {
                     for x in column(near.minX)...column(near.maxX) {
+                        scanned?.pointee += grid[y * 32 + x].count
                         for other in grid[y * 32 + x] where seen[other] != stamp {
                             seen[other] = stamp
                             if first.map({ other < $0 }) ?? true, close(next[other].rect, item.rect) { first = other }
