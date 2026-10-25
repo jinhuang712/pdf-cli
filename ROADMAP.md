@@ -47,7 +47,10 @@ The spike shipped no features. It answered the riskiest questions.
   - [x] M2.21b Links past 1,000 in a table of their own (cache schema 9, index checks 11): each page's annotations are a row of `page_annotation`, read for the pages asked for only; TeX Live's PGF manual shows all its 44,655 links on their pages (found in M1.13).
   - [x] M2.22 `pdf search` no longer finds running headers, footers and page numbers (index checks 12 if the index changes).
   - [x] M2.23 A reparse keeps a pick while the readings it was made for are still offered (the recommendation; the user has not objected).
-  - [ ] The test baseline (TODO.md: the failing unit tests, end-to-end checks and the space flip of PDFKit) is the first item of the final wrap-up, as it needs one full `test-cache.sh`.
+  - [ ] M2.24 A reparse never deletes picks (the user, 2026-10-25, option A): every reader already ignores a pick that does not match, so an OCR round trip is lossless; `picksKept` and `picksCleared` become counts of what applies now and what no longer does.
+  - [ ] M2.25 Same file, same answer: the space that PDFKit's text flips on page 17 of `arxiv-2609.23257.pdf`, the visible prose OCR hides as "too small to read" on `sottigra.pdf`, the safety check's `hidden/hidden.pdf` p.38, and the two unit tests that fail on `main` (PDFKit and OCR read differently since 2026-10-25). Parser version up if the parse changes.
+  - [ ] M2.26 `pdf search` reads a stored summary of each page's edge blocks, not every page with a hit (index checks 12), and `pdf dump --refs` writes the DOIs from the links.
+  - [ ] The rest of the test baseline (TODO.md: the five failing end-to-end checks and the 25 unexamined ones) is the first item of the final wrap-up, as it needs one full `test-cache.sh`.
 - **Failure reports** (F8): every bad page says so
   - [x] M1.3 Quality checks on every page, failure blocks with crop commands, unsure blocks with `pdf pick`, and `--raw` for the text they set aside, the old OCR layer of a scan included, plus the warning on files that PDFKit saved
   - Later: thresholds tuned on the open test set (M2.12)
