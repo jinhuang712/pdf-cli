@@ -135,14 +135,28 @@ public enum Search {
         for (docID, group) in Dictionary(grouping: places, by: \.docID) {
             let keys = try store.pageKeys(docID: docID)
             let pages = Set(group.map(\.page)).filter(keys.indices.contains).sorted()
-            // A few pages at a time, each with the pages around it, so a word on every page of
-            // a long file holds no more than a chunk's layers in memory.
+            // A few pages at a time, each with the pages around it, each chunk in a pool of its
+            // own so its decoded layers are freed before the next chunk's are read.
             for start in stride(from: 0, to: pages.count, by: 40) {
                 let chunk = Array(pages[start..<min(start + 40, pages.count)])
-                for (page, blocks) in try Furniture.find(pages: chunk, keys: keys, store: store) {
-                    for (block, kind) in blocks { found[Place(docID: docID, page: page, block: block + 1)] = kind }
+                try autoreleasepool {
+                    for (page, blocks) in try Furniture.find(pages: chunk, keys: keys, store: store) {
+                        for (block, kind) in blocks { found[Place(docID: docID, page: page, block: block + 1)] = kind }
+                    }
                 }
             }
+        }
+        return found
+    }
+
+    /// The same for the pages of one document that a pattern search has decoded already: no
+    /// page is read from the cache a second time.
+    public static func runningHeaders(docID: String, among places: [(page: Int, block: Int)], layers: [Int: PageText])
+        -> [Place: Furniture.Kind]
+    {
+        var found: [Place: Furniture.Kind] = [:]
+        for (page, blocks) in Furniture.find(pages: Set(places.map(\.page)).sorted(), in: layers) {
+            for (block, kind) in blocks { found[Place(docID: docID, page: page, block: block + 1)] = kind }
         }
         return found
     }

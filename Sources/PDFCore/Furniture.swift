@@ -96,6 +96,8 @@ public enum Furniture {
     ///   on two pages a page apart, is none, nor a chart's tick labels or a footnote's number.
     /// - A page number may stand a little further in, within 15% of the edge, as the page's
     ///   highest or lowest block: an old TeX paper sets it 87.6% down.
+    /// - The side margin counts text set sideways only (a block taller than twice its width), and
+    ///   a block that starts with a raised note marker, `^{2}`, is a footnote, never furniture.
     /// - A block that holds hidden text stays in the text, with its marker: set aside, a page
     ///   number with words planted after it hid them from the count of hidden text.
     /// - At most 4 an edge, so a page of a thousand blocks in its margins costs no more than a
@@ -113,6 +115,9 @@ public enum Furniture {
         for (index, block) in blocks.enumerated() where !inside.contains(index) {
             let text = block.visibleText.trimmingCharacters(in: .whitespaces)
             guard !text.isEmpty, text.count <= 200, block.lines.count <= 3, block.hidden?.isEmpty ?? true else { continue }
+            // A footnote starts with its raised marker, `^{2}`: the same note on each page, as
+            // "Second note of page 1", is no footer (M2.22's review).
+            if text.range(of: #"^\^\{[^}]{1,4}\}"#, options: .regularExpression) != nil { continue }
             let box = block.box
             let number = pageNumber(text)
             let top = box.y <= highest + 0.025 && box.y + box.height <= (number == nil ? 0.12 : 0.15)
@@ -122,6 +127,10 @@ public enum Furniture {
                 found[.header, default: []].append((edge, box.y))
             } else if bottom {
                 found[.footer, default: []].append((edge, 1 - box.y - box.height))
+            } else if box.height < 2 * box.width {
+                // The side margin holds text set sideways only, as arXiv's stamp: a margin
+                // note, set upright, repeats a word on many pages and is the text's (M2.22's review).
+                continue
             } else if box.x + box.width <= 0.1 {
                 left.append((edge, box.x))
             } else if box.x >= 0.9 {

@@ -45,3 +45,4 @@ The spike's reports (M0) are in [spike/](../spike/README.md).
 | M2.20 Small command-layer fixes | 2026-10-25 | 1 high, 2 medium, 6 low; 9 fixed | [M2.20](M2.20-cli-fixes.md) |
 | M2.21 Limits on big files | 2026-10-25 | 1 high, 4 medium, 9 low; 13 fixed, 1 kept | [M2.21](M2.21-limits.md) |
 | M2.21b Links past 1,000 in a table of their own | 2026-10-25 | 0 high, 3 medium, 7 low; 9 fixed, 1 recorded | [M2.21b](M2.21b-links.md) |
+| M2.22 `pdf search` leaves out running headers | 2026-10-25 | 1 high, 4 medium, 3 low; 7 fixed, cost recorded | [M2.22](M2.22-search-headers.md) |

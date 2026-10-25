@@ -1097,3 +1097,15 @@ try running.write(
                 + line("A second paragraph of page \(index + 1) with plain words.", y: 400))
     },
     resources: "<< /Font << /F1 \(runningFont) 0 R >> >>", to: "running-headers.pdf", folder: "testdata/notes")
+
+// Margin notes in the search (M2.22 review): an upright note in the side margin that repeats
+// on each page is the text's, not furniture; only text set sideways, as arXiv's stamp, is.
+try running.write(
+    (1...3).map { number in
+        Page(
+            name: "a margin note, page \(number)",
+            content: line("The class scrlttr2 writes letters, page \(number).", y: 500)
+                + line("A second paragraph of page \(number) with plain words.", y: 400)
+                + "BT /F1 8 Tf 565 450 Td (scrlttr2) Tj ET\n")
+    },
+    resources: "<< /Font << /F1 \(runningFont) 0 R >> >>", to: "margin-notes.pdf", folder: "testdata/notes")

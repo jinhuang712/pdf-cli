@@ -161,38 +161,44 @@ struct SearchCommand: ParsableCommand {
             for target in targets {
                 let pages = try InfoCommand.cachedPages(docID: target.docID, store: store)
                     .compactMap { page in page.result.pageText.map { (index: page.index, layer: $0) } }
-                let found = Search.matches(pattern, docID: target.docID, pages: pages)
+                var found = Search.matches(pattern, docID: target.docID, pages: pages)
                 if found.count >= Search.maxMatches { capped = true }
+                // The pages are decoded already: the judgement reads none again.
+                let judged = Search.runningHeaders(
+                    docID: target.docID, among: found.map { ($0.page, $0.block) },
+                    layers: Dictionary(pages.map { ($0.index, $0.layer) }, uniquingKeysWith: { first, _ in first }))
+                kinds.merge(judged) { first, _ in first }
+                if !headers {
+                    let kept = found.filter { judged[Search.Place(docID: $0.docID, page: $0.page, block: $0.block)] == nil }
+                    leftOut += found.count - kept.count
+                    found = kept
+                }
                 hits += found
             }
             watchdog.cancel()
-            kinds = try Search.runningHeaders(among: hits.map { ($0.docID, $0.page, $0.block) }, store: store)
-            if !headers {
-                let kept = hits.filter { kinds[Search.Place(docID: $0.docID, page: $0.page, block: $0.block)] == nil }
-                leftOut = hits.count - kept.count
-                hits = kept
-            }
             total = hits.count
             hits = Array(hits.dropFirst(from - 1).prefix(wanted))
         } else {
             try store.indexForSearch(docIDs: docIDs)
             var match = Search.query(query)!
             // Every block that matches, judged once for running headers, before the budget cuts.
-            func judged(_ match: String) throws -> (kept: [SearchCandidate], aside: Int) {
+            func judged(_ match: String) throws -> (kept: [SearchCandidate], aside: Int, all: Int) {
                 let all = try store.searchCandidates(match, docIDs: docIDs)
                 let found = try Search.runningHeaders(among: all.map { ($0.docID, $0.page, $0.block) }, store: store)
                 kinds.merge(found) { first, _ in first }
-                if headers { return (all, 0) }
+                if headers { return (all, 0, all.count) }
                 let kept = all.filter { found[Search.Place(docID: $0.docID, page: $0.page, block: $0.block)] == nil }
-                return (kept, all.count - kept.count)
+                return (kept, all.count - kept.count, all.count)
             }
             var found = try judged(match)
-            if found.kept.isEmpty, let any = Search.query(query, any: true), any != match {
+            // Some words only where no block holds every word: when the blocks that do are all
+            // running headers, the answer is no hit, and the left-out line says why.
+            if found.all == 0, let any = Search.query(query, any: true), any != match {
                 // No block holds every word: blocks that hold some of them, best first.
                 let some = try judged(any)
-                if !some.kept.isEmpty {
+                if !some.kept.isEmpty || some.aside > 0 {
                     match = any
-                    loose = true
+                    loose = !some.kept.isEmpty
                     found = some
                 }
             }
@@ -217,7 +223,7 @@ struct SearchCommand: ParsableCommand {
             leftOut: leftOut, kinds: kinds)
         let shown = report.render(hits, budget: limit, top: top)
         let flags = (regex.map { " --regex " + Output.quoted($0) } ?? "")
-            + (budget == "5000" ? "" : " --budget \(budget)") + (json ? " --json" : "")
+            + (budget == "5000" ? "" : " --budget \(budget)") + (headers ? " --show headers" : "") + (json ? " --json" : "")
         var next: String?
         let end = from - 1 + shown.count
         if end < total && (top.map { shown.count < $0 } ?? true) {
@@ -407,8 +413,12 @@ struct SearchCommand: ParsableCommand {
                 out.append("")
                 out += lines.map(text)
                 out.append("")
-                let first = lines[0]
-                out.append("read a hit: pdf read \(Output.quoted(first.file)) --from \(Output.address(page: first.page, block: first.block, offset: nil))")
+                // A running header is set aside by a read, so the command points at a hit it shows.
+                if let first = lines.first(where: { $0.runningHeader == nil }) {
+                    out.append(
+                        "read a hit: pdf read \(Output.quoted(first.file)) --from \(Output.address(page: first.page, block: first.block, offset: nil))"
+                    )
+                }
             }
             if let next { out.append("next: " + next) }
             return out.joined(separator: "\n") + "\n"

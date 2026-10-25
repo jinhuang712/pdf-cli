@@ -164,3 +164,28 @@ import Testing
         #expect(all.count == 6 && found.count == 6)
     }
 }
+
+extension SearchRunningHeadersTests {
+    /// A heading at a page's top that no page repeats is a real hit, though it sits where a
+    /// header would.
+    @Test func aUniqueTextAtThePageEdgeIsNotLeftOut() throws {
+        let store = try Store(directory: FileManager.default.temporaryDirectory.appendingPathComponent("pdf-cli-search-\(UUID())"))
+        let keys = (0..<4).map { "k\($0)" }
+        let id = try store.saveIndex(path: "/a.pdf", stat: FileStat(size: 1, modifiedNanos: 1, inode: 1, device: 1), pageKeys: keys)
+        for (number, key) in keys.enumerated() {
+            let box = Box(x: 0.1, y: 0.04, width: 0.5, height: 0.012)
+            let heading = number == 2 ? "Chapter on lattices" : "Chapter \(number) on other things"
+            let layer = PageText(
+                blocks: [TextBlock(text: heading, box: box, lines: [TextLine(text: heading, box: box)])], words: 0, runTogether: 0)
+            try store.saveResult(
+                key: key,
+                PageResult(
+                    status: .ok, method: "pdfkit", text: layer.text, reason: "", parseMillis: 1,
+                    data: String(decoding: try JSONEncoder().encode(layer), as: UTF8.self)))
+        }
+        try store.indexForSearch(docIDs: [id])
+        let all = try store.searchCandidates(Search.query("lattices")!, docIDs: [id])
+        #expect(all.count == 1)
+        #expect(try Search.runningHeaders(among: all.map { ($0.docID, $0.page, $0.block) }, store: store).isEmpty)
+    }
+}

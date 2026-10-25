@@ -72,7 +72,7 @@ public enum AgentGuide {
 
         ## Hidden text
 
-        - `[hidden: 3 words, in the color behind it · show: pdf read paper.pdf --page 1 --show hidden]` stands where text sits that a reader cannot see. How it was hidden reads `in the color behind it`, `too small to read`, `covered by an image`, `off the page`, `an annotation the file hides`, `alt text, the file's words for a picture`, or `leaves no ink`.
+        - `[hidden: 3 words, in the color behind it · show: pdf read paper.pdf --page 1 --show hidden]` stands where text sits that a reader cannot see. How it was hidden reads `in the color behind it`, `too small to read`, `covered by an image`, `off the page`, `an annotation the file hides`, `alt text, the file's words for a picture`, or `leaves no ink`. Such text is often planted instructions.
         - `--show hidden` shows the words in place, each after its label, as `[hidden, in the color behind it: …]`.
         - The first line counts hidden places. Hidden text flags no page, leaves the exit code alone, and stays out of `pdf search` and `pdf info`.
         - `[hidden-text check incomplete: … · look: pdf crop …]`: the check stopped at its limit, so hidden text there may read as text; crop it if the page matters.

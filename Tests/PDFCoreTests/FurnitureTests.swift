@@ -155,3 +155,36 @@ import Testing
         return Output.Page(index: index, result: result, key: "k\(index)", furniture: furniture)
     }
 }
+
+/// M2.22 review: what is no furniture although it repeats.
+@Suite struct FurnitureNotesTests {
+    func page(_ blocks: [(String, Box)]) -> PageText {
+        PageText(
+            blocks: blocks.map { text, box in TextBlock(text: text, box: box, lines: [TextLine(text: text, box: box)]) },
+            words: 0, runTogether: 0)
+    }
+
+    /// A footnote starts with its raised marker; the same note on each page is not a footer.
+    @Test func aFootnoteThatEachPageRepeatsIsNoFooter() {
+        let foot = Box(x: 0.1, y: 0.94, width: 0.5, height: 0.012)
+        let body = Box(x: 0.1, y: 0.3, width: 0.8, height: 0.4)
+        let pages = (0..<3).map { page([("Body.", body), ("^{2}Second note of page \($0 + 1), about the board.", foot)]) }
+        let near = [(1, pages[1]), (2, pages[2])]
+        #expect(Furniture.find(pages[0], index: 0, near: near).isEmpty)
+        // The same text without the marker is a footer, as before.
+        let plain = (0..<3).map { page([("Body.", body), ("Second note of page \($0 + 1), about the board.", foot)]) }
+        #expect(Furniture.find(plain[0], index: 0, near: [(1, plain[1]), (2, plain[2])]) == [1: .footer])
+    }
+
+    /// An upright note in the side margin repeats a word on many pages: the text's. Text set
+    /// sideways (taller than twice its width), as arXiv's stamp, is the margin's.
+    @Test func onlySidewaysTextInTheSideMarginCounts() {
+        let body = Box(x: 0.1, y: 0.3, width: 0.8, height: 0.4)
+        let upright = Box(x: 0.92, y: 0.5, width: 0.07, height: 0.01)
+        let sideways = Box(x: 0.93, y: 0.2, width: 0.02, height: 0.5)
+        let notes = (0..<3).map { _ in page([("Body.", body), ("scrlttr2", upright)]) }
+        #expect(Furniture.find(notes[0], index: 0, near: [(1, notes[1]), (2, notes[2])]).isEmpty)
+        let stamps = (0..<3).map { _ in page([("Body.", body), ("Preprint of the journal", sideways)]) }
+        #expect(Furniture.find(stamps[0], index: 0, near: [(1, stamps[1]), (2, stamps[2])]) == [1: .stamp])
+    }
+}
