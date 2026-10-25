@@ -1,4 +1,4 @@
-<!-- what-we-build: drafted 2026-10-26 -->
+<!-- what-we-build: approved 2026-10-26 -->
 # TODO
 
 Small fixes and follow-ups with no milestone yet. An item moves to ROADMAP.md once it has a milestone.
