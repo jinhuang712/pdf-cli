@@ -40,6 +40,13 @@ The spike shipped no features. It answered the riskiest questions.
   - [x] M1.2 The text layer, with ligatures, hyphenation and Unicode cleaned up, the font check, and the space repair for at-risk files
   - [x] M1.4 Apple OCR for scanned and garbled pages
   - [x] M1.15 One pool of worker slots for the whole Mac, with pages nobody waits for parsed in the background
+- **Cleanup of TODO.md** (the user, 2026-10-25: "都清理"): each group is one task, in this order; the items are in TODO.md until their task lands.
+  - [ ] M2.19 Hidden text through OCR: check with a fixture that OCR reads no text PDFKit left out of its text but the page draws (M2.10's review, H1); fix it, and raise the parser version if the parse changes.
+  - [ ] M2.20 Exit codes, hints and `--json` of the commands: locked cached file `crop` ends 3, `dump` hints `--password-stdin`, `transcribe` checks the file before standard input, `rm --json` splits `id` and `title`, `agent-guide --install --json` keeps its warning, `read --refs end` says when the list is not parsed, `--show raw` labels a born-digital text layer by what it is. Also the paths: `/tmp` and `/private/tmp` resolve alike whether or not the file exists (`rm`, `ls`, `dump -o`).
+  - [ ] M2.21 Limits on big files: the decoded-stream memory of a content-stream bomb, links past 1,000 in a table of their own (cache schema 9), the grid join of shapes, `crop --figure` stopping at a time limit, and `reparse` committing in chunks of 50 pages.
+  - [ ] M2.22 `pdf search` no longer finds running headers, footers and page numbers (index checks 11 if the index changes).
+  - [ ] M2.23 A reparse keeps a pick while the readings it was made for are still offered (the recommendation; the user has not objected).
+  - [ ] The test baseline (TODO.md: the failing unit tests, end-to-end checks and the space flip of PDFKit) is the first item of the final wrap-up, as it needs one full `test-cache.sh`.
 - **Failure reports** (F8): every bad page says so
   - [x] M1.3 Quality checks on every page, failure blocks with crop commands, unsure blocks with `pdf pick`, and `--raw` for the text they set aside, the old OCR layer of a scan included, plus the warning on files that PDFKit saved
   - Later: thresholds tuned on the open test set (M2.12)
