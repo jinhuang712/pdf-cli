@@ -101,7 +101,9 @@ scan=testdata/smoke/scan-naca-report-1034.pdf
 output=$(quality read $scan --page 1)
 check "a scan page whose two OCR readings disagree is low-quality" "p.1 low-quality: two OCR readings of the page disagree" "$output"
 check "its failure block crops the page" "read it as an image: pdf crop $scan --page 1" "$output"
-check "--show raw shows its text, labelled" "\[low-quality\] TECH LIBRARY" "$(quality read $scan --page 1 --show raw)"
+# The sideways library stamp ("TECH LIBRARY KAFB, NM") is no longer the check: macOS 27's document
+# recognizer reads it as "LIBRARY" and "KAFB, NM" and leaves "TECH" out (M2.25); the title is stable.
+check "--show raw shows its text, labelled" "\[low-quality\] NATIONAL ADVISORY COMMITTEE" "$(quality read $scan --page 1 --show raw)"
 check "a file that PDFKit made carries the warning" "made or last saved by macOS PDFKit" \
     "$(quality read testdata/ocr/scan-no-text.pdf --page 1)"
 check "the text layer OCR replaced shows with --show raw" "\[PDF text layer\]" "$(quality read testdata/ocr/scan-wrong-layer.pdf --page 1 --show raw)"

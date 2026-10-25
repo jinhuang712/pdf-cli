@@ -48,14 +48,16 @@ func pdfKitKeys(_ url: URL) throws -> [String] {
         #expect(Set(keys).count == keys.count)
     }
 
-    /// A PDFKit save rewrites every page and damages its text: on this paper, "∗" comes back
-    /// as "→" and the math letter "𝑒" as "!". The keys change because the text changed. If
-    /// this test fails, Apple has fixed the damage, and DESIGNS.md → Decision: a file that
-    /// PDFKit saved counts as a new file, with a warning, can be revisited.
-    @Test func aPDFKitSaveChangesTheTextSoTheKeysChange() throws {
+    /// A PDFKit save rewrites every page, so the keys change. When M1.1 measured it, the rewrite
+    /// also damaged the text: "∗" came back as "→" and the math letter "𝑒" as "!". The test used to
+    /// expect that change and failed on 2026-10-25, the sign its comment named for Apple having
+    /// fixed it: on this macOS (27), the text of all 11 pages of this paper is the same after a
+    /// save (M2.25), so only the keys are checked. DESIGNS.md → Decision: a file that PDFKit saved
+    /// counts as a new file, with a warning, stays: files saved by older macOS keep their damage,
+    /// and nothing in the file tells the saves apart.
+    @Test func aPDFKitSaveChangesTheKeys() throws {
         let document = try #require(PDFDocument(url: samplePaper))
         let page = try #require(document.page(at: 0))
-        let before = page.string
         let highlight = PDFAnnotation(bounds: CGRect(x: 72, y: 600, width: 200, height: 14),
                                       forType: .highlight, withProperties: nil)
         page.addAnnotation(highlight)
@@ -63,7 +65,8 @@ func pdfKitKeys(_ url: URL) throws -> [String] {
         defer { try? FileManager.default.removeItem(at: copy) }
         #expect(document.write(to: copy))
         let saved = try #require(PDFDocument(url: copy))
-        #expect(saved.page(at: 0)?.string != before)
+        // The text of a saved page is the same on this macOS: the keys change for the rewrite alone.
+        #expect(saved.pageCount == document.pageCount)
         #expect(try coreGraphicsKeys(copy) != coreGraphicsKeys(samplePaper))
     }
 }

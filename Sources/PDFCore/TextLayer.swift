@@ -557,8 +557,11 @@ enum TextLayer {
         unit == 0x0A || unit == 0x0D || unit == 0x2028 || unit == 0x2029
     }
 
+    /// U+FFFC, the object replacement character, counts as a space: macOS 27's PDFKit puts one in
+    /// its text for each picture or figure a tagged file marks, a placeholder with no word of the page
+    /// in it, and a line of them would read as text (`¶2 ￼ ￼ ￼ ￼`, M2.25).
     static func isSpace(_ unit: unichar) -> Bool {
-        unit == 0x20 || unit == 0x09 || unit == 0xA0 || isLineBreak(unit)
+        unit == 0x20 || unit == 0x09 || unit == 0xA0 || unit == 0xFFFC || isLineBreak(unit)
     }
 
     /// One line of the page string, with its rectangle from the boxes of its characters.
