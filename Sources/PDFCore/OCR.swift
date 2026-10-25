@@ -205,7 +205,12 @@ enum OCR {
         }
         for index in read.blocks.indices {
             let lines = read.blocks[index].lines
-            let reasons = lines.map { line in spots.first { share(line.box, $0.box) > 0.5 }?.reason }
+            // Text too small to read draws as specks, and OCR reads specks as stray marks, not as
+            // words: a line that reads as prose is no such text, whatever its spot's box covers, as
+            // the box of a music font's glyphs lies over the prose around them (M2.25, `sottigra.pdf`).
+            let reasons = lines.map { line in
+                spots.first { share(line.box, $0.box) > 0.5 && !($0.reason == .tiny && readsAsProse(line.text)) }?.reason
+            }
             guard reasons.contains(where: { $0 != nil }) else { continue }
             var text = ""
             var length = 0
@@ -228,6 +233,16 @@ enum OCR {
             read.blocks[index].text = text
             read.blocks[index].hidden = runs
         }
+    }
+
+    /// Whether OCR's line reads as prose: at least three words of two letters or more, and letters
+    /// for at least 60% of its characters other than spaces. Specks give "В.... в....", "3 3ğ" or
+    /// "ˇ ˇ ˇ"; a word alone, as "cresc.", is too little to tell from a mark.
+    static func readsAsProse(_ text: String) -> Bool {
+        let marks = text.filter { !$0.isWhitespace }
+        guard !marks.isEmpty else { return false }
+        let words = text.split(whereSeparator: \.isWhitespace).filter { $0.filter(\.isLetter).count >= 2 }
+        return words.count >= 3 && Double(marks.filter(\.isLetter).count) >= 0.6 * Double(marks.count)
     }
 
     /// Below this share of a reading's words that a second reading also finds, OCR's text is in

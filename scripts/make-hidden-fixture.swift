@@ -1109,3 +1109,23 @@ try running.write(
                 + "BT /F1 8 Tf 565 450 Td (scrlttr2) Tj ET\n")
     },
     resources: "<< /Font << /F1 \(runningFont) 0 R >> >>", to: "margin-notes.pdf", folder: "testdata/notes")
+
+// Tiny glyphs near visible prose (M2.25, from sottigra.pdf, a MusiXTeX manual, where the music
+// font's glyphs sit among the prose): words set at 1.5 points, drawn over visible prose lines, and a
+// run of 60-point letters squeezed to a hundredth of their width beside them, whose box is as tall
+// as the glyphs. The text layer marks them too small to read, and the spots it keeps are boxes that
+// lie over the prose. A reading by OCR must keep the prose as text and put under the marker only
+// what OCR cannot read as words.
+let tinyNear = Writer()
+let tinyNearFont = tinyNear.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>")
+try tinyNear.write(
+    [
+        Page(
+            name: "tiny words over visible prose",
+            content: line("Visible words before the glyphs on this page.", y: 720)
+                + line("The prose between the glyphs stays visible to every reader.", y: 345)
+                + line("A second prose line sits just under it, also in plain view.", y: 325)
+                + "BT /F1 1.5 Tf 200 346 Td (ABC DEF) Tj ET\n" + "BT /F1 1.5 Tf 250 326 Td (GHI JKL) Tj ET\n",
+            hides: ["ABC DEF", "GHI JKL"])
+    ],
+    resources: "<< /Font << /F1 \(tinyNearFont) 0 R >> >>", to: "tiny-near-prose.pdf")
