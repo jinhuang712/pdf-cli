@@ -78,6 +78,7 @@ struct CropCommand: ParsableCommand {
         var kept: Transcript?
         var keepable: (kind: Region.Kind, number: String)?
         var twins = 1
+        var unsearched: [Int] = []
         // The pages whose text mentions it, as "Fig. 4", in the pages parsed so far.
         var mentioned: [Int] = []
         if let wanted {
@@ -86,6 +87,7 @@ struct CropCommand: ParsableCommand {
             region = found.region.box.outward
             caption = found.caption
             twins = found.twins
+            unsearched = found.unsearched
             let layers = try InfoCommand.cachedPages(docID: docID, store: store).compactMap { page -> (index: Int, layer: PDFCore.PageText)? in
                 page.result.pageText.map { (page.index, $0) }
             }
@@ -127,6 +129,7 @@ struct CropCommand: ParsableCommand {
                 var markdown: String?
                 var transcribed: String?
                 var mentionedOn: [Int]?
+                var notSearched: [Int]?
             }
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.withoutEscapingSlashes, .sortedKeys]
@@ -138,7 +141,8 @@ struct CropCommand: ParsableCommand {
                             width: made.width, height: made.height, tokens: tokens, caption: caption,
                             latex: kept?.kind == .equation ? kept?.text : nil,
                             markdown: kept?.kind == .table ? kept?.text : nil, transcribed: kept?.day,
-                            mentionedOn: wanted == nil ? nil : mentioned)),
+                            mentionedOn: wanted == nil ? nil : mentioned,
+                            notSearched: unsearched.isEmpty ? nil : unsearched.map { $0 + 1 })),
                     as: UTF8.self))
         } else {
             print("\(made.url.path)  (~\(Info.thousands(tokens)) image tokens, \(made.width)×\(made.height) px)")
@@ -149,6 +153,11 @@ struct CropCommand: ParsableCommand {
             }
             if let wanted, twins > 1 {
                 print("p.\(number) numbers \(twins) \(wanted.kind.rawValue)s \(wanted.number): this is the first of them")
+            }
+            if let wanted, !unsearched.isEmpty {
+                print(
+                    "not searched: \(unsearched.count) pages (\(ReparseCommand.pageList(unsearched.map { $0 + 1 }))) are not parsed yet, so another \(wanted.kind.rawValue) \(wanted.number) there would make this ambiguous; run the command again once the file is parsed, or add --page"
+                )
             }
             if !mentioned.isEmpty {
                 print(
@@ -176,8 +185,10 @@ struct CropCommand: ParsableCommand {
 
     /// The figure, table or equation asked for: on the page given, or else in the pages parsed so
     /// far, or else, when none of those holds it, in the whole file once it is parsed.
-    static func locate(_ wanted: (kind: Region.Kind, number: String), page: Int?, path: String, password: String?, docID: String,
-                       store: Store, reader: Reader) throws -> (page: Int, region: Region, caption: String, twins: Int) {
+    static func locate(
+        _ wanted: (kind: Region.Kind, number: String), page: Int?, path: String, password: String?, docID: String,
+        store: Store, reader: Reader
+    ) throws -> (page: Int, region: Region, caption: String, twins: Int, unsearched: [Int]) {
         func layers() throws -> [(index: Int, layer: PDFCore.PageText)] {
             try InfoCommand.cachedPages(docID: docID, store: store).compactMap { page -> (index: Int, layer: PDFCore.PageText)? in
                 page.result.pageText.map { (page.index, $0) }
@@ -188,6 +199,8 @@ struct CropCommand: ParsableCommand {
         var found = Region.find(wanted.kind, wanted.number, in: pages)
         let keys = try store.pageKeys(docID: docID)
         var stopped: String?
+        // Pages not searched when the looking ended at a match, in a file not parsed whole.
+        var unsearched: [Int] = []
         if found.isEmpty, let page {
             _ = try reader.read(path: path, pages: [page - 1], password: password)
             pages = try layers().filter { $0.index == page - 1 }
@@ -202,16 +215,28 @@ struct CropCommand: ParsableCommand {
                 let cached = Set(try InfoCommand.cachedPages(docID: docID, store: store).map(\.index))
                 let next = keys.indices.filter { !cached.contains($0) }.prefix(Env.lookBatch)
                 if next.isEmpty { break }
-                _ = try reader.read(path: path, pages: Array(next), password: password)
+                if case .fileFailed(let reason) = try reader.read(path: path, pages: Array(next), password: password) {
+                    stopped = "the file could not be read any further: \(reason)"
+                    break
+                }
                 pages = try layers()
                 found = Region.find(wanted.kind, wanted.number, in: pages)
-                let parsed = cached.count + next.count
+                let parsed = try InfoCommand.cachedPages(docID: docID, store: store).count
+                if found.isEmpty, parsed <= cached.count {
+                    // The batch added nothing: the loop would not end.
+                    stopped = "the parse made no progress with \(parsed) of \(keys.count) pages searched; run the command again"
+                    break
+                }
                 if found.isEmpty, parsed < keys.count, Date().timeIntervalSince(started) >= Env.lookTimeLimit {
                     stopped =
-                        "stopped at the time limit of \(Int(Env.lookTimeLimit)) s with \(parsed) of \(keys.count) pages searched; "
+                        "stopped at the time limit of \(Env.secondsText(Env.lookTimeLimit)) with \(parsed) of \(keys.count) pages searched; "
                         + "run the command again to look further (the pages stay parsed), or add --page N"
                     break
                 }
+            }
+            if !found.isEmpty {
+                let now = Set(try InfoCommand.cachedPages(docID: docID, store: store).map(\.index))
+                unsearched = keys.indices.filter { !now.contains($0) }
             }
         }
         let name = "\(wanted.kind.rawValue) \(wanted.number)"
@@ -236,6 +261,6 @@ struct CropCommand: ParsableCommand {
             throw NotFound(description: "\(name) is on " + found.map { "p.\($0.page + 1)" }.joined(separator: " and ") + "; add --page")
         }
         let layer = pages.first { $0.index == first.page }!.layer
-        return (first.page, first.region, first.region.captionText(in: layer), found.filter { $0.page == first.page }.count)
+        return (first.page, first.region, first.region.captionText(in: layer), found.filter { $0.page == first.page }.count, unsearched)
     }
 }

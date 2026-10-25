@@ -49,12 +49,23 @@ public enum Env {
     /// looks for a number the parsed pages do not hold, and how long it looks before it stops and
     /// says how far it got (M2.21).
     public static var lookBatch: Int { max(1, variables["PDF_CLI_LOOK_BATCH"].flatMap(Int.init) ?? 40) }
-    public static var lookTimeLimit: TimeInterval { variables["PDF_CLI_LOOK_TIME_LIMIT"].flatMap(Double.init) ?? 60 }
+    public static var lookTimeLimit: TimeInterval { finite(variables["PDF_CLI_LOOK_TIME_LIMIT"], 60) }
 
     /// How many pages `pdf reparse` replaces in one transaction, and how long it goes on starting
     /// new ones, under the 120 s many agents give a command (M2.21).
     public static var reparseChunk: Int { max(1, variables["PDF_CLI_REPARSE_CHUNK"].flatMap(Int.init) ?? 50) }
-    public static var reparseTimeLimit: TimeInterval { variables["PDF_CLI_REPARSE_TIME_LIMIT"].flatMap(Double.init) ?? 90 }
+    public static var reparseTimeLimit: TimeInterval { finite(variables["PDF_CLI_REPARSE_TIME_LIMIT"], 90) }
+
+    /// A time limit from a variable: its value when it is a finite number of seconds, 0 or more, else the default.
+    static func finite(_ text: String?, _ fallback: TimeInterval) -> TimeInterval {
+        guard let value = text.flatMap(Double.init), value.isFinite, value >= 0 else { return fallback }
+        return value
+    }
+
+    /// Seconds for a message: whole ones, or one decimal under 1 s, so 0.5 does not read as 0.
+    public static func secondsText(_ seconds: TimeInterval) -> String {
+        seconds < 1 ? String(format: "%.1f s", seconds) : "\(Int(min(seconds, 1e9))) s"
+    }
 
     /// How long a file's "slow to open" verdict stands before a command tries the file again.
     /// Commands in between get the verdict at once, rather than waiting out the open limit again.

@@ -104,7 +104,8 @@ struct ReparseCommand: ParsableCommand {
             path: path, pages: wanted, ocr: step == .ocr, password: secret,
             progress: { done, total in
                 // A file of several chunks says how far it got as it goes, so a run that is stopped shows it.
-                if total > Env.reparseChunk {
+                // Not under --json: an agent's shell merges the error stream into the object.
+                if total > Env.reparseChunk && !json {
                     FileHandle.standardError.write(Data("reparsed \(done) of \(total) pages\n".utf8))
                 }
             })
@@ -154,7 +155,7 @@ struct ReparseCommand: ParsableCommand {
             left.isEmpty
             ? nil
             : "pdf reparse \(Output.quoted(path)) --page \(Self.pageList(left))" + (step == .ocr ? " --step ocr" : "")
-                + (passwordStdin ? " --password-stdin" : "")
+                + (passwordStdin || password != nil ? " --password-stdin" : "")
 
         if json {
             struct Body: Encodable {
@@ -170,6 +171,7 @@ struct ReparseCommand: ParsableCommand {
                 var picksCleared: Int
                 var remaining: [Int]?
                 var next: String?
+                var stopped: String?
                 var neverRead: Bool?
                 var changedSinceRead: Bool?
                 var toolUpdated: Bool?
@@ -189,7 +191,7 @@ struct ReparseCommand: ParsableCommand {
                         pages: replaced.map { $0 + 1 }, flagged: flagged.count,
                         flaggedPages: flagged.map { Status(page: $0.page, status: $0.status) }, changes: changes,
                         kept: keptPages.map { Kept(page: $0 + 1, reason: done.kept[$0] ?? "") }, picksCleared: cleared,
-                        remaining: left.isEmpty ? nil : left, next: next,
+                        remaining: left.isEmpty ? nil : left, next: next, stopped: done.stopped,
                         neverRead: done.neverRead ? true : nil, changedSinceRead: done.changedSinceRead ? true : nil,
                         toolUpdated: done.toolUpdated ? true : nil)))
         } else {
@@ -200,7 +202,7 @@ struct ReparseCommand: ParsableCommand {
             if cleared > 0 { parts.append("cleared \(count(cleared, "pick"))") }
             if let next {
                 parts.append(
-                    "stopped at the time limit of \(Int(Env.reparseTimeLimit)) s with \(count(left.count, "page")) not read; the chunks before it are replaced; read the rest: \(next)"
+                    "\(done.stopped ?? "stopped") with \(count(left.count, "page")) not read; the chunks before it are replaced; read the rest: \(next)"
                 )
             }
             if done.neverRead {

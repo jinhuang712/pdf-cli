@@ -54,6 +54,9 @@ public struct Reparsed: Sendable {
     /// Pages asked for that were not read, counted from 0, because the time limit came first: the
     /// chunks before it stay replaced (M2.21). Empty when every page was read.
     public var remaining: [Int] = []
+    /// Why the run ended before the last page, in words: the time limit, or the error that stopped it
+    /// after some chunks were replaced. Nil when every page was read.
+    public var stopped: String?
 }
 
 public enum ReparseOutcome: Sendable {
@@ -241,6 +244,18 @@ public final class Reader: Sendable {
         var old: [String: PageResult] = [:]
         var new: [String: PageResult] = [:]
         var kept: [Int: String] = [:]
+        // The document and pages of the pass in hand, so an error after some chunks are replaced can
+        // still report them.
+        var current: (docID: String, keys: [String], pages: [Int])?
+        func stopped(_ reason: String) throws -> ReparseOutcome? {
+            guard !done.isEmpty, let current else { return nil }
+            let doneSet = Set(done)
+            return .done(
+                try finished(
+                    path: path, docID: current.docID, keys: current.keys, done: done, old: old, new: new, kept: kept,
+                    remaining: current.pages.filter { !doneSet.contains($0) }, stopped: reason, neverRead: neverRead,
+                    changedSinceRead: changedSinceRead, toolUpdated: toolUpdated))
+        }
         while failures < 3 {
             guard let stat = FileStat(path: path) else { throw ReadError.notFound(rawPath) }
             let docID: String
@@ -277,13 +292,13 @@ public final class Reader: Sendable {
             if let bad = pages.first(where: { !keys.indices.contains($0) }) {
                 throw ReadError.pageOutOfRange(page: bad, pageCount: keys.count)
             }
+            current = (docID, keys, pages)
             // The results before the run, of every page, read once: pages with one key share a result.
             if old.isEmpty && done.isEmpty { old = try store.results(keys: pages.map { keys[$0] }) }
             let doneSet = Set(done)
             let todo = pages.filter { !doneSet.contains($0) }
             if !todo.isEmpty, !done.isEmpty, Date().timeIntervalSince(started) >= timeLimit {
-                return .done(try finished(path: path, docID: docID, keys: keys, done: done, old: old, new: new, kept: kept, remaining: todo,
-                                      neverRead: neverRead, changedSinceRead: changedSinceRead, toolUpdated: toolUpdated))
+                return try stopped("stopped at the time limit of \(Env.secondsText(timeLimit))")!
             }
             let part = Array(todo.prefix(max(1, chunk)))
             let run = todo.isEmpty ? (status: Int32(0), output: "") : try runReparse(path: path, pages: part, ocr: ocr, workers: workers, password: password)
@@ -296,20 +311,30 @@ public final class Reader: Sendable {
                     if parts.count == 3, parts[0] == "kept", let page = Int(parts[1]) { kept[page] = String(parts[2]) }
                 }
                 done += part
+                busyWaits = 0
+                failures = 0
                 if !part.isEmpty { progress?(done.count, pages.count) }
                 if done.count < pages.count { continue }
-                return .done(try finished(path: path, docID: docID, keys: keys, done: done, old: old, new: new, kept: kept, remaining: [],
-                                      neverRead: neverRead, changedSinceRead: changedSinceRead, toolUpdated: toolUpdated))
+                return .done(
+                    try finished(
+                        path: path, docID: docID, keys: keys, done: done, old: old, new: new, kept: kept, remaining: [], stopped: nil,
+                        neverRead: neverRead, changedSinceRead: changedSinceRead, toolUpdated: toolUpdated))
             case Runner.exitLocked:
                 // The file's results stay as they were: a password that does not open it is no verdict on it.
                 return .fileFailed(reason: OpenFailure.lockedReason)
             case Runner.exitBusy:
                 // Another reparse of this file runs: it goes first, for up to ten minutes and five turns.
                 busyWaits += 1
-                guard busyWaits <= 5 else { throw ReadError.reparseBusy }
+                guard busyWaits <= 5 else {
+                    if let partial = try stopped("stopped: \(ReadError.reparseBusy)") { return partial }
+                    throw ReadError.reparseBusy
+                }
                 let limit = Date().addingTimeInterval(600)
                 while try store.isLockAlive("reparse:" + path) {
-                    guard Date() < limit else { throw ReadError.reparseBusy }
+                    guard Date() < limit else {
+                        if let partial = try stopped("stopped: \(ReadError.reparseBusy)") { return partial }
+                        throw ReadError.reparseBusy
+                    }
                     Thread.sleep(forTimeInterval: 0.05)
                 }
             default:
@@ -317,12 +342,13 @@ public final class Reader: Sendable {
                 failures += 1
             }
         }
+        if let partial = try stopped("stopped: \(ReadError.runnerFailed)") { return partial }
         throw ReadError.runnerFailed
     }
 
     private func finished(
         path: String, docID: String, keys: [String], done: [Int], old: [String: PageResult], new: [String: PageResult], kept: [Int: String],
-        remaining: [Int], neverRead: Bool, changedSinceRead: Bool, toolUpdated: Bool
+        remaining: [Int], stopped: String?, neverRead: Bool, changedSinceRead: Bool, toolUpdated: Bool
     ) throws -> Reparsed {
         if let library {
             try library.register(path: path, docID: docID, title: try store.documentInfo(docID: docID)?.title ?? "", pageCount: keys.count)
@@ -332,7 +358,7 @@ public final class Reader: Sendable {
             docID: docID, pageCount: keys.count, pages: pages,
             before: Dictionary(uniqueKeysWithValues: pages.compactMap { page in old[keys[page]].map { (page, $0) } }),
             after: Dictionary(uniqueKeysWithValues: pages.compactMap { page in new[keys[page]].map { (page, $0) } }),
-            kept: kept, neverRead: neverRead, changedSinceRead: changedSinceRead, toolUpdated: toolUpdated, remaining: remaining)
+            kept: kept, neverRead: neverRead, changedSinceRead: changedSinceRead, toolUpdated: toolUpdated, remaining: remaining, stopped: stopped)
     }
 
     /// Starts a runner that indexes the file and stops, and waits for it. Another runner that holds
