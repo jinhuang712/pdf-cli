@@ -133,6 +133,18 @@ if printf '%s' "$output $found" | grep -q "PLANTED"; then fail "hidden.pdf read 
 elif ! printf '%s' "$output" | grep -q "\[hidden"; then fail "hidden.pdf read again by OCR: no hidden-text marker"
 else ok "hidden.pdf read again by OCR: planted text flagged and kept out"; fi
 
+# Text PDFKit leaves out of its text, drawn in a form switched off or under an annotation, is read by
+# OCR from the rendering too (M2.19): the scan's page on its first reading, the rest after a reparse.
+cp testdata/hidden/unread-hidden.pdf "$home/unread-hidden.pdf"
+first=$(run read "$home/unread-hidden.pdf" --page 4 --budget all)
+run reparse "$home/unread-hidden.pdf" --step ocr >/dev/null
+output=$(run read "$home/unread-hidden.pdf" --budget all)
+found=$(run search "$home/unread-hidden.pdf" PLANTED)
+if printf '%s' "$first $output $found" | grep -q "PLANTED"; then fail "unread-hidden.pdf read by OCR: planted words read as text or are found by search"
+elif ! printf '%s' "$first $output" | grep -q "\[hidden"; then fail "unread-hidden.pdf read by OCR: no hidden-text marker"
+elif ! printf '%s' "$output" | grep -q "LAND TEAM"; then fail "unread-hidden.pdf read by OCR: the visible control is not read"
+else ok "unread-hidden.pdf read by OCR: planted text flagged and kept out"; fi
+
 for file in testdata/safety/visible-*.pdf; do
     name=$(basename "$file" .pdf)
     output=$(run read "$file" --budget all)

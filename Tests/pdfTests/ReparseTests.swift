@@ -255,6 +255,27 @@ import Testing
         #expect(!Self.running(file))
     }
 
+    /// Text PDFKit leaves out of its text, drawn in letters in a form switched off or under an
+    /// annotation, is read by OCR from the rendering: it stays under its marker too, on the first
+    /// reading of a scan and after a reparse (M2.19; goal G16). Page 3 is the control, a reader's
+    /// own text from the same font, which OCR shows.
+    @Test func ocrOfTextPDFKitLeavesOutKeepsHiddenTextHidden() async throws {
+        let home = try OutputContractTests.freshHome()
+        let file = try Self.copy(Self.root.appendingPathComponent("testdata/hidden/unread-hidden.pdf").path, to: home)
+        let first = try Self.pdf(["read", file, "--page", "4", "--budget", "all"], home: home)
+        #expect(!first.output.contains("PLANTED") && first.output.contains("[hidden:"), "scan: \(first.output.prefix(600))")
+        let run = try Self.pdf(["reparse", file, "--step", "ocr"], home: home)
+        #expect([0, 2].contains(run.status), "\(run.output.prefix(300))")
+        let normal = try Self.pdf(["read", file, "--budget", "all"], home: home)
+        #expect(!normal.output.contains("PLANTED"), "hidden words read as text: \(normal.output.prefix(900))")
+        #expect(normal.output.contains("hidden text: 3 places"), "\(normal.output.prefix(400))")
+        #expect(normal.output.contains("LAND TEAM"), "the control reads as text: \(normal.output.prefix(900))")
+        #expect(try Self.pdf(["search", file, "PLANTED"], home: home).output.contains("0 hits"))
+        let shown = try Self.pdf(["read", file, "--page", "1", "--budget", "all", "--show", "hidden"], home: home)
+        #expect(shown.output.contains("PLANTED"), "\(shown.output.prefix(600))")
+        #expect(!Self.running(file))
+    }
+
     /// A new reading that fails never replaces one that read well: the page keeps its result, the
     /// summary counts it, the command ends 2, and `reparsed` counts replaced pages only.
     @Test func aFailedNewReadingKeepsTheOldResultAndIsCounted() async throws {

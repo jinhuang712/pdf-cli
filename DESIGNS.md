@@ -824,6 +824,8 @@ Options it beat:
 
 OCR reads PDFKit's rendering, which draws text under an annotation and in a layer switched off. A page read by OCR, with or without a reparse, puts the OCR lines that lie over words the text layer hides under a hidden run, so they stay under their marker, out of search, and counted (parser version 19).
 
+Text PDFKit leaves out of its text is read by OCR the same way: a string in a layer switched off (a form's), or under an annotation, which OCR's rendering leaves out, is drawn but unseen. The text layer's read finds such strings from the page's drawing commands (`Visibility.unread`, as it finds text PDFKit left out), and `OCR.markHidden` puts the OCR lines over them under a hidden run. Checked with `testdata/hidden/unread-hidden.pdf`, which failed before: its text came out as plain text on a scan and after `--step ocr`. Parser version 20.
+
 It follows "Same file, same answer" and "Failure is loud": a page the new method cannot read keeps what it had, and the output names it.
 
 | Option | For | Against |

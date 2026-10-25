@@ -464,6 +464,17 @@ enum TextLayer {
                 Unread(box: Box(x: Double((place.minX - crop.minX) / width), y: Double((crop.maxY - place.maxY) / height),
                                 width: Double(place.width / width), height: Double(place.height / height)))
             }
+            // Text PDFKit leaves out that no reader sees, in a rendering that still draws it.
+            if let spots {
+                for place in found.hidden {
+                    spots.spots.append(
+                        (
+                            Box(
+                                x: Double((place.minX - crop.minX) / width), y: Double((crop.maxY - place.maxY) / height),
+                                width: Double(place.width / width), height: Double(place.height / height)), .invisible
+                        ))
+                }
+            }
             if !unread.isEmpty {
                 layer.unread = unread
                 layer.unreadShare = found.share

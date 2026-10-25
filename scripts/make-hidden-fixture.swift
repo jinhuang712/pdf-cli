@@ -602,6 +602,53 @@ try unread.write([
     + "/P \(placeholderFont) 0 R /E \(emptyBoxFont) 0 R /D \(amounts) 0 R >> "
     + "/XObject << /Im \(unreadImage) 0 R >> >>", to: "unread.pdf")
 
+// Text PDFKit leaves out and the page still draws in letters a reader, and OCR, can read
+// (ROADMAP.md → M2.19): a Type 3 font with no text map whose glyphs are drawn with Helvetica. In
+// a layer switched off, or under an annotation, a reader never sees it, though PDFKit's rendering
+// draws it, and OCR reads that rendering.
+let outlined = Writer()
+let outlinedHelvetica = outlined.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>")
+let outlinedLayer = outlined.add("<< /Type /OCG /Name (Planted layer) >>")
+let letters = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+let letterProcs = letters.map { letter in
+    outlined.add(stream: "", "1000 0 d0 BT /H 1000 Tf 0 0 Td (\(letter)) Tj ET\n")
+}
+let spaceProc = outlined.add(stream: "", "400 0 d0\n")
+let outlinedFont = outlined.add(
+    "<< /Type /Font /Subtype /Type3 /FontBBox [0 -200 1000 1000] /FontMatrix [0.001 0 0 0.001 0 0] "
+        + "/Resources << /Font << /H \(outlinedHelvetica) 0 R >> >> /CharProcs << /sp \(spaceProc) 0 R "
+        + letters.indices.map { "/g\(letters[$0]) \(letterProcs[$0]) 0 R" }.joined(separator: " ") + " >> "
+        + "/Encoding << /Type /Encoding /Differences [32 /sp 65 " + letters.map { "/g\($0)" }.joined(separator: " ") + "] >> "
+        + "/FirstChar 32 /LastChar 90 /Widths [" + (32...90).map { $0 == 32 ? "400" : ($0 >= 65 ? "700" : "0") }.joined(separator: " ") + "] >>")
+let outlinedScan = outlined.add(stream: "\(gray) /Width 4 /Height 4", texture)
+// The line in a form switched off, which CoreGraphics draws, and under a white square annotation,
+// which OCR's rendering leaves out (as in hidden.pdf).
+let outlinedForm = outlined.add(
+    stream: "/Type /XObject /Subtype /Form /BBox [0 0 612 792] /OC \(outlinedLayer) 0 R "
+        + "/Resources << /Font << /T \(outlinedFont) 0 R >> >>", "BT /T 24 Tf 72 676 Td (PLANTED PLANTED) Tj ET\n")
+let outlinedLook = outlined.add(stream: "/Type /XObject /Subtype /Form /BBox [0 0 400 40]", "1 g 0 0 400 40 re f\n")
+let outlinedSquare = outlined.add(
+    "<< /Type /Annot /Subtype /Square /Rect [66 668 466 708] /C [1 1 1] /IC [1 1 1] /BS << /W 0 >> "
+        + "/F 4 /AP << /N \(outlinedLook) 0 R >> >>")
+let outlinedPages = [
+    Page(name: "text PDFKit leaves out, in a form switched off", content: visible + "/Off Do\n"),
+    Page(
+        name: "text PDFKit leaves out, under a white square annotation",
+        content: visible
+            + "BT /T 24 Tf 72 676 Td (PLANTED PLANTED) Tj ET\n", extra: "/Annots [\(outlinedSquare) 0 R]"),
+    Page(
+        name: "visible: the same font, in no layer",
+        content: visible
+            + "BT /T 24 Tf 72 676 Td (LAND TEAM) Tj ET\n"),
+    // A scan, which OCR reads whole.
+    Page(name: "on a scan, text PDFKit leaves out, in a form switched off", content: "q 612 0 0 792 0 0 cm /Im Do Q\n/Off Do\n"),
+]
+try outlined.write(
+    outlinedPages,
+    resources: "<< /Font << /F1 \(outlinedHelvetica) 0 R /T \(outlinedFont) 0 R >> "
+        + "/XObject << /Im \(outlinedScan) 0 R /Off \(outlinedForm) 0 R >> >>",
+    catalog: "/OCProperties << /OCGs [\(outlinedLayer) 0 R] /D << /OFF [\(outlinedLayer) 0 R] >> >>", to: "unread-hidden.pdf")
+
 // The safety set's files that carry what a reader sees beside the text, each on a page with
 // visible lines: comments, form fields, links, attachments and scripts.
 let carried = Writer()

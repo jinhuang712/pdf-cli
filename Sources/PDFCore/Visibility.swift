@@ -333,8 +333,11 @@ struct Visibility {
     ///   - boxes: PDFKit's boxes of the page's characters, in page space, those of use: PDFKit gives
     ///     some a box a line long, whose center lies between lines.
     ///   - text: PDFKit's text of the page.
-    /// - Returns: the places, and the share of the glyphs the page draws to show that they hold.
-    func unread(near boxes: [CGRect], or raw: () -> [CGRect], in text: String) -> (places: [CGRect], share: Double) {
+    /// - Returns: the places, and the share of the glyphs the page draws to show that they hold;
+    ///   and the places of text PDFKit leaves out that a reader cannot see and a rendering that
+    ///   leaves annotations out and ignores layers still draws, as text in a form switched off or
+    ///   under an annotation: OCR reads them, so a reading by OCR must hide them (M2.19).
+    func unread(near boxes: [CGRect], or raw: () -> [CGRect], in text: String) -> (places: [CGRect], share: Double, hidden: [CGRect]) {
         let cell: CGFloat = 12
         func index(_ value: CGFloat) -> Int { Visibility.pixel((value / cell).rounded(.down)) }
         func key(_ x: Int, _ y: Int) -> Int { x &* 100_003 &+ y }
@@ -379,6 +382,7 @@ struct Visibility {
         }
         let spelled = Visibility.normalized(text)
         var found: [CGRect] = []
+        var hidden: [CGRect] = []
         var drawn = 0, missing = 0
         for run in drawing.runs where run.kind == .shown && crop.contains(CGPoint(x: run.bounds.midX, y: run.bounds.midY)) {
             drawn += run.glyphs
@@ -386,8 +390,10 @@ struct Visibility {
         // Only strings a reader sees: drawn to show, not squeezed or stacked, 2 pt tall or more,
         // not clipped away, with no image or shape drawn over most of them, and with ink. What
         // the place holds goes out with `--show raw`, so a string hidden any way must stay out.
-        for run in drawing.runs where run.kind == .shown && run.glyphs >= 3 && run.toText.axisAligned && !run.crushed
-            && !run.clipped && run.height >= 2 {
+        for run in drawing.runs
+        where run.kind != .invisible && run.glyphs >= 3 && run.toText.axisAligned && !run.crushed
+            && !run.clipped && run.height >= 2
+        {
             let rect = run.bounds.intersection(crop)
             guard !rect.isNull, rect.width > 0, rect.height > 0, crop.contains(CGPoint(x: run.bounds.midX, y: run.bounds.midY)) else { continue }
             // At least 3 letters or digits, as its codes spell them: a string of symbols, as a
@@ -399,8 +405,18 @@ struct Visibility {
             // repeat, as in "$1,000,000.00".
             let most = Dictionary(grouping: own.filter { !$0.isNumber }, by: { $0 }).values.map(\.count).max() ?? 0
             guard own.count < 6 || most * 10 < own.count * 6, !pdfKitHasText(on: run) else { continue }
-            guard !drawing.coverings.contains(where: { $0.order > run.order && $0.rect.intersection(rect).area >= 0.5 * rect.area }),
-                  let ink = ink(in: rect), ink.count >= 2, ink.share >= 0.005 else { continue }
+            // In a layer switched off: no reader sees it, a rendering draws it.
+            if run.kind == .off {
+                if hidden.count < 100 { hidden.append(rect) }
+                continue
+            }
+            guard !drawing.coverings.contains(where: { $0.order > run.order && $0.rect.intersection(rect).area >= 0.5 * rect.area }) else { continue }
+            guard let ink = ink(in: rect), ink.count >= 2, ink.share >= 0.005 else {
+                // No ink in what a reader sees, and no shape in the page's drawing covers it: an
+                // annotation does, which a rendering without annotations leaves out.
+                if hidden.count < 100 { hidden.append(rect) }
+                continue
+            }
             missing += run.glyphs
             if let last = found.last, last.insetBy(dx: -run.height, dy: -0.3 * run.height).intersects(rect) {
                 found[found.count - 1] = last.union(rect)
@@ -408,7 +424,7 @@ struct Visibility {
                 found.append(rect)
             }
         }
-        return (found, drawn > 0 ? Double(missing) / Double(drawn) : 0)
+        return (found, drawn > 0 ? Double(missing) / Double(drawn) : 0, hidden)
     }
 
     /// What an image or shape over a word does to it: hides it, or shows it, as a scan's picture
