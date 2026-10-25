@@ -2,7 +2,6 @@
 
 Small fixes and follow-ups with no milestone yet. An item moves to ROADMAP.md once it has a milestone.
 
-- `pdf search` still finds running headers, footers and page numbers, one hit a page: the index takes each page as it is parsed, before the pages around it say what repeats. Mark them in the index once a document is parsed, or drop them from the hits. Noted 2026-10-17, in M2.5.
 - On this machine, since 2026-10-25, PDFKit and Apple's OCR read differently: two unit tests and five `scripts/test-cache.sh` checks fail on `main` too. Find what changed and update the expectations in the final wrap-up.
 - The `scripts/test-cache.sh` check "--show raw shows its text, labelled" (expects `[low-quality] TECH LIBRARY`) fails on both the old and the new build on this machine (M2.17 review): part of the same differences.
 - M2.9's first `scripts/test-cache.sh` run reported 25 failed checks, not looked at (the line above counts five on `main`); the safety check also fails `hidden/hidden.pdf` p.38. At the final wrap-up, run `test-cache.sh` once, keep the log, and compare it with `main` before M2.9. Noted 2026-10-25.

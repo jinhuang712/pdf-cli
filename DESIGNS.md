@@ -874,3 +874,14 @@ Options it beat:
 | Hide every OCR line over any text the drawing commands show | Simple. | A scan's own text layer lies under its image: it would hide the scan. |
 | Read the page again by OCR as a reader sees it | The same words, no commands. | PDFKit draws the form in a layer switched off whatever is asked, so no rendering shows the reader's page. |
 
+## Decision: search judges running headers on the query — 2026-10-25
+
+`pdf search` found a running header, footer or page number on every page (M2.5, noted in TODO.md). A page is indexed when it is parsed, before the pages around it say what repeats, so the index cannot hold the judgement. M2.22 judges on the query: the search lists every block that matches (no snippet yet), `Furniture.find` judges the pages of those blocks against the pages within 4 that are parsed now (the rule `pdf read` uses, chunks of 40 pages), the hits on furniture are left out and counted in the first line with `--show headers`, which brings them back labelled, and the snippets are read for the hits shown only. The index, the parser version and the index checks stay as they are. A keyword search of a 492-page report (NIST SP 800-53) on "security" takes 0.9 s in the debug build against 0.2 s before, and leaves out 490 hits; on the 10 arXiv papers of the smoke set the hits are the same as before except the arXiv stamp and a page number. Nothing repeats until the neighbours are parsed, so a header can show in a search of a file still parsing, which says so; a real hit is never dropped on a guess, as the judgement only ever finds text that repeats or agrees with its page number.
+
+Options it beat:
+
+| Option | For | Against |
+|---|---|---|
+| **Judge on the query, over the parsed pages** | Same rule and same answer as `pdf read`; always current as pages parse; no stored state, so no index version and no stale mark; a library-wide search is the same loop per document. | Reads the pages of every matching block (about 0.7 s more for 2,600 hits in 492 pages); the whole hit list is judged before `--top` or the budget cuts. |
+| Mark furniture in the index once a document is parsed | A query stays one SQL query. | A mark is stale as soon as a page is added, reparsed or picked, so it needs rebuilding with the neighbours' every change (a page's furniture depends on 8 others); a second copy of the judgement to keep equal to `read`'s; index checks 12 and a migration; nothing to mark while the file parses, the common case for a first search. |
+| Leave the header text out of the index when the page is parsed | The smallest query. | Needs the neighbours at parse time, which the parse never has (a page's parse must not depend on another's), and `--show headers` could not bring them back. |

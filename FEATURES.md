@@ -194,6 +194,7 @@ Finds the right page, in one PDF or across the whole library.
 | `--in body\|notes\|refs\|memos\|all` | Limits the search to one part of the document. The default is `all`. |
 | `--top N` | Shows at most N results. By default, search lists every hit in rank order, until the output budget stops it with a line such as `next: pdf search "dropout" --from 61`. |
 | `--from N` | Starts the list at result N. |
+| `--show headers` | Brings back the hits on running headers, footers, page numbers and publisher stamps, each labelled `[header]`, `[footer]` or `[publisher stamp]` (`--json`: `runningHeader`). Without it they are left out and counted in the first line, `running headers and footers: 12 hits left out (show: --show headers)` (`--json`: `setAside.runningHeaders`). Any other value ends 64. |
 
 A query in another language finds matches by meaning, for example a Chinese query on an English paper.
 
@@ -216,7 +217,7 @@ Gap:
 - Search by meaning, and so queries in another language, come with M3.1.
 - `--in` comes with notes and references in M2.7 and M2.8, and memos when `pdf memo` is built, later; search covers all the text until then.
 - A hit inside a figure, a table or an equation names it, with its crop command, as `in table 3 (crop: pdf crop paper.pdf --page 6 --table 3)`, and a hit inside hidden text shows as a marker.
-- Running headers, footers and page numbers stay in the index, so a word of one is a hit on each of its pages (TODO.md).
+- Running headers, footers and page numbers stay in the index, and are judged when a search runs, by the same rule as `pdf read` (F14), against the pages parsed so far (DESIGNS.md → Decision: search judges running headers on the query). Before the pages around a page are parsed, nothing repeats yet, so a header can still show as a hit; the first line then says that headers are judged on the pages parsed so far. A hit is never dropped on a guess: only text a read would set aside is left out. A search by pattern leaves them out after matching, so the 10,000-match cap counts them, and a match that starts in a running header and runs on is left out. A table's header row repeated on every page of a long table, which F14 takes for a running header, is left out of a search too.
 
 Settings: none.
 
