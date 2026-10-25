@@ -3,7 +3,6 @@
 Small fixes and follow-ups with no milestone yet. An item moves to ROADMAP.md once it has a milestone.
 
 - Links past the first 1,000 of a file are not shown: TeX Live's PGF manual holds 44,700, so most of its pages show none. Keep annotations per page in a table of their own, not in the file's facts, which every read decodes, and read their words for the pages asked for. Noted 2026-10-17, in M1.13.
-- Joining a page's shapes into drawings, `Drawing.findPictures`, compares every pair on each pass, at most 2,000 shapes: a page built to need one join per pass, 80 strokes in a spiral, parsed in 6.4 s in the debug build. Join with a grid of buckets or union-find. Found by M1.14's review. Noted 2026-10-17.
 - `pdf search` still finds running headers, footers and page numbers, one hit a page: the index takes each page as it is parsed, before the pages around it say what repeats. Mark them in the index once a document is parsed, or drop them from the hits. Noted 2026-10-17, in M2.5.
 - `pdf crop --figure N` for a number the parsed pages do not hold parses the whole file before it says so: 115 s for a 517-page textbook in the debug build, past an agent's usual 2-minute limit. Parse in batches from the start and stop at the first page that holds it, or stop at a time limit and say how far it looked. Found by M2.6's review. Noted 2026-10-18.
 - On this machine, since 2026-10-25, PDFKit and Apple's OCR read differently: two unit tests and five `scripts/test-cache.sh` checks fail on `main` too. Find what changed and update the expectations in the final wrap-up.

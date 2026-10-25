@@ -1688,21 +1688,8 @@ final class Drawing {
             found.append(("drawing", shape.rect, shape.kind == .curve ? 1 : 0, shape.kind == .bar ? 1 : 0))
         }
         // Regions within 6 pt of one another join, an image with the drawing over it.
-        var merged = true
-        while merged {
-            merged = false
-            var next: [(kind: String, rect: CGRect, curves: Int, bars: Int)] = []
-            for item in found {
-                if let at = next.firstIndex(where: { $0.rect.insetBy(dx: -6, dy: -6).intersects(item.rect) }) {
-                    let other = next[at]
-                    next[at] = (other.kind == "image" || item.kind == "image" ? "image" : "drawing", other.rect.union(item.rect),
-                                other.curves + item.curves, other.bars + item.bars)
-                    merged = true
-                } else {
-                    next.append(item)
-                }
-            }
-            found = next
+        found = Drawing.join(found, reach: CGSize(width: 6.5, height: 6.5)) { first, second in
+            first.insetBy(dx: -6, dy: -6).intersects(second)
         }
         let kept = found.filter { item in
             item.rect.width >= 20 && item.rect.height >= 20 && item.rect.width * item.rect.height < 0.95 * page
@@ -1710,26 +1697,10 @@ final class Drawing {
         }
         // Panels of one figure side by side, on one band of the page, 30 pt apart at most, join:
         // Figure 1 of a paper on dataset distillation came out as five drawings.
-        var joined = kept
-        var joining = true
-        while joining {
-            joining = false
-            var next: [(kind: String, rect: CGRect, curves: Int, bars: Int)] = []
-            for item in joined {
-                if let at = next.firstIndex(where: { other in
-                    let shared = min(other.rect.maxY, item.rect.maxY) - max(other.rect.minY, item.rect.minY)
-                    let gap = max(other.rect.minX - item.rect.maxX, item.rect.minX - other.rect.maxX)
-                    return shared >= 0.5 * min(other.rect.height, item.rect.height) && gap <= 30
-                }) {
-                    let other = next[at]
-                    next[at] = (other.kind == "image" || item.kind == "image" ? "image" : "drawing", other.rect.union(item.rect),
-                                other.curves + item.curves, other.bars + item.bars)
-                    joining = true
-                } else {
-                    next.append(item)
-                }
-            }
-            joined = next
+        let joined = Drawing.join(kept, reach: CGSize(width: 30.5, height: 0.5)) { other, item in
+            let shared = min(other.maxY, item.maxY) - max(other.minY, item.minY)
+            let gap = max(other.minX - item.maxX, item.minX - other.maxX)
+            return shared >= 0.5 * min(other.height, item.height) && gap <= 30
         }
         // A chart's labels, title and legend are often text outside its shapes: its crop takes in
         // the text within 12 pt, once, so that a paragraph next to it does not pull in the next.
@@ -1741,6 +1712,65 @@ final class Drawing {
             for text in texts where text.width * text.height < 0.05 * page && text.intersects(near) { rect = rect.union(text) }
             return (item.kind, rect.intersection(crop), item.rect)
         }
+    }
+
+    typealias Piece = (kind: String, rect: CGRect, curves: Int, bars: Int)
+
+    /// Joins the pieces whose regions are `close`, pass after pass until a pass joins none: each
+    /// piece, in turn, joins the first group before it that it is close to. This is the join that
+    /// compared every pair on each pass, with the same groups in the same order, but a piece looks
+    /// only at the groups in its neighbourhood, found through a grid of at most 32 by 32 cells, so
+    /// a page of 2,000 shapes in a spiral takes milliseconds (M2.21). It stays that join, not a
+    /// union-find, because a group that grows can stop being close to a piece it was close to
+    /// (`close` may compare heights), so the order of joins shows in the groups. `reach` is how far
+    /// a group's neighbours can lie, a little over what `close` accepts; `close` takes the group
+    /// first.
+    static func join(_ pieces: [Piece], reach: CGSize, close: (CGRect, CGRect) -> Bool) -> [Piece] {
+        guard pieces.count > 1 else { return pieces }
+        let bounds = pieces.dropFirst().reduce(pieces[0].rect) { $0.union($1.rect) }
+        let size = max(32, max(bounds.width, bounds.height) / 32)
+        func column(_ x: CGFloat) -> Int { max(0, min(31, Int(((x - bounds.minX) / size).rounded(.down)))) }
+        func row(_ y: CGFloat) -> Int { max(0, min(31, Int(((y - bounds.minY) / size).rounded(.down)))) }
+        var found = pieces
+        var seen = [Int](repeating: -1, count: pieces.count)
+        var stamp = 0
+        var merged = true
+        while merged {
+            merged = false
+            var next: [Piece] = []
+            // The groups of `next` that touch each cell; a group that grew is added to its new cells.
+            var grid = [[Int]](repeating: [], count: 32 * 32)
+            func place(_ index: Int, in rect: CGRect) {
+                for y in row(rect.minY)...row(rect.maxY) {
+                    for x in column(rect.minX)...column(rect.maxX) { grid[y * 32 + x].append(index) }
+                }
+            }
+            for item in found {
+                let near = item.rect.insetBy(dx: -reach.width, dy: -reach.height)
+                stamp += 1
+                var first: Int?
+                for y in row(near.minY)...row(near.maxY) {
+                    for x in column(near.minX)...column(near.maxX) {
+                        for other in grid[y * 32 + x] where seen[other] != stamp {
+                            seen[other] = stamp
+                            if first.map({ other < $0 }) ?? true, close(next[other].rect, item.rect) { first = other }
+                        }
+                    }
+                }
+                if let at = first {
+                    let other = next[at]
+                    next[at] = (other.kind == "image" || item.kind == "image" ? "image" : "drawing", other.rect.union(item.rect),
+                                other.curves + item.curves, other.bars + item.bars)
+                    place(at, in: next[at].rect)
+                    merged = true
+                } else {
+                    next.append(item)
+                    place(next.count - 1, in: item.rect)
+                }
+            }
+            found = next
+        }
+        return found
     }
 
     /// How much of an image lets through over a box, from least to most: its opacity times its
