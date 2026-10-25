@@ -84,6 +84,31 @@ public final class Picks: Sendable {
         }
     }
 
+    /// After a page's result was replaced: keeps each pick on these pages that still applies to
+    /// the new result, by the rule `Output.judge` reads picks with (the block still offers the
+    /// same readings), removes the others, and says how many of each (`pdf reparse`, M2.23).
+    /// Idempotent, so a run that ended between the replacement and this call is mended by the next.
+    public func reconcile(results: [String: PageResult]) throws -> (kept: Int, cleared: Int) {
+        guard !results.isEmpty else { return (0, 0) }
+        let found = try picks(keys: Array(results.keys))
+        guard !found.isEmpty else { return (0, 0) }
+        var kept = 0
+        var gone: [Pick] = []
+        for (key, list) in found {
+            let unsure = results[key].map { Dictionary(grouping: Quality.judge($0).unsure, by: \.block) } ?? [:]
+            for pick in list {
+                let choices = unsure[pick.block]?.filter(\.pickable) ?? []
+                if !choices.isEmpty, Picks.readings(of: choices) == pick.readings { kept += 1 } else { gone.append(pick) }
+            }
+        }
+        try queue.write { db in
+            for pick in gone {
+                try db.execute(sql: "DELETE FROM pick WHERE page_key = ? AND block = ?", arguments: [pick.pageKey, pick.block])
+            }
+        }
+        return (kept, gone.count)
+    }
+
     /// Every pick on these pages, by page key.
     public func picks(keys: [String]) throws -> [String: [Pick]] {
         guard !keys.isEmpty else { return [:] }

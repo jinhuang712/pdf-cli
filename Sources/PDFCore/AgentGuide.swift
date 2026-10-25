@@ -34,7 +34,7 @@ public enum AgentGuide {
         | `pdf pick <pdf> p2.5 a` | Keeps reading `a` or `b` of an unsure block's words. |
         | `pdf transcribe <pdf> --page N --equation 5` | Keeps an equation's LaTeX or a table's Markdown, from standard input; `--clear` removes it. |
         | `pdf add <pdfs or folders>` | Parses PDFs ahead. |
-        | `pdf reparse <pdf>` | Reads pages again: `--page 7`, or `--step ocr` for a scan read badly. Clears their picks. |
+        | `pdf reparse <pdf>` | Reads pages again: `--page 7`, or `--step ocr` for a scan read badly. Keeps picks that still apply. |
         | `pdf ls`, `pdf rm <pdf or ID>` | Lists the PDFs read; forgets one. |
         | `pdf doctor` | What works, what is wrong; `--clean` removes what no read can use. |
         | `pdf setup` | Parsing's memory is the user's call: ask, then `pdf setup --memory balanced` (or `light`, `fastest`). |

@@ -5,7 +5,7 @@ import Testing
 @testable import pdf
 
 /// `pdf reparse` (ROADMAP.md → M2.10): it replaces the cached results of the pages it reads again,
-/// clears their picks, keeps transcripts, follows the contract of M2.15, and a command that dies
+/// keeps the picks whose readings the page still offers and clears the others (M2.23), keeps transcripts, follows the contract of M2.15, and a command that dies
 /// half way changes nothing. The tests run the built `pdf` with a fresh home, as an agent would.
 @Suite(.serialized) struct ReparseTests {
     static let root = OutputContractTests.root
@@ -81,7 +81,7 @@ import Testing
         return process.terminationStatus == 0
     }
 
-    @Test func aReparseReplacesTheCachedResultsClearsPicksAndLeavesOtherPagesAlone() async throws {
+    @Test func aReparseReplacesTheCachedResultsKeepsAPickOfTheSameReadingsAndLeavesOtherPagesAlone() async throws {
         let home = try OutputContractTests.freshHome()
         let file = try Self.copy(Self.paper, to: home)
         _ = try Self.pdf(["read", file, "--page", "2", "--budget", "all"], home: home)
@@ -98,7 +98,8 @@ import Testing
         #expect(run.status == 2, "p.2 holds unsure words, so the reparse ends 2: \(run.output.prefix(300))")
         let object = try #require(run.json, "\(run.output.prefix(300))")
         #expect(object["reparsed"] as? Int == 1 && object["pages"] as? [Int] == [2])
-        #expect(object["picksCleared"] as? Int == 1)
+        // The new reading offers the same words, so the pick stays and is counted (M2.23).
+        #expect(object["picksCleared"] as? Int == 0 && object["picksKept"] as? Int == 1, "\(object)")
         let change = try #require((object["changes"] as? [[String: Any]])?.first)
         #expect(change["page"] as? Int == 2 && change["before"] as? String == "failed" && change["after"] as? String == "unsure", "\(change)")
         // Exactly one result came back; the other pages keep what was planted.
@@ -111,13 +112,46 @@ import Testing
         #expect(
             try Self.cache(home, "SELECT count(*) FROM search_block s WHERE NOT EXISTS (SELECT 1 FROM page_result r WHERE r.page_key = s.page_key)")
                 == "0")
-        // The pick is gone: the page offers its two readings again.
+        // The pick is still there, and still applies.
         let again = try Self.pdf(["read", file, "--page", "2", "--budget", "all"], home: home)
-        #expect(!again.output.contains("[picked") && again.output.contains("unsure: two readings differ"), "\(again.output.prefix(400))")
+        #expect(again.output.contains("[picked"), "\(again.output.prefix(400))")
+        #expect(try Self.sql(home, "Support/library.sqlite", "SELECT count(*) FROM pick") == "1")
         // No runner is left parsing the other pages of the file.
         #expect(!Self.running(file))
         // The other pages were not parsed by the reparse: still planted.
         #expect(try Self.cache(home, "SELECT count(*) FROM page_result WHERE reason = 'planted'") == String((Int(cached) ?? 0) - 1))
+    }
+
+    /// Picks and reparse (M2.23): a pick stays while the page still offers the readings it was made
+    /// for, and goes when it does not; the summary and `--json` count both. A chunk of one page
+    /// checks its own pick, and the runner has settled it before the command ends.
+    @Test func aReparseKeepsPicksOfTheSameReadingsAndClearsTheOthersChunkByChunk() async throws {
+        let home = try OutputContractTests.freshHome()
+        let file = try Self.copy(Self.paper, to: home)
+        _ = try Self.pdf(["read", file, "--budget", "all"], home: home)
+        try await DryRunTests.settle(home)
+        #expect(try Self.pdf(["pick", file, "p2.2", "b"], home: home).status == 0)
+        #expect(try Self.pdf(["pick", file, "p3.5", "a"], home: home).status == 0)
+        #expect(try Self.pdf(["pick", file, "p6.38", "b"], home: home).status == 0)
+        // Page 3's pick was made for other words than the page offers now: planted in the pick's own table.
+        try Self.sql(home, "Support/library.sqlite", "UPDATE pick SET reading_a = 'planted words' WHERE block = 4")
+        #expect(try Self.sql(home, "Support/library.sqlite", "SELECT count(*) FROM pick WHERE reading_a = 'planted words'") == "1")
+
+        // Chunks of one page: each page's pick is checked as its chunk is replaced.
+        let run = try Self.pdf(["reparse", file, "--page", "2,3,6", "--json"], home: home, environment: ["PDF_CLI_REPARSE_CHUNK": "1"])
+        let object = try #require(run.json, "\(run.output.prefix(300))")
+        #expect(object["picksKept"] as? Int == 2 && object["picksCleared"] as? Int == 1, "\(object)")
+        #expect(try Self.sql(home, "Support/library.sqlite", "SELECT count(*) FROM pick") == "2")
+        #expect(try Self.sql(home, "Support/library.sqlite", "SELECT count(*) FROM pick WHERE block = 4") == "0")
+        let text = try Self.pdf(["reparse", file, "--page", "2"], home: home)
+        #expect(text.output.contains("kept 1 pick") && !text.output.contains("cleared"), "\(text.output.prefix(300))")
+        let read = try Self.pdf(["read", file, "--page", "2", "--budget", "all"], home: home)
+        #expect(read.output.contains("[picked"))
+        // OCR reads the page by another method: its readings are not the layer's, so the pick goes.
+        let ocr = try Self.pdf(["reparse", file, "--page", "2", "--step", "ocr"], home: home)
+        #expect(ocr.output.contains("cleared 1 pick") && !ocr.output.contains("kept 1 pick"), "\(ocr.output.prefix(300))")
+        #expect(try Self.sql(home, "Support/library.sqlite", "SELECT count(*) FROM pick WHERE block = 1") == "0")
+        #expect(!Self.running(file))
     }
 
     /// A page's links belong to the file's version, not to the page's parse (M2.21b): a reparse of
@@ -216,7 +250,7 @@ import Testing
         #expect(step.status == 64 && step.errors.contains("ocr"), "\(step.errors)")
         let json = try Self.pdf(["reparse", Self.small, "--json"], home: home)
         #expect(json.status == 0)
-        for key in ["file", "id", "step", "reparsed", "pages", "flagged", "changes", "kept", "picksCleared"] {
+        for key in ["file", "id", "step", "reparsed", "pages", "flagged", "changes", "kept", "picksKept", "picksCleared"] {
             #expect(json.json?[key] != nil, "no \(key): \(json.output)")
         }
         // A locked file points to the command that opens it, as pdf add does.

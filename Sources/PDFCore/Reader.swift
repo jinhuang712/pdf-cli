@@ -57,6 +57,12 @@ public struct Reparsed: Sendable {
     /// Why the run ended before the last page, in words: the time limit, or the error that stopped it
     /// after some chunks were replaced. Nil when every page was read.
     public var stopped: String?
+    /// The picks on the pages replaced: kept because the page still offers the readings they were
+    /// made for, and cleared because it does not (M2.23).
+    public var picksKept = 0
+    public var picksCleared = 0
+    /// Why the picks of a chunk could not be checked, if so: the next reparse mends them.
+    public var picksFailure: String?
 }
 
 public enum ReparseOutcome: Sendable {
@@ -244,6 +250,7 @@ public final class Reader: Sendable {
         var old: [String: PageResult] = [:]
         var new: [String: PageResult] = [:]
         var kept: [Int: String] = [:]
+        var picks = (kept: 0, cleared: 0, failure: String?.none)
         // The document and pages of the pass in hand, so an error after some chunks are replaced can
         // still report them.
         var current: (docID: String, keys: [String], pages: [Int])?
@@ -254,7 +261,7 @@ public final class Reader: Sendable {
                 try finished(
                     path: path, docID: current.docID, keys: current.keys, done: done, old: old, new: new, kept: kept,
                     remaining: current.pages.filter { !doneSet.contains($0) }, stopped: reason, neverRead: neverRead,
-                    changedSinceRead: changedSinceRead, toolUpdated: toolUpdated))
+                    changedSinceRead: changedSinceRead, toolUpdated: toolUpdated, picks: picks))
         }
         while failures < 3 {
             guard let stat = FileStat(path: path) else { throw ReadError.notFound(rawPath) }
@@ -285,6 +292,7 @@ public final class Reader: Sendable {
                 old = [:]
                 new = [:]
                 kept = [:]
+                picks = (0, 0, nil)
             }
             lastDocument = docID
             let keys = try store.pageKeys(docID: docID)
@@ -309,6 +317,11 @@ public final class Reader: Sendable {
                 for line in run.output.split(separator: "\n") {
                     let parts = line.split(separator: "\t", maxSplits: 2, omittingEmptySubsequences: false)
                     if parts.count == 3, parts[0] == "kept", let page = Int(parts[1]) { kept[page] = String(parts[2]) }
+                    if parts.count == 3, parts[0] == "picks", let k = Int(parts[1]), let c = Int(parts[2]) {
+                        picks.kept += k
+                        picks.cleared += c
+                    }
+                    if parts.count >= 2, parts[0] == "picks-failed" { picks.failure = parts[1...].joined(separator: " ") }
                 }
                 done += part
                 busyWaits = 0
@@ -318,7 +331,7 @@ public final class Reader: Sendable {
                 return .done(
                     try finished(
                         path: path, docID: docID, keys: keys, done: done, old: old, new: new, kept: kept, remaining: [], stopped: nil,
-                        neverRead: neverRead, changedSinceRead: changedSinceRead, toolUpdated: toolUpdated))
+                        neverRead: neverRead, changedSinceRead: changedSinceRead, toolUpdated: toolUpdated, picks: picks))
             case Runner.exitLocked:
                 // The file's results stay as they were: a password that does not open it is no verdict on it.
                 return .fileFailed(reason: OpenFailure.lockedReason)
@@ -348,7 +361,8 @@ public final class Reader: Sendable {
 
     private func finished(
         path: String, docID: String, keys: [String], done: [Int], old: [String: PageResult], new: [String: PageResult], kept: [Int: String],
-        remaining: [Int], stopped: String?, neverRead: Bool, changedSinceRead: Bool, toolUpdated: Bool
+        remaining: [Int], stopped: String?, neverRead: Bool, changedSinceRead: Bool, toolUpdated: Bool,
+        picks: (kept: Int, cleared: Int, failure: String?)
     ) throws -> Reparsed {
         if let library {
             try library.register(path: path, docID: docID, title: try store.documentInfo(docID: docID)?.title ?? "", pageCount: keys.count)
@@ -358,7 +372,8 @@ public final class Reader: Sendable {
             docID: docID, pageCount: keys.count, pages: pages,
             before: Dictionary(uniqueKeysWithValues: pages.compactMap { page in old[keys[page]].map { (page, $0) } }),
             after: Dictionary(uniqueKeysWithValues: pages.compactMap { page in new[keys[page]].map { (page, $0) } }),
-            kept: kept, neverRead: neverRead, changedSinceRead: changedSinceRead, toolUpdated: toolUpdated, remaining: remaining, stopped: stopped)
+            kept: kept, neverRead: neverRead, changedSinceRead: changedSinceRead, toolUpdated: toolUpdated, remaining: remaining, stopped: stopped,
+            picksKept: picks.kept, picksCleared: picks.cleared, picksFailure: picks.failure)
     }
 
     /// Starts a runner that indexes the file and stops, and waits for it. Another runner that holds

@@ -141,6 +141,17 @@ public final class Runner: @unchecked Sendable {
             guard let reason = kept[keys[index]] else { continue }
             print("kept\t\(index)\t" + reason.replacingOccurrences(of: "\n", with: " "))
         }
+        // Right after the replacement, in this runner: a pick stays only while its block still offers
+        // the readings it was made for (M2.23). What the cache holds now decides, so a page that
+        // kept its old result keeps its picks.
+        if Library.exists(), let now = try? store.results(keys: Array(reparsed.keys)) {
+            do {
+                let picks = try Picks().reconcile(results: now)
+                print("picks\t\(picks.kept)\t\(picks.cleared)")
+            } catch {
+                print("picks-failed\t" + String(describing: error).replacingOccurrences(of: "\n", with: " "))
+            }
+        }
         fflush(stdout)
         return 0
     }

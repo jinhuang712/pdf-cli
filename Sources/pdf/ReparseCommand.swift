@@ -17,8 +17,8 @@ struct ReparseCommand: ParsableCommand {
             Speed, as measured: 231 pages plain take about 18 s; OCR takes about 0.4 s a page, so about 200 \
             OCR pages fill the 90 s; run the printed command again for the rest.
 
-            It clears the picks on the pages it reads, since a new reading can offer other words. What \
-            you transcribed (an equation's LaTeX, a table's Markdown) is kept: it belongs to what the page \
+            A pick stays while its block still offers the readings it was made for, and is cleared when the \
+            new reading offers other words; the summary says how many of each. What you transcribed (an equation's LaTeX, a table's Markdown) is kept: it belongs to what the page \
             draws, which does not change. A file never read is just parsed, only the pages asked for.
 
             Examples:
@@ -116,18 +116,17 @@ struct ReparseCommand: ParsableCommand {
             return
         }
 
-        // The picks on a page whose reading was replaced go; a page that kept its old result keeps them.
-        let keys = try store.pageKeys(docID: done.docID)
+        // The runner checked the picks of each chunk as it replaced it: a pick stays while its block
+        // still offers the readings it was made for. A page that kept its old result keeps its picks.
         let replaced = done.pages.filter { done.kept[$0] == nil }
-        let cleared: Int
-        do {
-            cleared = try Picks().clear(keys: replaced.map { keys[$0] })
-        } catch {
+        if let failure = done.picksFailure {
             throw Contract.fail(
                 path,
-                "the results of \(count(replaced.count, "page")) were replaced, but their picks could not be cleared (\(Contract.reason(of: error))); run pdf reparse again to clear them",
+                "the results of \(count(replaced.count, "page")) were replaced, but their picks could not be checked (\(failure)); run pdf reparse again to check them",
                 json: json)
         }
+        let cleared = done.picksCleared
+        let keptPicks = done.picksKept
 
         func status(_ result: PageResult?) -> String? { result.map { Quality.judge($0).status.rawValue } }
         var changes: [Change] = []
@@ -168,6 +167,7 @@ struct ReparseCommand: ParsableCommand {
                 var flaggedPages: [Status]
                 var changes: [Change]
                 var kept: [Kept]
+                var picksKept: Int
                 var picksCleared: Int
                 var remaining: [Int]?
                 var next: String?
@@ -190,7 +190,7 @@ struct ReparseCommand: ParsableCommand {
                         file: path, id: String(done.docID.prefix(8)), step: step?.rawValue ?? "usual", reparsed: replaced.count,
                         pages: replaced.map { $0 + 1 }, flagged: flagged.count,
                         flaggedPages: flagged.map { Status(page: $0.page, status: $0.status) }, changes: changes,
-                        kept: keptPages.map { Kept(page: $0 + 1, reason: done.kept[$0] ?? "") }, picksCleared: cleared,
+                        kept: keptPages.map { Kept(page: $0 + 1, reason: done.kept[$0] ?? "") }, picksKept: keptPicks, picksCleared: cleared,
                         remaining: left.isEmpty ? nil : left, next: next, stopped: done.stopped,
                         neverRead: done.neverRead ? true : nil, changedSinceRead: done.changedSinceRead ? true : nil,
                         toolUpdated: done.toolUpdated ? true : nil)))
@@ -199,7 +199,8 @@ struct ReparseCommand: ParsableCommand {
             if !keptPages.isEmpty { parts.append("\(keptPages.count) kept the old result") }
             parts.append(flagged.isEmpty ? "none flagged" : "\(flagged.count) flagged")
             parts.append(statusChanges == 0 ? "no page changed status" : "\(statusChanges) changed status")
-            if cleared > 0 { parts.append("cleared \(count(cleared, "pick"))") }
+            if keptPicks > 0 { parts.append("kept \(count(keptPicks, "pick")), the readings are the same") }
+            if cleared > 0 { parts.append("cleared \(count(cleared, "pick")), the readings differ") }
             if let next {
                 parts.append(
                     "\(done.stopped ?? "stopped") with \(count(left.count, "page")) not read; the chunks before it are replaced; read the rest: \(next)"
