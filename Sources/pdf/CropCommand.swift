@@ -60,13 +60,11 @@ struct CropCommand: ParsableCommand {
     func crop() throws {
         let store = try Store()
         let password = passwordStdin ? Password.read(for: path) : nil
-        // A locked file needs its password on every crop, since none is stored.
-        let unlock = " · crop it with: echo \"$PW\" | pdf crop \(Output.quoted(path))" + (page.map { " --page \($0)" } ?? "") + " --password-stdin"
         let reader = Reader(store: store, library: try Library())
         let docID: String
         switch try reader.read(path: path, pages: [], password: password) {
         case .fileFailed(let reason):
-            let shown = reason.hasPrefix(OpenFailure.locked) ? reason + unlock : reason
+            let shown = reason + Contract.unlockHint(reason)
             throw Contract.fail(path, shown, json: json, code: Contract.fileFailed)
         case .pages(let id, let pageCount, _):
             if let page, page > pageCount { throw ReadError.pageOutOfRange(page: page - 1, pageCount: pageCount) }
@@ -107,9 +105,12 @@ struct CropCommand: ParsableCommand {
             made = try Crop.make(path: path, page: number, region: region, grid: grid, password: password)
         } catch {
             let reason = (error as? CropError)?.description ?? "\(error)"
-            let message = "p.\(number) could not be drawn: \(reason)" + (reason.hasPrefix(OpenFailure.locked) ? unlock : "")
-            // A locked file is a file that would not open, as above: 3, not 1.
-            throw Contract.fail(path, message, json: json, code: reason.hasPrefix(OpenFailure.locked) ? Contract.fileFailed : Contract.couldNotRun)
+            // A file that did not open ends 3, as on every command, with its own reason; a page
+            // that could not be drawn ends 1.
+            if let failed = error as? CropError, failed.fileFailed {
+                throw Contract.fail(path, reason + Contract.unlockHint(reason), json: json, code: Contract.fileFailed)
+            }
+            throw Contract.fail(path, "p.\(number) could not be drawn: \(reason)", json: json)
         }
         let tokens = Crop.tokens(width: made.width, height: made.height)
         if json {

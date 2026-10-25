@@ -405,7 +405,13 @@ public enum OpenFailure {
         return !document.isLocked
     }
 
-    static func classify(url: URL) -> String {
+    /// Whether a worker's reason says the file did not open (exit 3), as against a page that
+    /// could not be drawn.
+    public static func isOpenFailure(_ reason: String) -> Bool {
+        [notPDF, locked, "damaged", slow].contains { reason.hasPrefix($0) }
+    }
+
+    public static func classify(url: URL) -> String {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return damaged }
         defer { try? handle.close() }
         let head = handle.readData(ofLength: 1024)

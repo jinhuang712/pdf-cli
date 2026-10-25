@@ -42,3 +42,4 @@ The spike's reports (M0) are in [spike/](../spike/README.md).
 | M2.10 `pdf reparse` | 2026-10-25 | 1 high, 4 medium, 5 low; 10 fixed, 5 kept | [M2.10](M2.10-reparse.md) |
 | M2.11 `pdf setup`, `pdf doctor`, `gc` into `doctor --clean` | 2026-10-25 | 1 high, 5 medium, 9 low; 15 fixed | [M2.11](M2.11-setup-doctor.md) |
 | M2.19 Hidden text through OCR | 2026-10-25 | 2 high, 3 medium, 2 low; 7 fixed, limits recorded | [M2.19](M2.19-ocr-hidden.md) |
+| M2.20 Small command-layer fixes | 2026-10-25 | 1 high, 2 medium, 6 low; 9 fixed | [M2.20](M2.20-cli-fixes.md) |

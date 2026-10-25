@@ -42,6 +42,23 @@ enum Contract {
         fail(file, Output.failure(reason, file: file), json: json, code: fileFailed)
     }
 
+    /// For a locked file: the command again as the user typed it, with `--password-stdin`. Empty
+    /// for any other reason, and when the password given did not open it: the same command
+    /// again would fail the same way.
+    static func unlockHint(_ reason: String, arguments: [String] = Array(CommandLine.arguments.dropFirst())) -> String {
+        guard reason.hasPrefix(OpenFailure.locked), !reason.contains("does not open it") else { return "" }
+        let again = arguments.filter { $0 != "--password-stdin" }.map(shellWord) + ["--password-stdin"]
+        return " · open it with: echo \"$PW\" | pdf " + again.joined(separator: " ")
+    }
+
+    /// One argument as a shell takes it back: as it is when it holds only safe characters, else
+    /// in single quotes.
+    static func shellWord(_ word: String) -> String {
+        let safe = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-+=.,:/@%^")
+        if !word.isEmpty, word.unicodeScalars.allSatisfy(safe.contains) { return word }
+        return "'" + word.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
     /// Runs a command's body. Whatever the body throws that is not the parser's own (a usage
     /// error, an exit code) becomes a failure in the one shape, exit 1: the command could not
     /// run, as on a file that does not exist.

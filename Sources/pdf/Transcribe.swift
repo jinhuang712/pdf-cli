@@ -61,8 +61,14 @@ struct TranscribeCommand: ParsableCommand {
         let language = Transcript.language(of: kind)
         // The file first, so a missing or unreadable one is reported even when nothing is piped.
         try Contract.requireFile(path)
-        guard FileManager.default.isReadableFile(atPath: Reader.resolve(path)) else {
-            throw Contract.fail(path, "could not be read: permission denied", json: json, code: Contract.fileFailed)
+        // A file that cannot be read and is not cached fails as read and crop fail it; one that is
+        // cached reads from the cache, as it does there.
+        let resolved = Reader.resolve(path)
+        if !FileManager.default.isReadableFile(atPath: resolved) {
+            let cached = Store.exists() && ((try? Store(readOnly: true).knows(path: resolved)) ?? false)
+            if !cached {
+                throw Contract.fail(path, OpenFailure.classify(url: URL(fileURLWithPath: resolved)), json: json, code: Contract.fileFailed)
+            }
         }
         // A dry run opens only what is there, and reads only what the cache holds.
         if dryRun, !Store.exists() { throw Contract.fail(path, Contract.notReadYet(path, page: page, .neverRead), json: json) }

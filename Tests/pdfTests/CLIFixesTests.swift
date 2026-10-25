@@ -38,17 +38,53 @@ import Testing
         #expect(opened.status == 0, "\(opened.output)")
     }
 
-    /// L2: `dump` of a locked file that was added gives the hint, ends 3 and writes nothing.
-    @Test func dumpOfACachedLockedFileHintsThePasswordFlag() throws {
+    /// L2 and H1: what `dump` writes from the cache of an added locked file is written without the
+    /// password; what needs the file itself ends 3 with the command again as typed.
+    @Test func dumpOfACachedLockedFileKeepsTheCacheAndHintsThePasswordFlag() throws {
         let home = try OutputContractTests.freshHome()
         let file = try Self.addedLockedFile(home: home)
         let folder = home.appendingPathComponent("out").path
-        let run = try Self.pdf(["dump", file, "--markdown", "-o", folder], home: home)
+        let cached = try Self.pdf(["dump", file, "--markdown", "--notes", "--refs", "-o", folder], home: home)
+        #expect(cached.status == 0 || cached.status == 2, "\(cached.output)")
+        for name in ["document.md", "notes.json", "references.json"] {
+            #expect(FileManager.default.fileExists(atPath: folder + "/" + name), "\(name): \(cached.output)")
+        }
+        let other = home.appendingPathComponent("out2").path
+        let run = try Self.pdf(["dump", file, "--attachments", "-o", other], home: home)
         #expect(run.status == 3, "\(run.output)")
-        #expect(run.output.contains("--password-stdin") && run.output.contains("pdf dump"), "\(run.output)")
-        #expect(!FileManager.default.fileExists(atPath: folder + "/document.md"))
-        let opened = try Self.pdf(["dump", file, "--markdown", "-o", folder, "--password-stdin"], home: home, stdin: "pw\n")
+        #expect(run.output.contains("locked by a password") && run.output.contains("--attachments -o \(other) --password-stdin"), "\(run.output)")
+        // A wrong password is not told to do what it just did.
+        let wrong = try Self.pdf(["dump", file, "--attachments", "-o", other, "--password-stdin"], home: home, stdin: "bad\n")
+        #expect(wrong.status == 3 && wrong.output.contains("does not open it") && !wrong.output.contains("open it with"), "\(wrong.output)")
+        let opened = try Self.pdf(["dump", file, "--attachments", "-o", other, "--password-stdin"], home: home, stdin: "pw\n")
         #expect(opened.status == 0 || opened.status == 2, "\(opened.output)")
+    }
+
+    /// L1 and L2: `crop` ends 3 for any file that does not open, and its hint keeps the user's flags.
+    @Test func cropKeepsTheUsersFlagsInItsHintAndEndsThreeWhenTheFileWillNotOpen() throws {
+        let home = try OutputContractTests.freshHome()
+        let file = try Self.addedLockedFile(home: home)
+        let hinted = try Self.pdf(["crop", file, "--page", "1", "--bbox", "0.1,0.1,0.5,0.5", "--grid"], home: home)
+        #expect(hinted.status == 3 && hinted.output.contains("--page 1 --bbox 0.1,0.1,0.5,0.5 --grid --password-stdin"), "\(hinted.output)")
+        let wrong = try Self.pdf(["crop", file, "--page", "1", "--password-stdin"], home: home, stdin: "bad\n")
+        #expect(wrong.status == 3 && wrong.output.contains("does not open it") && !wrong.output.contains("open it with"), "\(wrong.output)")
+
+        let plain = home.appendingPathComponent("plain.pdf")
+        try FileManager.default.copyItem(atPath: Self.small, toPath: plain.path)
+        #expect(try Self.pdf(["read", plain.path], home: home).status != 3)
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: plain.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: plain.path) }
+        let crop = try Self.pdf(["crop", plain.path, "--page", "1"], home: home)
+        #expect(crop.status == 3 && crop.output.contains("damaged"), "\(crop.output)")
+        // The cache still serves transcribe; a file that is not cached fails as read and crop fail it.
+        let cached = try Self.pdf(["transcribe", plain.path, "--page", "1", "--equation", "1", "--clear"], home: home)
+        #expect(cached.status != 3 && !cached.output.contains("damaged"), "\(cached.output)")
+        let other = home.appendingPathComponent("other.pdf")
+        try FileManager.default.copyItem(atPath: Self.small, toPath: other.path)
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: other.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: other.path) }
+        let uncached = try Self.pdf(["transcribe", other.path, "--page", "1", "--equation", "1"], home: home)
+        #expect(uncached.status == 3 && uncached.output.contains("damaged"), "\(uncached.output)")
     }
 
     /// L3: the file is checked before standard input is read.
@@ -129,10 +165,12 @@ import Testing
         #expect(refused.status == 1 && refused.output.contains("is a link"), "\(refused.output)")
         #expect(try FileManager.default.contentsOfDirectory(atPath: real.path).isEmpty)
 
-        let alias = "/tmp/pdf-m220-dump-" + UUID().uuidString
-        defer { try? FileManager.default.removeItem(atPath: alias) }
-        let written = try Self.pdf(["dump", Self.small, "--text", "-o", alias], home: home)
+        // `-o /tmp` itself, which the parent refused as a link.
+        let target = "/tmp/notes.json"
+        try #require(!FileManager.default.fileExists(atPath: target), "/tmp/notes.json is there already")
+        defer { try? FileManager.default.removeItem(atPath: target) }
+        let written = try Self.pdf(["dump", Self.small, "--notes", "-o", "/tmp"], home: home)
         #expect(written.status == 0 || written.status == 2, "\(written.output)")
-        #expect(FileManager.default.fileExists(atPath: alias + "/document.txt"))
+        #expect(FileManager.default.fileExists(atPath: target))
     }
 }

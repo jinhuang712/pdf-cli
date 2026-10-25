@@ -68,7 +68,7 @@ public enum AgentGuide {
         - `⚠ p.2 ¶5 unsure: words run together, and no reading splits them`: look at the crop.
         - `set aside: … (show: --show raw)` in the first line: `--show raw` shows it, labelled with its reason, as `[low-quality]` or `[table text: rows and columns lost]` in place, or the replaced text layer as `[PDF text layer]`.
         - `⚠ made or last saved by macOS PDFKit` in the first line: such a save can damage the text; an earlier copy may read better.
-        - A file that fails as a whole says why (not a PDF, damaged, locked, slow to open). For a locked one, ask the user to run `pdf add <pdf> --password-stdin`, as its failure line says; `pdf crop` needs `--password-stdin` each time.
+        - A file that fails as a whole says why (not a PDF, damaged, locked, slow to open). For a locked one, ask the user to run `pdf add <pdf> --password-stdin`; `pdf crop` needs `--password-stdin` each time, and so does `pdf dump paper.pdf --figures` or `--attachments`.
 
         ## Hidden text
 

@@ -953,6 +953,9 @@ public enum Output {
         /// Where a read of one section ends: the page and block of the next section, counted
         /// from 1. The blocks from there on stay out.
         public var until: (page: Int, block: Int)?
+        /// How many entries the list of references holds in the pages parsed so far, as the
+        /// judged index has them; zero says no list has been seen.
+        public var listEntries = 0
 
         /// - Parameter continuation: the full command that goes on from a page, a block and a
         ///   character in the block's text, such as `pdf read paper.pdf --page 4-9 --from p4.7`.
@@ -1189,7 +1192,7 @@ public enum Output {
             if let parsed, parsed < pageCount {
                 summary.append("provisional: \(parsed) of \(pageCount) pages parsed so far")
                 // The list may stand on a page not parsed yet: say so, not nothing.
-                if refsMode == .end, endRefs.isEmpty {
+                if refsMode == .end, endRefs.isEmpty, listEntries == 0 {
                     summary.append("references: none listed, no list seen in the pages parsed so far (pdf ref parses the whole file)")
                 }
             }

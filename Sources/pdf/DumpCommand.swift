@@ -1,7 +1,6 @@
 import ArgumentParser
 import Foundation
 import PDFCore
-import PDFKit
 
 /// Writes a PDF's content to files and prints their paths (FEATURES.md → F6). Attachments and
 /// scripts are saved as bytes and text, never opened or run.
@@ -82,17 +81,6 @@ struct DumpCommand: ParsableCommand {
             docID = id
             pageCount = count
         }
-        // A locked file that was added reads from the cache without its password, but what is
-        // written from the file itself cannot: say so up front, with the command that opens it.
-        if Self.isLocked(path: Reader.resolve(path), password: password) {
-            let flags = [
-                markdown ? "--markdown" : nil, text ? "--text" : nil, figures ? "--figures" : nil, tables ? "--tables" : nil,
-                notes ? "--notes" : nil, refs ? "--refs" : nil, attachments ? "--attachments" : nil,
-                scripts ? "--scripts" : nil,
-            ].compactMap { $0 }
-            let unlock = " · dump it with: echo \"$PW\" | pdf dump \(Output.quoted(path)) \(flags.joined(separator: " ")) --password-stdin"
-            throw Contract.fail(path, OpenFailure.locked + unlock, json: json, code: Contract.fileFailed)
-        }
 
         for (wanted, format, name) in [(markdown, "md", "document.md"), (text, "text", "document.txt")] where wanted {
             var arguments = ["--format", format, "--budget", "all"]
@@ -132,6 +120,12 @@ struct DumpCommand: ParsableCommand {
                         let target = try Dump.write(try Data(contentsOf: made.url), as: file, in: folder, sub: found.kind + "s")
                         written.append(Written(kind: found.kind, path: target.path, page: found.page, note: nil))
                     } catch {
+                        // A file that did not open ends the run with 3, once, with the command that opens it.
+                        if let failed = error as? CropError, failed.fileFailed {
+                            ending.append(3)
+                            notices.append("\(found.kind)s were not written: \(failed.description)" + Contract.unlockHint(failed.description))
+                            break
+                        }
                         // A folder that cannot be written (a link in the way) ends the run with 1.
                         if error is DumpError { ending.append(1) }
                         notices.append("\(found.kind) \(found.number) (p.\(found.page)) was not written: \((error as? CropCommand.NotFound)?.description ?? "\(error)")")
@@ -185,7 +179,7 @@ struct DumpCommand: ParsableCommand {
                 items = try Dump.supervised(path: path, folder: folder, attachments: attachments, scripts: scripts, password: password)
             } catch let error as DumpError {
                 throw error.fileFailed
-                    ? Contract.fail(file: path, reason: error.description, json: json)
+                    ? Contract.fail(path, error.description + Contract.unlockHint(error.description), json: json, code: Contract.fileFailed)
                     : Contract.fail(path, error.description, json: json)
             }
             for item in items {
@@ -234,12 +228,6 @@ struct DumpCommand: ParsableCommand {
         var resolved = URL(fileURLWithPath: String(cString: buffer), isDirectory: true)
         for part in rest { resolved.appendPathComponent(part, isDirectory: true) }
         return resolved.appendingPathComponent(url.lastPathComponent, isDirectory: true)
-    }
-
-    /// Whether the file is locked and the password given, if any, does not open it.
-    static func isLocked(path: String, password: String?) -> Bool {
-        guard let document = PDFDocument(url: URL(fileURLWithPath: path)), document.isLocked else { return false }
-        return password.map { !document.unlock(withPassword: $0) } ?? true
     }
 
     static var encoder: JSONEncoder {

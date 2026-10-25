@@ -54,7 +54,7 @@ struct ReadCommand: ParsableCommand {
     @Option(
         name: .customLong("show"),
         help: ArgumentHelp(
-            "Show what is set aside, in place and labelled: raw (text set aside: doubtful, inside figures and tables, old OCR), hidden (the words of text a reader cannot see) and headers (running headers, footers, page numbers, publisher stamps). A comma list, such as raw,hidden; the flag can repeat.",
+            "Show what is set aside, in place and labelled: raw (text set aside: doubtful, inside figures and tables, a replaced text layer), hidden (the words of text a reader cannot see) and headers (running headers, footers, page numbers, publisher stamps). A comma list, such as raw,hidden; the flag can repeat.",
             valueName: "raw|hidden|headers"))
     var shows: [String] = []
     @Option(
@@ -220,6 +220,7 @@ struct ReadCommand: ParsableCommand {
             let judged = (try? noteIndex.resolve(pages: everyPage, keys: keys, store: store)) ?? [:]
             try? referenceIndex.refresh(keys: keys, store: store)
             let cited = referenceIndex.resolve(pages: results.map(\.page), notes: judged)
+            document.listEntries = referenceIndex.allEntries(notes: judged).count
             for (page, result) in results {
                 let resume = index == 0 && page + 1 == start?.page
                 let added = document.add(

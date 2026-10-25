@@ -281,6 +281,11 @@ import Testing
         var off = Output.Document(file: "paper.pdf", pageCount: 2)
         _ = off.add(try outputPage(0, text, judged))
         #expect(!off.report(parsed: 1).text.contains("no list seen"))
+        // A list that is parsed but cited by nothing read: it was seen, so nothing says it was not.
+        var seen = Output.Document(file: "paper.pdf", pageCount: 3, refs: .end)
+        seen.listEntries = 12
+        _ = seen.add(try outputPage(0, text, judged))
+        #expect(!seen.report(parsed: 2).text.contains("no list seen"))
     }
 
     @Test func aParagraphThatCitesFortyEntriesListsAboutAThousandTokens() throws {

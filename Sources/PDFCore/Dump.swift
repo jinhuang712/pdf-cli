@@ -58,7 +58,7 @@ public enum Dump {
         if document.isEncrypted && !document.isUnlocked {
             _ = document.unlockWithPassword("") || document.unlockWithPassword(Env.password)
         }
-        guard document.isUnlocked else { throw DumpError(description: OpenFailure.locked, fileFailed: true) }
+        guard document.isUnlocked else { throw DumpError(description: OpenFailure.lockedReason, fileFailed: true) }
         var items: [Item] = []
         var names = (attachments: Set<String>(), scripts: Set<String>())
         var files = 0, bytes = 0

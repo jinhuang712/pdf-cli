@@ -8,6 +8,8 @@ import PDFKit
 /// What went wrong making a crop.
 public struct CropError: Error, CustomStringConvertible {
     public let description: String
+    /// The file did not open (not a PDF, locked, damaged, slow): exit 3, as on every command.
+    public var fileFailed: Bool { OpenFailure.isOpenFailure(description) }
 }
 
 /// A worker's output, filled by the thread that reads it.
