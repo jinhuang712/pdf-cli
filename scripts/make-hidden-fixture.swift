@@ -649,6 +649,74 @@ try outlined.write(
         + "/XObject << /Im \(outlinedScan) 0 R /Off \(outlinedForm) 0 R >> >>",
     catalog: "/OCProperties << /OCGs [\(outlinedLayer) 0 R] /D << /OFF [\(outlinedLayer) 0 R] >> >>", to: "unread-hidden.pdf")
 
+// More ways text PDFKit leaves out is drawn for OCR and unseen by a reader (M2.19's review): the
+// same font, drawn two glyphs to a string, with its words spelled elsewhere on the page, rotated,
+// 110 strings, under an annotation with a border or among visible lines, in a word whited out
+// inside a visible line, and nine forms deep; then controls a reader sees, which must read as text.
+func lineAt(_ text: String, y: Double, size: Double = 12, x: Double = 72) -> String {
+    "BT /F1 \(size) Tf \(x) \(y) Td (\(text)) Tj ET\n"
+}
+func offForm(_ content: String) -> Int {
+    outlined.add(stream: "/Type /XObject /Subtype /Form /BBox [0 0 612 792] /OC \(outlinedLayer) 0 R "
+        + "/Resources << /Font << /T \(outlinedFont) 0 R >> >>", content)
+}
+let plantedWords = "PLANTED PLANTED"
+let plantedDraw = "BT /T 24 Tf 72 676 Td (\(plantedWords)) Tj ET\n"
+// An annotation: a Square with a look of its own.
+func boxedSquare(_ rect: String, box: String, look: String, color: String = "[1 1 1]", border: Int = 0) -> Int {
+    let appearance = outlined.add(stream: "/Type /XObject /Subtype /Form /BBox \(box)", look)
+    return outlined.add("<< /Type /Annot /Subtype /Square /Rect \(rect) /C \(color) /IC [1 1 1] /BS << /W \(border) >> /F 4 /AP << /N \(appearance) 0 R >> >>")
+}
+let twoGlyphs = offForm("BT /T 24 Tf 72 676 Td (PL) Tj (AN) Tj (TE) Tj (D ) Tj (PL) Tj (AN) Tj (TE) Tj (D) Tj ET\n")
+let spelledForm = offForm("BT /T 24 Tf 72 676 Td (TRICK ) Tj (PAGE ) Tj (WORDS ) Tj (BEFORE) Tj ET\n")
+let clippedForm = offForm("q 60 674 500 20.5 re W n \(plantedDraw) Q\n")
+let rotatedForm = offForm("BT /T 24 Tf 0.9659 0.2588 -0.2588 0.9659 72 640 Tm (PLANTED ROTATED) Tj ET\nBT /T 24 Tf 0 1 -1 0 540 200 Tm (PLANTED UPWARD) Tj ET\n")
+let manyLetters = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+let manyForm = offForm((0..<110).map { index -> String in
+    let tag = String(manyLetters[index / 26]) + String(manyLetters[index % 26])
+    let x = index < 100 ? 50 + (index / 50) * 280 : 50
+    let y = index < 100 ? 760 - (index % 50) * 12 : 150 - (index - 100) * 10
+    return "BT /T 8 Tf \(x) \(y) Td (PLANTED LINE \(tag)) Tj ET\n"
+}.joined())
+var deepForm = outlined.add(stream: "/Type /XObject /Subtype /Form /BBox [0 0 612 792] /Resources << /Font << /T \(outlinedFont) 0 R >> >>", plantedDraw)
+for level in 0..<8 {
+    deepForm = outlined.add(stream: "/Type /XObject /Subtype /Form /BBox [0 0 612 792] \(level == 7 ? "/OC \(outlinedLayer) 0 R " : "")"
+        + "/Resources << /XObject << /N \(deepForm) 0 R >> >>", "/N Do\n")
+}
+let borderSquare = boxedSquare("[66 668 466 708]", box: "[0 0 400 40]", look: "1 g 0 0 400 40 re f 0 G 2 w 1 1 398 38 re S\n", color: "[0 0 0]", border: 2)
+let tightSquare = boxedSquare("[66 670 466 696]", box: "[0 0 400 26]", look: "1 g 0 0 400 26 re f\n")
+let payLead = "Pay to the order of "
+let wordX = 72 + width(payLead)
+let wordWidth = 7.0 * 0.7 * 12
+let wordSquare = boxedSquare("[\(wordX - 1) 674 \(wordX + wordWidth + 1) 688]", box: "[0 0 \(wordWidth + 2) 14]", look: "1 g 0 0 \(wordWidth + 2) 14 re f\n")
+let controlBox = outlined.add(stream: "/Type /XObject /Subtype /Form /BBox [0 0 400 40]", "0 G 2 w 1 1 398 38 re S\n")
+let controlSquare = outlined.add("<< /Type /Annot /Subtype /Square /Rect [66 668 466 708] /C [0 0 0] /BS << /W 2 >> /F 4 /AP << /N \(controlBox) 0 R >> >>")
+let gapX = 72 + 0.7 * 12 * 8 + 0.4 * 12 + 16
+let gapAfter = gapX + 3 * 0.7 * 8 + 16
+let moreResources = "<< /Font << /F1 \(outlinedHelvetica) 0 R /T \(outlinedFont) 0 R >> /XObject << /Im \(outlinedScan) 0 R "
+    + "/Two \(twoGlyphs) 0 R /Spelled \(spelledForm) 0 R /Clip \(clippedForm) 0 R /Rot \(rotatedForm) 0 R /Many \(manyForm) 0 R /Deep \(deepForm) 0 R >> >>"
+let morePages = [
+    Page(name: "in a form switched off, two glyphs to a string", content: visible + "/Two Do\n", hides: [plantedWords]),
+    Page(name: "in a form switched off, words spelled elsewhere on the page", content: visible + "/Spelled Do\n", hides: ["TRICK PAGE WORDS BEFORE"]),
+    Page(name: "in a form switched off, clipped to its glyphs", content: visible + "/Clip Do\n", hides: [plantedWords]),
+    Page(name: "in a form switched off, rotated", content: visible + "/Rot Do\n", hides: ["PLANTED ROTATED", "PLANTED UPWARD"]),
+    Page(name: "in a form switched off, 110 strings", content: lineAt("Visible words before the trick on this page.", y: 40)
+        + lineAt("Visible words after the trick on this page.", y: 25) + "/Many Do\n", hides: ["PLANTED LINE"]),
+    Page(name: "in a form switched off nine forms deep", content: visible + "/Deep Do\n", hides: [plantedWords]),
+    Page(name: "under an annotation with a border", content: visible + plantedDraw, extra: "/Annots [\(borderSquare) 0 R]", hides: [plantedWords]),
+    Page(name: "under an annotation among visible lines", content: lineAt("Visible words before the trick on this page.", y: 720)
+        + lineAt("Visible line just above the covered one.", y: 700) + plantedDraw + lineAt("Visible line just below the covered one.", y: 656)
+        + lineAt("Visible words after the trick on this page.", y: 600), extra: "/Annots [\(tightSquare) 0 R]", hides: [plantedWords]),
+    Page(name: "one word whited out inside a visible line", content: visible + lineAt(payLead, y: 676) + "BT /T 12 Tf \(wordX) 676 Td (PLANTED) Tj ET\n"
+        + lineAt("the sum of ten dollars.", y: 676, x: wordX + wordWidth + 6), extra: "/Annots [\(wordSquare) 0 R]", hides: ["PLANTED"]),
+    Page(name: "visible: text in a border-only annotation", content: visible + "BT /T 24 Tf 72 676 Td (LAND TEAM) Tj ET\n",
+         extra: "/Annots [\(controlSquare) 0 R]"),
+    Page(name: "visible: a white word in a gap of a visible line", content: visible + "BT /T 12 Tf 72 676 Td (LAND TEAM) Tj ET\n"
+        + "q 1 g BT /T 8 Tf \(gapX) 677 Td (XQZ) Tj ET Q\n" + "BT /T 12 Tf \(gapAfter) 676 Td (MORE WORDS HERE) Tj ET\n"),
+]
+try outlined.write(morePages, resources: moreResources,
+    catalog: "/OCProperties << /OCGs [\(outlinedLayer) 0 R] /D << /OFF [\(outlinedLayer) 0 R] >> >>", to: "unread-hidden-more.pdf")
+
 // The safety set's files that carry what a reader sees beside the text, each on a page with
 // visible lines: comments, form fields, links, attachments and scripts.
 let carried = Writer()

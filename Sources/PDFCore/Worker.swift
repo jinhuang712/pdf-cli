@@ -197,6 +197,7 @@ public enum Worker {
                     // OCR reads PDFKit's rendering, which shows what a reader cannot see: it goes
                     // back under its marker.
                     OCR.markHidden(&read, spots: spots.spots)
+                    read.hiddenCheckIncomplete = textLayer.hiddenCheckIncomplete
                     // The replaced layer, which `--show raw` shows, as a reader would see it: what it
                     // hides stays out.
                     let replaced = textLayer.blocks.map(\.visibleText).filter { !$0.isEmpty }.joined(separator: "\n")
@@ -228,6 +229,7 @@ public enum Worker {
                 if let share = layer.unreadShare, share >= OCR.unreadShare, var read = await OCR.pageText(page, check: true),
                    OCR.readsMore(ocr: read, layer: layer) {
                     OCR.markHidden(&read, spots: spots.spots)
+                    read.hiddenCheckIncomplete = layer.hiddenCheckIncomplete
                     let replaced = layer.blocks.map(\.visibleText).filter { !$0.isEmpty }.joined(separator: "\n")
                     if !replaced.isEmpty { read.replacedText = replaced }
                     read.pictures = layer.pictures

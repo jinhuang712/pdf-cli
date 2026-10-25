@@ -430,6 +430,20 @@ enum TextLayer {
         if notes.heading { layer.noteHeading = true }
         if notes.ended { layer.noteListEnded = true }
         if let offPage = visibility?.drawing.offPage.filter({ !$0.isEmpty }), !offPage.isEmpty { layer.offPage = offPage }
+        // Text a reader cannot see that OCR's rendering still draws, whatever PDFKit holds of it.
+        if let spots, let visibility {
+            let width = max(crop.width, 1), height = max(crop.height, 1)
+            let found = visibility.unseen()
+            for place in found.places {
+                spots.spots.append(
+                    (
+                        Box(
+                            x: Double((place.minX - crop.minX) / width), y: Double((crop.maxY - place.maxY) / height),
+                            width: Double(place.width / width), height: Double(place.height / height)), .invisible
+                    ))
+            }
+            if found.overflow { layer.hiddenCheckIncomplete = true }
+        }
         if visibility?.drawing.incomplete == true { layer.hiddenCheckIncomplete = true }
         if !pictures.isEmpty {
             layer.pictures = pictures.indices.map { Picture(kind: pictures[$0].kind, box: fraction(fromTop(pictures[$0].rect)), alt: alts[$0]) }
@@ -463,17 +477,6 @@ enum TextLayer {
             let unread = found.places.map { place in
                 Unread(box: Box(x: Double((place.minX - crop.minX) / width), y: Double((crop.maxY - place.maxY) / height),
                                 width: Double(place.width / width), height: Double(place.height / height)))
-            }
-            // Text PDFKit leaves out that no reader sees, in a rendering that still draws it.
-            if let spots {
-                for place in found.hidden {
-                    spots.spots.append(
-                        (
-                            Box(
-                                x: Double((place.minX - crop.minX) / width), y: Double((crop.maxY - place.maxY) / height),
-                                width: Double(place.width / width), height: Double(place.height / height)), .invisible
-                        ))
-                }
             }
             if !unread.isEmpty {
                 layer.unread = unread

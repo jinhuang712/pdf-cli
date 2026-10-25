@@ -62,6 +62,9 @@ struct Color: Equatable {
 /// and a scan's own image under its text layer.
 struct Visibility {
     let pixels: [UInt8]
+    /// The page as drawn before its annotations, when it has any to draw: what a rendering that
+    /// leaves annotations out, as OCR's, shows (M2.19). Nil when it is `pixels`.
+    let bare: [UInt8]?
     let width: Int
     let height: Int
     let scale: CGFloat
@@ -168,6 +171,7 @@ struct Visibility {
         guard width > 0, height > 0 else { return nil }
         let started = DispatchTime.now().uptimeNanoseconds
         var pixels = [UInt8](repeating: 255, count: width * height * 4)
+        var bare: [UInt8]?
         let drawn = pixels.withUnsafeMutableBytes { buffer -> Bool in
             guard let space = CGColorSpace(name: CGColorSpace.sRGB),
                   let context = CGContext(data: buffer.baseAddress, width: width, height: height, bitsPerComponent: 8,
@@ -184,7 +188,9 @@ struct Visibility {
             // PDFKit draws an annotation as the page is shown, from the media box's corner and
             // turned by the page's rotation; the drawing here is in the page's own space.
             let shown = page.transform(for: .mediaBox).inverted()
-            for annotation in page.annotations where annotation.shouldDisplay && !Visibility.seeThrough.contains(annotation.type ?? "") {
+            let drawnAnnotations = page.annotations.filter { $0.shouldDisplay && !Visibility.seeThrough.contains($0.type ?? "") }
+            if !drawnAnnotations.isEmpty { bare = Array(buffer.bindMemory(to: UInt8.self)) }
+            for annotation in drawnAnnotations {
                 context.saveGState()
                 context.concatenate(shown)
                 annotation.draw(with: .mediaBox, in: context)
@@ -194,6 +200,7 @@ struct Visibility {
         }
         guard drawn else { return nil }
         self.pixels = pixels
+        self.bare = bare
         self.width = width
         self.height = height
         self.scale = Visibility.scale
@@ -333,11 +340,8 @@ struct Visibility {
     ///   - boxes: PDFKit's boxes of the page's characters, in page space, those of use: PDFKit gives
     ///     some a box a line long, whose center lies between lines.
     ///   - text: PDFKit's text of the page.
-    /// - Returns: the places, and the share of the glyphs the page draws to show that they hold;
-    ///   and the places of text PDFKit leaves out that a reader cannot see and a rendering that
-    ///   leaves annotations out and ignores layers still draws, as text in a form switched off or
-    ///   under an annotation: OCR reads them, so a reading by OCR must hide them (M2.19).
-    func unread(near boxes: [CGRect], or raw: () -> [CGRect], in text: String) -> (places: [CGRect], share: Double, hidden: [CGRect]) {
+    /// - Returns: the places, and the share of the glyphs the page draws to show that they hold.
+    func unread(near boxes: [CGRect], or raw: () -> [CGRect], in text: String) -> (places: [CGRect], share: Double) {
         let cell: CGFloat = 12
         func index(_ value: CGFloat) -> Int { Visibility.pixel((value / cell).rounded(.down)) }
         func key(_ x: Int, _ y: Int) -> Int { x &* 100_003 &+ y }
@@ -382,7 +386,6 @@ struct Visibility {
         }
         let spelled = Visibility.normalized(text)
         var found: [CGRect] = []
-        var hidden: [CGRect] = []
         var drawn = 0, missing = 0
         for run in drawing.runs where run.kind == .shown && crop.contains(CGPoint(x: run.bounds.midX, y: run.bounds.midY)) {
             drawn += run.glyphs
@@ -390,10 +393,8 @@ struct Visibility {
         // Only strings a reader sees: drawn to show, not squeezed or stacked, 2 pt tall or more,
         // not clipped away, with no image or shape drawn over most of them, and with ink. What
         // the place holds goes out with `--show raw`, so a string hidden any way must stay out.
-        for run in drawing.runs
-        where run.kind != .invisible && run.glyphs >= 3 && run.toText.axisAligned && !run.crushed
-            && !run.clipped && run.height >= 2
-        {
+        for run in drawing.runs where run.kind == .shown && run.glyphs >= 3 && run.toText.axisAligned && !run.crushed
+            && !run.clipped && run.height >= 2 {
             let rect = run.bounds.intersection(crop)
             guard !rect.isNull, rect.width > 0, rect.height > 0, crop.contains(CGPoint(x: run.bounds.midX, y: run.bounds.midY)) else { continue }
             // At least 3 letters or digits, as its codes spell them: a string of symbols, as a
@@ -405,18 +406,8 @@ struct Visibility {
             // repeat, as in "$1,000,000.00".
             let most = Dictionary(grouping: own.filter { !$0.isNumber }, by: { $0 }).values.map(\.count).max() ?? 0
             guard own.count < 6 || most * 10 < own.count * 6, !pdfKitHasText(on: run) else { continue }
-            // In a layer switched off: no reader sees it, a rendering draws it.
-            if run.kind == .off {
-                if hidden.count < 100 { hidden.append(rect) }
-                continue
-            }
-            guard !drawing.coverings.contains(where: { $0.order > run.order && $0.rect.intersection(rect).area >= 0.5 * rect.area }) else { continue }
-            guard let ink = ink(in: rect), ink.count >= 2, ink.share >= 0.005 else {
-                // No ink in what a reader sees, and no shape in the page's drawing covers it: an
-                // annotation does, which a rendering without annotations leaves out.
-                if hidden.count < 100 { hidden.append(rect) }
-                continue
-            }
+            guard !drawing.coverings.contains(where: { $0.order > run.order && $0.rect.intersection(rect).area >= 0.5 * rect.area }),
+                  let ink = ink(in: rect), ink.count >= 2, ink.share >= 0.005 else { continue }
             missing += run.glyphs
             if let last = found.last, last.insetBy(dx: -run.height, dy: -0.3 * run.height).intersects(rect) {
                 found[found.count - 1] = last.union(rect)
@@ -424,7 +415,48 @@ struct Visibility {
                 found.append(rect)
             }
         }
-        return (found, drawn > 0 ? Double(missing) / Double(drawn) : 0, hidden)
+        return (found, drawn > 0 ? Double(missing) / Double(drawn) : 0)
+    }
+
+    /// The strings of text a reader cannot see that a rendering for OCR still draws, as places in
+    /// page space. OCR reads PDFKit's rendering, which leaves annotations out and draws a form in a
+    /// layer switched off, so text under an annotation, or in such a form, is read though no
+    /// reader sees it; PDFKit's own text may leave it out, and the text layer's words then do not
+    /// mark it (M2.19). A string counts where the page as drawn without annotations has ink in its
+    /// glyph box, tight (no side margin; from 0.2 em below its baseline to 0.8 above), and
+    /// either the string is in a layer switched off, or the page as a reader sees it has none.
+    /// Touching places on a line merge. At most `hiddenPlaces` are kept: `overflow` says more
+    /// were found, and the check is then incomplete.
+    static let hiddenPlaces = 500
+
+    func unseen() -> (places: [CGRect], overflow: Bool) {
+        var places: [CGRect] = []
+        var overflow = false
+        for run in drawing.runs where run.kind != .invisible && run.glyphs >= 1 && !run.crushed {
+            // Only a string drawn in a layer switched off, or on a page with annotations, can be
+            // drawn for OCR and unseen by a reader.
+            guard run.kind == .off || bare != nil else { continue }
+            guard crop.contains(CGPoint(x: run.bounds.midX, y: run.bounds.midY)) else { continue }
+            let along = (min(0, run.reach) - 0.05 * run.size)...(max(0, run.reach) + run.back + 0.05 * run.size)
+            let local = run.vertical
+                ? CGRect(x: -0.5 * run.size, y: along.lowerBound, width: run.size, height: along.upperBound - along.lowerBound)
+                : CGRect(x: along.lowerBound, y: -0.2 * run.size, width: along.upperBound - along.lowerBound, height: run.size)
+            guard run.toText.invertible else { continue }
+            let rect = local.applying(run.toText.inverted()).intersection(crop)
+            guard !rect.isNull, rect.width > 0, rect.height > 0 else { continue }
+            guard let drawn = ink(in: rect, of: bare ?? pixels), drawn.count >= 2, drawn.share >= 0.005 else { continue }
+            if run.kind == .shown {
+                if let seen = ink(in: rect), seen.count >= 2, seen.share >= 0.005 { continue }
+            }
+            if let last = places.last, last.insetBy(dx: -0.3 * run.height, dy: -0.3 * run.height).intersects(rect) {
+                places[places.count - 1] = last.union(rect)
+            } else if places.count < Visibility.hiddenPlaces {
+                places.append(rect)
+            } else {
+                overflow = true
+            }
+        }
+        return (places, overflow)
     }
 
     /// What an image or shape over a word does to it: hides it, or shows it, as a scan's picture
@@ -636,7 +668,8 @@ struct Visibility {
     /// or an underline, or a strip of a shape, not letters, and does not count: two grey rules
     /// along white text's box would otherwise read as its ink. A box of more than
     /// `inkSamples` pixels is read every few pixels each way.
-    func ink(in rect: CGRect) -> Ink? {
+    func ink(in rect: CGRect, of source: [UInt8]? = nil) -> Ink? {
+        let source = source ?? pixels
         let left = max(0, Visibility.pixel(((rect.minX - crop.minX) * scale).rounded(.down)))
         let right = min(width, Visibility.pixel(((rect.maxX - crop.minX) * scale).rounded(.up)))
         let top = max(0, Visibility.pixel(((crop.maxY - rect.maxY) * scale).rounded(.down)) - 1)
@@ -650,7 +683,7 @@ struct Visibility {
         var common = 0, most = 0
         var touched: [Int] = []
         var base = (0, 0, 0)
-        pixels.withUnsafeBufferPointer { pixels in
+        source.withUnsafeBufferPointer { pixels in
             ocr.counts.withUnsafeMutableBufferPointer { counts in
                 ocr.sums.withUnsafeMutableBufferPointer { sums in
                     for row in stride(from: top, to: bottom, by: bottom - top > 4 ? 2 * step : step) {
@@ -692,7 +725,7 @@ struct Visibility {
         var columns = [Int](repeating: 0, count: span)
         var inked = [Int](repeating: 0, count: span)
         var count = 0, rows = 0
-        pixels.withUnsafeBufferPointer { pixels in
+        source.withUnsafeBufferPointer { pixels in
             for row in stride(from: top, to: bottom, by: step) {
                 rows += 1
                 var found = 0, key = -1, oneColor = true

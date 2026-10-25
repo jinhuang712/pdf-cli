@@ -276,6 +276,34 @@ import Testing
         #expect(!Self.running(file))
     }
 
+    /// The same, in the shapes M2.19's review found: strings of two glyphs, spelled elsewhere on the page,
+    /// rotated, 110 of them, under an annotation with a border, between visible lines, and in a word
+    /// whited out inside a line. A visible word in a gap of a visible line, and text in a
+    /// border-only annotation, stay text. Nine forms deep the check does not reach, and says so.
+    @Test func ocrOfHiddenTextInOtherShapesStaysHidden() async throws {
+        let home = try OutputContractTests.freshHome()
+        let file = try Self.copy(Self.root.appendingPathComponent("testdata/hidden/unread-hidden-more.pdf").path, to: home)
+        let run = try Self.pdf(["reparse", file, "--step", "ocr"], home: home)
+        #expect([0, 2].contains(run.status), "\(run.output.prefix(300))")
+        func page(_ number: Int) throws -> String {
+            try Self.pdf(["read", file, "--page", "\(number)", "--budget", "all"], home: home).output
+        }
+        for number in [1, 2, 3, 4, 5, 7, 8, 9] {
+            let output = try page(number)
+            for word in ["PLANTED", "TRICK", "ROTATED", "UPWARD"] {
+                #expect(!output.contains(word), "p.\(number): \(word) read as text: \(output.prefix(600))")
+            }
+            if number != 3 { #expect(output.contains("[hidden:"), "p.\(number): no marker: \(output.prefix(600))") }
+        }
+        #expect(try page(5).contains("Visible words before the trick"), "visible lines under the 110 strings")
+        #expect(try page(6).contains("hidden-text check incomplete"), "nine forms deep: the check says it is incomplete")
+        let box = try page(10)
+        #expect(box.contains("LAND TEAM") && !box.contains("[hidden:"), "\(box.prefix(600))")
+        let gap = try page(11)
+        #expect(gap.contains("LAND TEAM MORE WORDS HERE") && !gap.contains("[hidden:"), "\(gap.prefix(600))")
+        #expect(!Self.running(file))
+    }
+
     /// A new reading that fails never replaces one that read well: the page keeps its result, the
     /// summary counts it, the command ends 2, and `reparsed` counts replaced pages only.
     @Test func aFailedNewReadingKeepsTheOldResultAndIsCounted() async throws {

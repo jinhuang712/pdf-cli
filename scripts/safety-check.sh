@@ -129,7 +129,8 @@ cp testdata/hidden/hidden.pdf "$home/hidden-ocr.pdf"
 run reparse "$home/hidden-ocr.pdf" --page $ocrpages --step ocr >/dev/null
 output=$(run read "$home/hidden-ocr.pdf" --page $ocrpages --budget all)
 found=$(run search "$home/hidden-ocr.pdf" PLANTED)
-if printf '%s' "$output $found" | grep -q "PLANTED"; then fail "hidden.pdf read again by OCR: planted words read as text or are found by search"
+# The search header names the query, so a hit is told by its count.
+if printf '%s' "$output" | grep -q "PLANTED" || printf '%s' "$found" | grep -q "[1-9][0-9]* hit"; then fail "hidden.pdf read again by OCR: planted words read as text or are found by search"
 elif ! printf '%s' "$output" | grep -q "\[hidden"; then fail "hidden.pdf read again by OCR: no hidden-text marker"
 else ok "hidden.pdf read again by OCR: planted text flagged and kept out"; fi
 
@@ -140,10 +141,24 @@ first=$(run read "$home/unread-hidden.pdf" --page 4 --budget all)
 run reparse "$home/unread-hidden.pdf" --step ocr >/dev/null
 output=$(run read "$home/unread-hidden.pdf" --budget all)
 found=$(run search "$home/unread-hidden.pdf" PLANTED)
-if printf '%s' "$first $output $found" | grep -q "PLANTED"; then fail "unread-hidden.pdf read by OCR: planted words read as text or are found by search"
+if printf '%s' "$first $output" | grep -q "PLANTED" || printf '%s' "$found" | grep -q "[1-9][0-9]* hit"; then fail "unread-hidden.pdf read by OCR: planted words read as text or are found by search"
 elif ! printf '%s' "$first $output" | grep -q "\[hidden"; then fail "unread-hidden.pdf read by OCR: no hidden-text marker"
 elif ! printf '%s' "$output" | grep -q "LAND TEAM"; then fail "unread-hidden.pdf read by OCR: the visible control is not read"
 else ok "unread-hidden.pdf read by OCR: planted text flagged and kept out"; fi
+
+# The same in more shapes (testdata/hidden/unread-hidden-more.pdf): pages 1-5 and 7-9 hide the text,
+# page 6 is nine forms deep, which the check says it does not reach, 10 and 11 are controls.
+cp testdata/hidden/unread-hidden-more.pdf "$home/unread-hidden-more.pdf"
+run reparse "$home/unread-hidden-more.pdf" --step ocr >/dev/null
+more_ok=1
+for p in 1 2 3 4 5 7 8 9; do
+    output=$(run read "$home/unread-hidden-more.pdf" --page $p --budget all)
+    if printf '%s' "$output" | grep -q -e PLANTED -e TRICK -e ROTATED -e UPWARD; then fail "unread-hidden-more.pdf p.$p: planted words read as text"; more_ok=0; fi
+done
+run read "$home/unread-hidden-more.pdf" --page 6 --budget all | grep -q "check incomplete" || { fail "unread-hidden-more.pdf p.6: no incomplete note"; more_ok=0; }
+run read "$home/unread-hidden-more.pdf" --page 10 --budget all | grep -q "LAND TEAM" || { fail "unread-hidden-more.pdf p.10: visible text lost"; more_ok=0; }
+run read "$home/unread-hidden-more.pdf" --page 11 --budget all | grep -q "LAND TEAM MORE WORDS HERE" || { fail "unread-hidden-more.pdf p.11: visible text hidden"; more_ok=0; }
+[ $more_ok -eq 1 ] && ok "unread-hidden-more.pdf read by OCR: planted text kept out, controls read"
 
 for file in testdata/safety/visible-*.pdf; do
     name=$(basename "$file" .pdf)

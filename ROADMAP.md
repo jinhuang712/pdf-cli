@@ -41,7 +41,7 @@ The spike shipped no features. It answered the riskiest questions.
   - [x] M1.4 Apple OCR for scanned and garbled pages
   - [x] M1.15 One pool of worker slots for the whole Mac, with pages nobody waits for parsed in the background
 - **Cleanup of TODO.md** (the user, 2026-10-25: "都清理"): each group is one task, in this order; the items are in TODO.md until their task lands.
-  - [x] M2.19 Hidden text through OCR: check with a fixture that OCR reads no text PDFKit left out of its text but the page draws (M2.10's review, H1); fix it, and raise the parser version if the parse changes.
+  - [x] M2.19 Hidden text through OCR (parser version 20): check with a fixture that OCR reads no text PDFKit left out of its text but the page draws (M2.10's review, H1); fix it, and raise the parser version if the parse changes.
   - [ ] M2.20 Exit codes, hints and `--json` of the commands: locked cached file `crop` ends 3, `dump` hints `--password-stdin`, `transcribe` checks the file before standard input, `rm --json` splits `id` and `title`, `agent-guide --install --json` keeps its warning, `read --refs end` says when the list is not parsed, `--show raw` labels a born-digital text layer by what it is. Also the paths: `/tmp` and `/private/tmp` resolve alike whether or not the file exists (`rm`, `ls`, `dump -o`).
   - [ ] M2.21 Limits on big files: the decoded-stream memory of a content-stream bomb, links past 1,000 in a table of their own (cache schema 9), the grid join of shapes, `crop --figure` stopping at a time limit, and `reparse` committing in chunks of 50 pages.
   - [ ] M2.22 `pdf search` no longer finds running headers, footers and page numbers (index checks 11 if the index changes).

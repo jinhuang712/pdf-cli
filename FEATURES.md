@@ -374,7 +374,7 @@ Very faint text, under a contrast of 1.3 to 1 with what lies behind it, as #EEEE
 
 A picture's alt text, the words a tagged file gives for readers who cannot see the picture, is hidden text too: a reader of the page never sees it, so a hostile file can plant a line there. A figure, or a picture outside every figure, whose drawing the file's structure tree gives alt text, carries a marker, `[hidden: 12 words, alt text, the file's words for a picture, which the page does not show · show: …]`, counted with the page's hidden places, and its words only with `--show hidden`. It is found through the marked content the page draws the picture in, so alt text on a structure element that marks no drawing on the page, or only text, or a drawing too small to be a picture, is not read; at most 1,000 characters a picture, and past 5,000 marked drawings on a page the page says its check is incomplete. The page's cache key holds the alt text, so a file that gains it is parsed again.
 
-A page read by OCR, as a scan is, or by `pdf reparse --step ocr`, keeps its hidden text hidden too: OCR reads what PDFKit draws, which includes text under an annotation and in a layer switched off, so each OCR line that lies over words the page's text layer hides goes under the same marker, and stays out of search.
+A page read by OCR, as a scan is, or by `pdf reparse --step ocr`, keeps its hidden text hidden too: OCR reads what PDFKit draws, which includes text under an annotation and in a layer switched off, so each OCR line that lies over words the page's text layer hides, or over a string of text PDFKit leaves out that a rendering draws and no reader sees (in a layer switched off, or under an annotation), goes under the same marker, and stays out of search.
 
 Gap:
 - A word set at an angle, as a chart's slanted label, is checked for its size, but not for ink, since PDFKit's boxes for it miss its ink.
@@ -389,6 +389,9 @@ Gap:
 - Letters hidden one by one count only in a word of letters and digits set across the page: in maths, and in a word set down the page, such letters read as text.
 - OCR checks at most 24 places a page under images that blend or that the drawing commands cannot read, and stops after 3 s, the page's own drawing included; past that, text there counts as seen, and the page says its check is incomplete.
 - Text that runs off the page part-way keeps the part on the page as text.
+- A string in a form switched off, nine forms deep or more, is out of the check's reach: a page read by OCR says its check is incomplete, and the string reads as text.
+- A line OCR reads that holds a hidden word among visible ones, as a word whited out by an annotation inside a line, goes under the marker whole, since OCR gives no box for a word: `--show hidden` shows it.
+- Text in a layer switched off that PDFKit's text holds, drawn over a visible line, as the language layers of layered manuals are, reads as plain text, with no OCR: the layer's words are not marked unless a form or marked content switched off holds them in a way the drawing check finds. `pdf crop` draws such a layer through PDFKit, so a crop shows it.
 - A layer a viewer hides by its usage alone, as one for print only, reads as text: macOS's viewers show it, and only Acrobat applies the usage. So does content whose visibility expression nests past 32 levels: its layers decide.
 
 Settings: none.
@@ -414,7 +417,7 @@ It prints one summary line, the pages replaced, how many kept their old result, 
 Gap:
 - A page's key stays, so a copy of the file, or another file with a page that draws the same, shares the new result and loses its picks too. `--step ocr` on a page that has a text layer stores the OCR reading under that key; the layer's reading comes back with a plain `pdf reparse`.
 - It reads pages only: the file's facts (outline, links, annotations) and the sample check that decides whether a scan is read by OCR stay as the first read left them.
-- `--step ocr` reads what PDFKit draws, which includes text under an annotation and in a layer switched off; such text stays under its `[hidden: …]` marker, found from the text layer's own words (F9). Where the text layer has no word for it, as text PDFKit leaves out, OCR may read it as plain text.
+- `--step ocr` reads what PDFKit draws, which includes text under an annotation and in a layer switched off; such text stays under its `[hidden: …]` marker, found from the text layer's own words (F9). Text PDFKit leaves out of its text is found from the page's drawing commands (strings in a layer switched off, or with ink in the page drawn without annotations and none in the page as a reader sees it) and stays under its marker too (M2.19, parser version 20); the limits are F9's Gap.
 - After `--step ocr` on a page with a text layer, `--show raw` shows that layer as `[old OCR]`, which F3 defines for a scan's replaced layer.
 - Picks are cleared even when the new reading is the same as the old.
 
