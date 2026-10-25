@@ -339,7 +339,8 @@ import Testing
         #expect(fields.map { "\($0.name ?? "")=\($0.value ?? "")" } == ["Name=Jane Doe", "Agree=checked", "Country=France"])
         let links = try read("carries-links")
         #expect(links.map(\.target) == ["https://example.org/paper"])
-        #expect(links.first?.words == "See the project page for")
+        // The words under a link are read when its page is (AnnotationWords), not with the facts.
+        #expect(links.first?.words == nil)
         #expect(try read("carries-scripts").isEmpty)
         let hiding = try read("hidden-annotations")
         #expect(hiding.first { $0.kind == .comment }?.hidden == true)
