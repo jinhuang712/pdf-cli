@@ -361,8 +361,13 @@ enum OCR {
     /// image. Returns the page, counted from 0, and the agreement, or nil when no page in the
     /// first ten has enough text to sample.
     static func sampleAgreement(_ document: PDFDocument) async -> (page: Int, agreement: Double)? {
+        var keyer = PageKeyer(catalog: document.documentRef?.catalog)
         for index in 0..<min(document.pageCount, 10) {
-            guard let page = document.page(at: index),
+            // A page whose content is too big to read (`StreamGuard`) is not sampled: PDFKit would
+            // take 14 s to read the text of a stream of 600 KB that inflates to 600 MB.
+            guard let page = document.page(at: index), let reference = page.pageRef else { continue }
+            _ = keyer.key(for: reference)
+            guard keyer.refusal == nil,
                   (page.string ?? "").unicodeScalars.filter({ CharacterSet.letters.contains($0) }).count >= 300
             else { continue }
             let layer = TextLayer.read(page)

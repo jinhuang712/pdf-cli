@@ -50,9 +50,23 @@ struct PageKeyer {
     /// How many times a hash was cut short by the budget, the depth limit or a loop. Such a
     /// hash depends on reading order, so it is never remembered.
     private var cuts = 0
+    /// Why the last key was made without the bytes of a content stream, when one holds more
+    /// operators than `operatorLimit`: such a page is not read (`StreamGuard`). Its key hashes the
+    /// stream's dictionary, its stored length and the count, so the same page keeps the same key.
+    private(set) var refusal: String?
+    private var refused: [UnsafeRawPointer: String] = [:]
+    private let operatorLimit: Int
+    private let checkedAbove: Int
+    /// Set while the page's `Contents` are read, whose streams are content streams like a form's.
+    private var inContents = false
 
-    init(catalog: CGPDFDictionaryRef? = nil) {
+    init(
+        catalog: CGPDFDictionaryRef? = nil, operatorLimit: Int = StreamGuard.operatorLimit,
+        checkedAbove: Int = StreamGuard.storedBytesChecked
+    ) {
         self.catalog = catalog
+        self.operatorLimit = operatorLimit
+        self.checkedAbove = checkedAbove
     }
 
     mutating func key(for page: CGPDFPage) -> String {
@@ -67,6 +81,7 @@ struct PageKeyer {
 
     private mutating func key(_ geometry: PageGeometry, _ dictionary: CGPDFDictionaryRef?) -> String {
         budget = PageKeyer.nodeBudget
+        refusal = nil
         var hasher = SHA256()
         hasher.add(PageKeyer.version)
         for rect in [geometry.mediaBox, geometry.cropBox] {
@@ -82,7 +97,9 @@ struct PageKeyer {
         for name in ["Contents", "Group", "UserUnit"] {
             hasher.add(name)
             if let object = PageKeyer.object(dictionary, name) {
+                inContents = name == "Contents"
                 feed(object, into: &hasher, depth: 0)
+                inContents = false
             }
         }
         hasher.add("Resources")
@@ -172,7 +189,7 @@ struct PageKeyer {
             guard !reuse(identity, into: &hasher) else { return }
             let cutsBefore = cuts
             var inner = SHA256()
-            feedStream(stream, into: &inner, depth: depth + 1)
+            feedStream(stream, identity: identity, into: &inner, depth: depth + 1)
             finish(identity, inner, cutsBefore: cutsBefore, into: &hasher)
         @unknown default:
             hasher.add("unknown")
@@ -183,6 +200,7 @@ struct PageKeyer {
     /// Returns false when the object must be read now; it is then marked as being read.
     private mutating func reuse(_ identity: UnsafeRawPointer, into hasher: inout SHA256) -> Bool {
         if let digest = memo[identity] {
+            if let reason = refused[identity] { refusal = reason }
             hasher.add(digest)
             return true
         }
@@ -235,10 +253,21 @@ struct PageKeyer {
         }
     }
 
-    private mutating func feedStream(_ stream: CGPDFStreamRef, into hasher: inout SHA256, depth: Int) {
+    private mutating func feedStream(_ stream: CGPDFStreamRef, identity: UnsafeRawPointer, into hasher: inout SHA256, depth: Int) {
         hasher.add("stream")
+        var content = inContents
         if let dictionary = CGPDFStreamGetDictionary(stream) {
             feedDictionary(dictionary, into: &hasher, depth: depth)
+            var subtype: UnsafePointer<CChar>?
+            if CGPDFDictionaryGetName(dictionary, "Subtype", &subtype), let subtype, String(cString: subtype) == "Form" { content = true }
+        }
+        // A content stream is counted before it is copied: copying builds all of it in memory.
+        if content, let count = StreamGuard.operators(in: stream, limit: operatorLimit, checking: checkedAbove), count > operatorLimit {
+            let reason = StreamGuard.reason(limit: operatorLimit)
+            refusal = reason
+            refused[identity] = reason
+            hasher.add("content stream over the operator limit")
+            return
         }
         var format = CGPDFDataFormat.raw
         if let data = CGPDFStreamCopyData(stream, &format) {

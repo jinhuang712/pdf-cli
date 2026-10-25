@@ -235,12 +235,15 @@ public struct FontCheck: Sendable, Equatable {
         return false
     }
 
-    /// Every operator of the content stream syntax (PDF 32000, annex A), each counted.
+    /// The operators of the content stream syntax (PDF 32000, annex A).
+    static let operatorNames =
+        "b B b* B* BDC BI BMC BT BX c cm CS cs d d0 d1 Do DP EI EMC ET EX f F f* G g gs h i ID j J K k l m M MP n "
+        + "q Q re RG rg ri s S SC sc SCN scn sh T* Tc Td TD Tf Tj TJ TL Tm Tr Ts Tw Tz v w W W* y ' \""
+
+    /// Every operator of the content stream syntax, each counted.
     nonisolated(unsafe) private static let anyOperator: CGPDFOperatorTableRef = {
         let table = CGPDFOperatorTableCreate()!
-        let names = "b B b* B* BDC BI BMC BT BX c cm CS cs d d0 d1 Do DP EI EMC ET EX f F f* G g gs h i ID j J K k l m M MP n "
-            + "q Q re RG rg ri s S SC sc SCN scn sh T* Tc Td TD Tf Tj TJ TL Tm Tr Ts Tw Tz v w W W* y ' \""
-        for name in names.split(separator: " ") {
+        for name in operatorNames.split(separator: " ") {
             CGPDFOperatorTableSetCallback(table, String(name)) { _, info in
                 info?.assumingMemoryBound(to: Int.self).pointee += 1
             }
@@ -300,9 +303,12 @@ public struct FontCheck: Sendable, Equatable {
 
     /// `CGPDFContentStreamCreateWithStream`, which takes no parent stream in C, as its header
     /// says, though Swift's import of it asks for one.
-    private typealias CreateContentStream = @convention(c) (CGPDFStreamRef, CGPDFDictionaryRef,
-                                                            CGPDFContentStreamRef?) -> CGPDFContentStreamRef?
-    private static let createContentStream: CreateContentStream? = {
+    typealias CreateContentStream =
+        @convention(c) (
+            CGPDFStreamRef, CGPDFDictionaryRef,
+            CGPDFContentStreamRef?
+        ) -> CGPDFContentStreamRef?
+    static let createContentStream: CreateContentStream? = {
         guard let symbol = dlsym(dlopen(nil, RTLD_NOW), "CGPDFContentStreamCreateWithStream") else { return nil }
         return unsafeBitCast(symbol, to: CreateContentStream.self)
     }()

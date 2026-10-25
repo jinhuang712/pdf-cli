@@ -78,17 +78,28 @@ public enum Worker {
         for index in max(start, 0)..<max(count, start) {
             emit(WorkerEvent(kind: .start, page: index))
             plantedFault(at: index, phase: "index-")
-            if let dictionary = tree?.pages[index], let key = keyer.key(forDictionary: dictionary),
-               let check = FontCheck(pageDictionary: dictionary) {
-                emit(WorkerEvent(kind: .key, page: index, key: key, gaps: check.gaps, risky: check.risky))
-                continue
+            if let dictionary = tree?.pages[index], let key = keyer.key(forDictionary: dictionary) {
+                // A page the key found too big to read is not scanned again: its key is all it needs.
+                if keyer.refusal != nil {
+                    emit(WorkerEvent(kind: .key, page: index, key: key))
+                    continue
+                }
+                if let check = FontCheck(pageDictionary: dictionary) {
+                    emit(WorkerEvent(kind: .key, page: index, key: key, gaps: check.gaps, risky: check.risky))
+                    continue
+                }
             }
             guard let page = document.page(at: index + 1) else {
                 emit(WorkerEvent(kind: .key, page: index, key: PageKeys.missing))
                 continue
             }
+            let key = keyer.key(for: page)
+            if keyer.refusal != nil {
+                emit(WorkerEvent(kind: .key, page: index, key: key))
+                continue
+            }
             let check = FontCheck(page: page)
-            emit(WorkerEvent(kind: .key, page: index, key: keyer.key(for: page), gaps: check.gaps, risky: check.risky))
+            emit(WorkerEvent(kind: .key, page: index, key: key, gaps: check.gaps, risky: check.risky))
         }
         return 0
     }
@@ -187,6 +198,12 @@ public enum Worker {
                 continue
             }
             let key = keyer.key(for: reference)
+            // A content stream built to fill memory: the page fails at once, with its reason, before
+            // anything decodes it.
+            if keyer.refusal != nil {
+                emit(WorkerEvent(kind: .result, page: index, key: key, reason: StreamGuard.reason(), millis: 0))
+                continue
+            }
             let check = FontCheck(page: reference)
             var layer: PageText
             var method: String

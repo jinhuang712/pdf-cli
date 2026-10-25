@@ -30,6 +30,8 @@ struct Page {
     var hides: [String]? = nil
     /// More entries for the dictionary of the page's content stream, as a filter.
     var contentDictionary = ""
+    /// The content stream's bytes when they are no text, as a stream compressed by hand.
+    var contentBytes: [UInt8]? = nil
 }
 
 /// The literal strings a page's content draws, as written.
@@ -188,7 +190,7 @@ final class Writer {
         for (index, page) in pages.enumerated() {
             add("<< /Type /Page /Parent 2 0 R /MediaBox \(page.media) /Contents \(first + 2 * index + 1) 0 R "
                 + "/Resources \(resources) \(page.extra) >>")
-            _ = add(stream: page.contentDictionary, page.content)
+            _ = page.contentBytes.map { add(stream: page.contentDictionary, $0) } ?? add(stream: page.contentDictionary, page.content)
         }
         var file = Data("%PDF-1.7\n".utf8)
         var offsets: [Int] = []
@@ -955,3 +957,58 @@ let floodForm = flood.add(stream: "/Type /XObject /Subtype /Form /BBox [0 0 612 
 try flood.write([Page(name: "2,000 shapes in 300,000 levels of marked content", content: visible + "/Figure << /MCID 0 >> BDC /Fx Do EMC\n")],
                 resources: "<< /Font << /F1 \(floodFont) 0 R >> /XObject << /Fx \(floodForm) 0 R >> >>",
                 to: "broken-marked-flood.pdf", folder: "testdata/safety")
+
+// A content stream bomb (M2.21): 600 MB of "q Q" lines that Flate holds in about 600 KB, on a page
+// with visible words. Its page must fail fast with a reason, in a worker that stays small, and
+// the tool goes on. Compressed in 1 MB pieces, so the generator holds no more than that.
+func bomb(megabytes: Int) -> [UInt8] {
+    let piece = [UInt8](String(repeating: "q Q\n", count: 262_144).utf8)  // 1 MiB
+    var stream = compression_stream(
+        dst_ptr: UnsafeMutablePointer<UInt8>(bitPattern: 1)!, dst_size: 0,
+        src_ptr: UnsafePointer<UInt8>(bitPattern: 1)!, src_size: 0, state: nil)
+    guard compression_stream_init(&stream, COMPRESSION_STREAM_ENCODE, COMPRESSION_ZLIB) == COMPRESSION_STATUS_OK else { fatalError("no zlib") }
+    defer { compression_stream_destroy(&stream) }
+    var out: [UInt8] = [0x78, 0x9C]
+    var buffer = [UInt8](repeating: 0, count: 65_536)
+    // Adler-32 of one piece from its start; the pieces' sums combine.
+    let mod: UInt64 = 65521
+    var pieceA: UInt64 = 1
+    var pieceB: UInt64 = 0
+    for byte in piece {
+        pieceA = (pieceA + UInt64(byte)) % mod
+        pieceB = (pieceB + pieceA) % mod
+    }
+    var a: UInt64 = 1
+    var b: UInt64 = 0
+    let n = UInt64(piece.count)
+    for index in 0..<megabytes {
+        b = (b + pieceB + (n % mod) * ((a + mod - 1) % mod)) % mod
+        a = (a + pieceA + mod - 1) % mod
+        let flags = index == megabytes - 1 ? Int32(COMPRESSION_STREAM_FINALIZE.rawValue) : 0
+        piece.withUnsafeBufferPointer { source in
+            stream.src_ptr = source.baseAddress!
+            stream.src_size = source.count
+            var status = COMPRESSION_STATUS_OK
+            repeat {
+                buffer.withUnsafeMutableBufferPointer { destination in
+                    stream.dst_ptr = destination.baseAddress!
+                    stream.dst_size = destination.count
+                    status = compression_stream_process(&stream, flags)
+                    out += destination[0..<(destination.count - stream.dst_size)]
+                }
+            } while status == COMPRESSION_STATUS_OK && (stream.src_size > 0 || stream.dst_size == 0)
+        }
+    }
+    let sum = UInt32((b << 16) | a)
+    return out + [UInt8(sum >> 24), UInt8((sum >> 16) & 0xFF), UInt8((sum >> 8) & 0xFF), UInt8(sum & 0xFF)]
+}
+let bombed = Writer()
+let bombFont = bombed.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>")
+try bombed.write(
+    [
+        Page(name: "visible words, then a page that is a bomb", content: visible),
+        Page(
+            name: "a content stream of 600 KB that inflates to 600 MB", content: "", contentDictionary: "/Filter /FlateDecode",
+            contentBytes: bomb(megabytes: 600)),
+    ],
+    resources: "<< /Font << /F1 \(bombFont) 0 R >> >>", to: "broken-content-bomb.pdf", folder: "testdata/safety")
