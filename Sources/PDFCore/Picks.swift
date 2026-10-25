@@ -69,33 +69,28 @@ public final class Picks: Sendable {
         }
     }
 
-    /// After a page's result was replaced: keeps each pick on these pages that still applies to
-    /// the new result, by the rule `Output.judge` reads picks with (the block still offers the
-    /// same readings), removes the others, and says how many of each by page key (`pdf reparse`,
-    /// M2.23). Idempotent, so a run that ended between the replacement and this call is mended by
-    /// the next. It reads and deletes in one transaction, and deletes a row only if it is still
-    /// the one it judged, so a `pdf pick` made at the same time against the new reading stays.
-    public func reconcile(results: [String: PageResult]) throws -> [String: (kept: Int, cleared: Int)] {
+    /// Read-only: for each page key with picks, how many picks apply to the result given (the pick's
+    /// block still offers the same readings, the rule `Output.judge` reads picks with) and how many
+    /// do not. Nothing is deleted: a pick that does not apply stays stored and applies again if its
+    /// readings come back (`pdf reparse`, M2.24). Keys without a pick are left out.
+    public func tally(results: [String: PageResult]) throws -> [String: (applies: Int, stale: Int)] {
         guard !results.isEmpty else { return [:] }
         let keys = Array(results.keys)
-        return try queue.write { db in
+        return try queue.read { db in
             guard try db.tableExists("pick") else { return [:] }
-            var counts: [String: (kept: Int, cleared: Int)] = [:]
+            var counts: [String: (applies: Int, stale: Int)] = [:]
             for chunk in stride(from: 0, to: keys.count, by: 500).map({ Array(keys[$0..<min($0 + 500, keys.count)]) }) {
                 let marks = Array(repeating: "?", count: chunk.count).joined(separator: ",")
                 for row in try Row.fetchAll(db, sql: "SELECT * FROM pick WHERE page_key IN (\(marks))", arguments: StatementArguments(chunk)) {
-                    let pick = Pick(
-                        pageKey: row["page_key"], block: row["block"], readings: [row["reading_a"], row["reading_b"]],
-                        chosen: row["chosen"], pickedAt: Date(timeIntervalSince1970: row["picked_at"]))
-                    let unsure = results[pick.pageKey].map { Dictionary(grouping: Quality.judge($0).unsure, by: \.block) } ?? [:]
-                    let choices = unsure[pick.block]?.filter(\.pickable) ?? []
-                    if !choices.isEmpty, Picks.readings(of: choices) == pick.readings {
-                        counts[pick.pageKey, default: (0, 0)].kept += 1
+                    let key: String = row["page_key"]
+                    let block: Int = row["block"]
+                    let readings: [String] = [row["reading_a"], row["reading_b"]]
+                    let unsure = results[key].map { Dictionary(grouping: Quality.judge($0).unsure, by: \.block) } ?? [:]
+                    let choices = unsure[block]?.filter(\.pickable) ?? []
+                    if !choices.isEmpty, Picks.readings(of: choices) == readings {
+                        counts[key, default: (0, 0)].applies += 1
                     } else {
-                        try db.execute(
-                            sql: "DELETE FROM pick WHERE page_key = ? AND block = ? AND reading_a = ? AND reading_b = ? AND picked_at = ?",
-                            arguments: [pick.pageKey, pick.block, pick.readings[0], pick.readings[1], row["picked_at"] as Double])
-                        if db.changesCount > 0 { counts[pick.pageKey, default: (0, 0)].cleared += 1 }
+                        counts[key, default: (0, 0)].stale += 1
                     }
                 }
             }

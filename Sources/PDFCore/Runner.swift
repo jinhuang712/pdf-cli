@@ -141,17 +141,17 @@ public final class Runner: @unchecked Sendable {
             guard let reason = kept[keys[index]] else { continue }
             print("kept\t\(index)\t" + reason.replacingOccurrences(of: "\n", with: " "))
         }
-        // Right after the replacement, in this runner: a pick stays only while its block still offers
-        // the readings it was made for (M2.23). What the cache holds now decides, so a page that
-        // kept its old result keeps its picks. One line for each page key that had picks.
+        // Picks are never deleted here (M2.24). The command learns how many apply to what the cache
+        // holds now, and how many do not: one line for each page key that has picks. A page that kept
+        // its old result is counted by that result. If the picks cannot be read, the counts are unknown.
         if Library.exists() {
             do {
                 let now = try store.results(keys: Array(reparsed.keys))
-                for (key, count) in try Picks().reconcile(results: now).sorted(by: { $0.key < $1.key }) {
-                    print("picks\t\(key)\t\(count.kept)\t\(count.cleared)")
+                for (key, count) in try Picks().tally(results: now).sorted(by: { $0.key < $1.key }) {
+                    print("picks\t\(key)\t\(count.applies)\t\(count.stale)")
                 }
             } catch {
-                print("picks-failed\t" + Picks.reason(of: error).replacingOccurrences(of: "\n", with: " "))
+                print("picks-unknown\t" + Picks.reason(of: error).replacingOccurrences(of: "\n", with: " "))
             }
         }
         fflush(stdout)

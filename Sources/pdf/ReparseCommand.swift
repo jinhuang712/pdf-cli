@@ -17,8 +17,9 @@ struct ReparseCommand: ParsableCommand {
             Speed, as measured: 231 pages plain take about 18 s; OCR takes about 0.4 s a page, so about 200 \
             OCR pages fill the 90 s; run the printed command again for the rest.
 
-            A pick stays while its block still offers the readings it was made for, and is cleared when the \
-            new reading offers other words; the summary says how many of each. What you transcribed (an equation's LaTeX, a table's Markdown) is kept: it belongs to what the page \
+            A reparse never deletes a pick. A pick applies while its block still offers the readings it was made \
+            for; one that no longer does stays stored and applies again if the readings come back (an OCR \
+            reparse, then a plain one). The summary counts both. What you transcribed (an equation's LaTeX, a table's Markdown) is kept: it belongs to what the page \
             draws, which does not change. A file never read is just parsed, only the pages asked for.
 
             Examples:
@@ -116,17 +117,11 @@ struct ReparseCommand: ParsableCommand {
             return
         }
 
-        // The runner checked the picks of each chunk as it replaced it: a pick stays while its block
-        // still offers the readings it was made for. A page that kept its old result keeps its picks.
+        // The runner counted the picks on the replaced pages against what the cache holds now. Nothing
+        // is deleted: a pick that no longer applies stays stored, and applies if its readings come back.
         let replaced = done.pages.filter { done.kept[$0] == nil }
-        let cleared = done.picksCleared
-        let keptPicks = done.picksKept
-        // The pages whose picks could not be checked, and the command that checks them.
-        let checkAgain: String? = done.picksFailure.map { failure in
-            let pages = done.picksFailedPages.isEmpty ? "" : " --page " + Self.pageList(done.picksFailedPages.map { $0 + 1 })
-            return "the picks of \(done.picksFailedPages.isEmpty ? "some pages" : count(done.picksFailedPages.count, "page")) could not be checked "
-                + "(\(failure)); read them again to check: pdf reparse \(Output.quoted(path))\(pages)"
-        }
+        let applyPicks = done.picksApply
+        let stalePicks = done.picksStale
 
         func status(_ result: PageResult?) -> String? { result.map { Quality.judge($0).status.rawValue } }
         var changes: [Change] = []
@@ -167,9 +162,9 @@ struct ReparseCommand: ParsableCommand {
                 var flaggedPages: [Status]
                 var changes: [Change]
                 var kept: [Kept]
-                var picksKept: Int
-                var picksCleared: Int
-                var picksFailed: String?
+                var picksApply: Int
+                var picksStale: Int
+                var picksUnknown: String?
                 var remaining: [Int]?
                 var next: String?
                 var stopped: String?
@@ -191,8 +186,8 @@ struct ReparseCommand: ParsableCommand {
                         file: path, id: String(done.docID.prefix(8)), step: step?.rawValue ?? "usual", reparsed: replaced.count,
                         pages: replaced.map { $0 + 1 }, flagged: flagged.count,
                         flaggedPages: flagged.map { Status(page: $0.page, status: $0.status) }, changes: changes,
-                        kept: keptPages.map { Kept(page: $0 + 1, reason: done.kept[$0] ?? "") }, picksKept: keptPicks, picksCleared: cleared,
-                        picksFailed: checkAgain,
+                        kept: keptPages.map { Kept(page: $0 + 1, reason: done.kept[$0] ?? "") }, picksApply: applyPicks, picksStale: stalePicks,
+                        picksUnknown: done.picksUnknown,
                         remaining: left.isEmpty ? nil : left, next: next, stopped: done.stopped,
                         neverRead: done.neverRead ? true : nil, changedSinceRead: done.changedSinceRead ? true : nil,
                         toolUpdated: done.toolUpdated ? true : nil)))
@@ -201,9 +196,11 @@ struct ReparseCommand: ParsableCommand {
             if !keptPages.isEmpty { parts.append("\(count(keptPages.count, "page")) kept the old result") }
             parts.append(flagged.isEmpty ? "none flagged" : "\(flagged.count) flagged")
             parts.append(statusChanges == 0 ? "no page changed status" : "\(statusChanges) changed status")
-            if keptPicks > 0 { parts.append("kept \(count(keptPicks, "pick")), the readings are the same") }
-            if let checkAgain { parts.append(checkAgain) }
-            if cleared > 0 { parts.append("cleared \(count(cleared, "pick")), the readings differ") }
+            if applyPicks > 0 { parts.append("\(count(applyPicks, "pick")) still \(applyPicks == 1 ? "applies" : "apply")") }
+            if stalePicks > 0 {
+                parts.append("\(count(stalePicks, "pick")) no longer \(stalePicks == 1 ? "applies" : "apply") and stays stored")
+            }
+            if let unknown = done.picksUnknown { parts.append("picks not counted (\(unknown))") }
             if let next {
                 parts.append(
                     "\(done.stopped ?? "stopped") with \(count(left.count, "page")) not read; the chunks before it are replaced; read the rest: \(next)"
@@ -241,7 +238,6 @@ struct ReparseCommand: ParsableCommand {
             }
             if shownChanges.count > Self.listed { print("and \(shownChanges.count - Self.listed) more") }
         }
-        if checkAgain != nil { throw ExitCode(Contract.couldNotRun) }
         if !replaced.isEmpty && whole == replaced.count { throw ExitCode(Contract.fileFailed) }
         if !flagged.isEmpty || !keptPages.isEmpty || next != nil { throw ExitCode(2) }
     }

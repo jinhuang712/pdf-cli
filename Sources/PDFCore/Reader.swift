@@ -61,26 +61,24 @@ public struct Reparsed: Sendable {
     /// Why the run ended before the last page, in words: the time limit, or the error that stopped it
     /// after some chunks were replaced. Nil when every page was read.
     public var stopped: String?
-    /// The picks on the pages replaced: kept because the page still offers the readings they were
-    /// made for, and cleared because it does not (M2.23).
-    public var picksKept = 0
-    public var picksCleared = 0
-    /// Why the picks of a chunk could not be checked, if so, and the pages of those chunks: a
-    /// reparse of them checks again.
-    public var picksFailure: String?
-    public var picksFailedPages: [Int] = []
+    /// The picks on the pages replaced, as facts about what the cache holds after the run: those that
+    /// apply because the page offers the readings they were made for, and those that do not. Nothing is
+    /// deleted; a stale pick stays stored and applies again if its readings come back (M2.24).
+    public var picksApply = 0
+    public var picksStale = 0
+    /// Why the picks could not be counted (the picks' database could not be read), if so. The reparse itself is done.
+    public var picksUnknown: String?
     /// Pages replaced in an earlier version of the file, before it changed: their picks are in the counts.
     public var earlierPages = 0
 }
 
-/// What a reparse learned of the picks, chunk by chunk (M2.23).
+/// What a reparse learned of the picks, chunk by chunk, by page key (M2.24).
 struct PickTally {
-    var kept: [String: Int] = [:]
-    var clearedByKey: [String: Int] = [:]
-    var failure: String?
-    var failedPages: [Int] = []
-    var keptCount: Int { kept.values.reduce(0, +) }
-    var cleared: Int { clearedByKey.values.reduce(0, +) }
+    var apply: [String: Int] = [:]
+    var stale: [String: Int] = [:]
+    var unknown: String?
+    var applyCount: Int { apply.values.reduce(0, +) }
+    var staleCount: Int { stale.values.reduce(0, +) }
 }
 
 public enum ReparseOutcome: Sendable {
@@ -313,18 +311,16 @@ public final class Reader: Sendable {
                 old = [:]
                 new = [:]
                 kept = [:]
-                picks.failedPages = []
             }
             lastDocument = docID
             let keys = try store.pageKeys(docID: docID)
             let pages = Array(Set(wanted ?? Array(keys.indices))).sorted()
             if let bad = pages.first(where: { !keys.indices.contains($0) }) {
                 let sunk = earlierPages + done.count
-                if sunk > 0 || picks.cleared > 0 || picks.failure != nil {
+                if sunk > 0 {
                     throw ReadError.changedWhileReading(
                         "page \(bad + 1) is out of range: the file has \(keys.count) pages; it changed while it was read again, after "
-                            + "\(sunk) pages were replaced and \(picks.cleared) picks cleared"
-                            + (picks.failure.map { "; their picks could not be checked (\($0))" } ?? ""))
+                            + "\(sunk) pages were replaced")
                 }
                 throw ReadError.pageOutOfRange(page: bad, pageCount: keys.count)
             }
@@ -348,14 +344,11 @@ public final class Reader: Sendable {
                     if parts[0] == "picks" {
                         let fields = line.split(separator: "\t", omittingEmptySubsequences: false)
                         if fields.count == 4, let k = Int(fields[2]), let c = Int(fields[3]) {
-                            picks.kept[String(fields[1])] = k
-                            picks.clearedByKey[String(fields[1]), default: 0] += c
+                            picks.apply[String(fields[1])] = k
+                            picks.stale[String(fields[1])] = c
                         }
                     }
-                    if parts.count >= 2, parts[0] == "picks-failed" {
-                        picks.failure = parts[1...].joined(separator: " ")
-                        picks.failedPages += part
-                    }
+                    if parts.count >= 2, parts[0] == "picks-unknown" { picks.unknown = parts[1...].joined(separator: " ") }
                 }
                 done += part
                 busyWaits = 0
@@ -407,8 +400,8 @@ public final class Reader: Sendable {
             before: Dictionary(uniqueKeysWithValues: pages.compactMap { page in old[keys[page]].map { (page, $0) } }),
             after: Dictionary(uniqueKeysWithValues: pages.compactMap { page in new[keys[page]].map { (page, $0) } }),
             kept: kept, neverRead: neverRead, changedSinceRead: changedSinceRead, toolUpdated: toolUpdated, remaining: remaining, stopped: stopped,
-            picksKept: picks.keptCount, picksCleared: picks.cleared, picksFailure: picks.failure,
-            picksFailedPages: picks.failedPages.sorted(), earlierPages: earlierPages)
+            picksApply: picks.applyCount, picksStale: picks.staleCount, picksUnknown: picks.unknown,
+            earlierPages: earlierPages)
     }
 
     /// Starts a runner that indexes the file and stops, and waits for it. Another runner that holds
