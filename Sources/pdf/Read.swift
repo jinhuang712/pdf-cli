@@ -239,7 +239,10 @@ struct ReadCommand: ParsableCommand {
                         index: page, result: result, key: keys[page], annotations: annotations[page]?.annotations ?? [],
                         moreAnnotations: annotations[page]?.more ?? 0, whyAnnotations: annotations[page]?.why ?? 0,
                         furniture: furniture[page] ?? [:], notes: judged[page] ?? PageNotes(), citations: cited[page] ?? PageCitations(),
-                        tableLinks: tableLinks[page] ?? [:]),
+                        tableLinks: tableLinks[page] ?? [:],
+                        chainKeys: Dictionary(
+                            (tableLinks[page] ?? [:]).values.flatMap(\.pages).filter { keys.indices.contains($0 - 1) }.map { ($0, keys[$0 - 1]) }
+                        ) { first, _ in first }),
                     from: resume ? start?.block : nil, offset: resume ? start?.offset : nil)
                 if !added { break reading }
                 index += 1

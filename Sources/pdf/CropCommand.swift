@@ -100,8 +100,9 @@ struct CropCommand: ParsableCommand {
                 let regionNumber = Region.normalized(found.region.number)
                 keepable = (wanted.kind, regionNumber)
                 let keys = try store.pageKeys(docID: docID)
-                if keys.indices.contains(found.page) {
-                    kept = try Transcripts().transcripts(keys: [keys[found.page]])[keys[found.page]]?
+                // A linked table has one reading, kept on any of its pages.
+                for part in found.link?.pages.map({ $0 - 1 }) ?? [found.page] where kept == nil && keys.indices.contains(part) {
+                    kept = try Transcripts().transcripts(keys: [keys[part]])[keys[part]]?
                         .first { $0.kind == wanted.kind && $0.number == regionNumber }
                 }
             }
@@ -326,12 +327,20 @@ struct CropCommand: ParsableCommand {
             }
             if let index = tablePages.layer(anchor.page)?.regions?.firstIndex(of: anchor.region) {
                 link = TableLinks.link(of: index, on: anchor.page, in: tablePages)
-                if link != nil {
+                if let whole = link, whole.parts == 1 {
+                    link = nil
+                } else if link != nil {
                     parts = TableLinks.chain(of: index, on: anchor.page, layer: tablePages.layer).compactMap { part in
                         tablePages.layer(part.page)?.regions.map { (part.page, $0[part.region]) }
                     }
                 }
             }
+        }
+        // The walk may have parsed pages that hold the number too: look again before judging it ambiguous.
+        if link != nil {
+            pages = try layers()
+            if let page { pages = pages.filter { $0.index == page - 1 } }
+            found = Region.find(wanted.kind, wanted.number, in: pages)
         }
         if found.count > 1, Set(found.map(\.page)).count > 1, !found.allSatisfy({ item in parts.contains { $0.page == item.page } }) {
             throw NotFound(description: "\(name) is on " + found.map { "p.\($0.page + 1)" }.joined(separator: " and ") + "; add --page")

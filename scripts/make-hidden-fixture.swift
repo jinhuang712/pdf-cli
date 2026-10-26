@@ -1176,13 +1176,13 @@ let tablesResources = "<< /Font << /F1 \(tablesFont) 0 R >> >>"
 
 /// Ruled rows from `top` down to `bottom` (PDF y), 20 pt apart, from `left` to `right`, numbered
 /// from `first`; a rule above each row and under the last.
-func tableRows(top: Int, bottom: Int, left: Int = 72, right: Int = 540, first: Int = 1) -> String {
+func tableRows(top: Int, bottom: Int, left: Int = 72, right: Int = 540, first: Int = 1, label: String = "Row") -> String {
     var content = ""
     var y = top
     var number = first
     content += "0.5 w \(left) \(y) m \(right) \(y) l S\n"
     while y - 20 >= bottom {
-        content += line("Row \(number)", y: y - 14, size: 10, x: left + 8)
+        content += line("\(label) \(number)", y: y - 14, size: 10, x: left + 8)
         content += line("0.\(100 + number)", y: y - 14, size: 10, x: left + (right - left) / 3)
         content += line("\(number * 7 % 90).\(number % 10)", y: y - 14, size: 10, x: left + 2 * (right - left) / 3)
         y -= 20
@@ -1196,9 +1196,10 @@ let intro =
     + line("Each row is one sample and each column one reading taken that day.", y: 680)
 func tablePage(
     caption: String, captionY: Int, top: Int, bottom: Int, first: Int = 1, left: Int = 72, right: Int = 540,
-    before: String = "", after: String = ""
+    before: String = "", after: String = "", label: String = "Row"
 ) -> String {
-    before + line(caption, y: captionY, x: left) + tableRows(top: top, bottom: bottom, left: left, right: right, first: first) + after
+    before + line(caption, y: captionY, x: left)
+        + tableRows(top: top, bottom: bottom, left: left, right: right, first: first, label: label) + after
 }
 let after =
     line("The values above were checked twice by two different people in the lab.", y: 420)
@@ -1266,3 +1267,33 @@ try tables.write(
             content: tablePage(caption: "Table 3: Measured values by sample and day.", captionY: 730, top: 716, bottom: 450, first: 25)),
     ],
     resources: tablesResources, to: "repeated.pdf", folder: "testdata/tables")
+
+// M3.2 review: control.pdf, a second paper's Table 1 whose caption holds "(control vs. treatment)"
+// under a Table 1 that ends the page: not a continuation. gap.pdf: Table 1 over p.1 and p.2, then a
+// part on p.3 that starts mid-page (not linked), then "(continued)" on p.4: the open ends are named.
+let reviewFirst = Page(
+    name: "Table 1 to the page's end",
+    content: tablePage(caption: "Table 1: Measured values by sample.", captionY: 580, top: 566, bottom: 90, before: intro))
+try tables.write(
+    [
+        reviewFirst,
+        Page(
+            name: "another Table 1",
+            content: tablePage(
+                caption: "Table 1: Baseline characteristics (control vs. treatment)", captionY: 730, top: 716, bottom: 450,
+                after: after, label: "Patient")),
+    ],
+    resources: tablesResources, to: "control.pdf", folder: "testdata/tables")
+try tables.write(
+    [
+        reviewFirst,
+        Page(name: "continued over the page", content: tablePage(caption: "Table 1 (continued)", captionY: 730, top: 716, bottom: 90, first: 25)),
+        Page(
+            name: "continued, starting mid-page",
+            content: (0..<7).map { line("A note set above the rest of the table, line \($0 + 1).", y: 700 - 20 * $0) }.joined()
+                + tablePage(caption: "Table 1 (continued)", captionY: 540, top: 526, bottom: 90, first: 49)),
+        Page(
+            name: "continued to the middle",
+            content: tablePage(caption: "Table 1 (continued)", captionY: 730, top: 716, bottom: 450, first: 70, after: after)),
+    ],
+    resources: tablesResources, to: "gap.pdf", folder: "testdata/tables")

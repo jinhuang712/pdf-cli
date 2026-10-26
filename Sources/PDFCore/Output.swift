@@ -28,11 +28,14 @@ public enum Output {
         /// The links of the page's tables to their other parts, by the region's position on the page
         /// (`TableLinks`).
         public var tableLinks: [Int: TableLink]
+        /// The keys of the pages of the page's linked tables, by page counted from 1, where the agent's
+        /// reading of a table is kept.
+        public var chainKeys: [Int: String]
 
         public init(
             index: Int, result: PageResult, key: String, annotations: [FileFacts.Annotation] = [],
             moreAnnotations: Int = 0, whyAnnotations: Int = 0, furniture: [Int: Furniture.Kind] = [:], notes: PageNotes = PageNotes(),
-            citations: PageCitations = PageCitations(), tableLinks: [Int: TableLink] = [:]
+            citations: PageCitations = PageCitations(), tableLinks: [Int: TableLink] = [:], chainKeys: [Int: String] = [:]
         ) {
             self.index = index
             self.result = result
@@ -44,6 +47,7 @@ public enum Output {
             self.notes = notes
             self.citations = citations
             self.tableLinks = tableLinks
+            self.chainKeys = chainKeys
         }
     }
 
@@ -146,6 +150,8 @@ public enum Output {
         /// A table that runs over a page break: which part this is, and where the others are
         /// (`TableLinks`).
         public var table: TableLink?
+        /// For a part of a linked table: the page where the agent's reading of the whole table is shown.
+        public var keptAt: Int?
         /// A note's id, as "7" or "3.7", and for a note listed after the text, the page it is on.
         public var id: String?
         public var place: String?
@@ -346,7 +352,17 @@ public enum Output {
                 // text: for the first region of its number on the page, which `pdf crop` crops.
                 let regionNumber = Region.normalized(region.number)
                 let first = regions.firstIndex { $0.kind == region.kind && Region.normalized($0.number) == regionNumber } == position
-                let kept = first ? (transcripts[page.key] ?? []).first { $0.kind == region.kind && $0.number == regionNumber } : nil
+                var kept = first ? (transcripts[page.key] ?? []).first { $0.kind == region.kind && $0.number == regionNumber } : nil
+                // A linked table has one reading, kept on whichever of its pages the agent named: it shows
+                // on the first part, and the other parts point to it.
+                if let link = page.tableLinks[position], link.parts > 1, let head = link.pages.first {
+                    let owner = link.pages.lazy.compactMap { part -> Transcript? in
+                        guard let key = part == number ? page.key : page.chainKeys[part] else { return nil }
+                        return (transcripts[key] ?? []).first { $0.kind == .table && $0.number == regionNumber }
+                    }.first
+                    kept = head == number ? owner : nil
+                    if owner != nil, head != number { block.keptAt = head }
+                }
                 if let kept {
                     if region.kind == .table { block.markdown = kept.text } else { block.latex = kept.text }
                     block.transcribed = kept.day
@@ -1482,20 +1498,26 @@ public enum Output {
             let text = placed(block.text ?? "", links: block.links ?? [], style: style)
             let label = "\(address(block)) [\(block.kind.rawValue) \(block.number ?? "")]"
             var crop = "crop: \(commands["crop"] ?? "")"
+            var also = ""
             if let link = block.table {
-                let where_ = [link.continuedFrom.map { "continued from p.\($0)" }, link.continuesOn.map { "continues on p.\($0)" }]
-                crop +=
-                    " (crops all \(link.parts) linked parts)\n  " + where_.compactMap { $0 }.joined(separator: ", ")
-                    + "; linked parts: p." + link.pages.map(String.init).joined(separator: ", p.")
+                var said = [link.continuedFrom.map { "continued from p.\($0)" }, link.continuesOn.map { "continues on p.\($0)" }].compactMap { $0 }
+                if link.openBefore { said.append("continued from an earlier page, not linked") }
+                if link.openAfter, let last = link.pages.last { said.append("may go on past p.\(last), not linked") }
+                var line = said.joined(separator: ", ")
+                if link.parts > 1 {
+                    line += "; linked parts: p." + link.pages.map(String.init).joined(separator: ", p.") + "; the crop command crops all of them"
+                }
+                also = "\n  " + line
+                if let at = block.keptAt { also += "\n  the agent's reading of this table is shown at p.\(at)" }
             }
             // The agent's LaTeX or Markdown, labelled as its reading, its lines indented four
             // spaces, below the block's own command lines and inert in Markdown, so that none reads
             // as a page, a block, a command or a fence of its own; the crop stays, to check it by.
             if let kept = block.latex.map(Self.displayed) ?? block.markdown {
                 let head = "\(address(block)) [\(block.kind.rawValue) \(block.number ?? ""), transcribed \(block.transcribed ?? "")]"
-                return head + (text.isEmpty ? "" : " \(text)") + "\n" + Self.indented(kept) + "\n  \(crop)"
+                return head + (text.isEmpty ? "" : " \(text)") + "\n" + Self.indented(kept) + "\n  \(crop)" + also
             }
-            return text.isEmpty ? "\(label) \(crop)" : "\(label) \(text)\n  \(crop)"
+            return (text.isEmpty ? "\(label) \(crop)" : "\(label) \(text)\n  \(crop)") + also
         case .setAside:
             return "\(address(block)) [\(block.status ?? "")] \(block.text ?? "")"
         case .doubtful:

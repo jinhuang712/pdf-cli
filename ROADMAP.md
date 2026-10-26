@@ -113,7 +113,7 @@ The spike shipped no features. It answered the riskiest questions.
 - **Search** (F4): by meaning, dropped
   - ~~M3.1 The embedding model chosen, and `pdf search` by meaning, Chinese queries included~~ Dropped on 2026-10-26: Apple's embeddings found too little and a downloaded model costs a task for an unproven gain (DESIGNS.md → "Decision: no search by meaning")
 - **Crop** (F5): tables across pages
-  - [ ] M3.2 Tables that continue across pages, linked as one table with a crop per page: judged at read time on a continued caption and the same place on both pages, `continues on p.N` in `read`, `info` and `crop`, one crop per part (built, not yet reviewed). See DESIGNS.md → "Decision: a table's parts are linked at read time, only on a continued caption and the same place on both pages".
+  - [x] M3.2 Tables that continue across pages, linked as one table with a crop per page: judged at read time on a continued caption and the same place on both pages, `continues on p.N` in `read`, `info` and `crop`, one crop per part Parser version stays 21. See DESIGNS.md → "Decision: a table's parts are linked at read time, only on a continued caption and the same place on both pages".
 - **Install**
   - [ ] M3.5 A Homebrew release that installs with one command
 

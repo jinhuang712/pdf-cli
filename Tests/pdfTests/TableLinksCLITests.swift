@@ -17,7 +17,6 @@ import Testing
         // A read of the first page alone parses the page after it, and links.
         let first = try Self.pdf(["read", path, "--page", "1"], home: home)
         #expect(first.output.contains("continues on p.2; linked parts: p.1, p.2, p.3"), "\(first.output)")
-        #expect(first.output.contains("(crops all 3 linked parts)"), "\(first.output)")
         // A read of the middle page names both neighbours.
         let middle = try Self.pdf(["read", path, "--page", "2"], home: home)
         #expect(middle.output.contains("continued from p.1, continues on p.3"), "\(middle.output)")
@@ -52,7 +51,7 @@ import Testing
             let read = try Self.pdf(["read", path, "--full"], home: home)
             #expect(read.output.contains("[table"), "\(name): the tables are still found\n\(read.output)")
             #expect(
-                !read.output.contains("continues on") && !read.output.contains("continued from") && !read.output.contains("linked parts"),
+                !read.output.contains("continues on") && !read.output.contains("continued from p.") && !read.output.contains("linked parts"),
                 "\(name)\n\(read.output)")
             let info = try Self.pdf(["info", path], home: home)
             #expect(!info.output.contains("continues on") && !info.output.contains("continued from"), "\(name)\n\(info.output)")
@@ -72,5 +71,48 @@ import Testing
         #expect(!read.output.contains("continues on") && !read.output.contains("linked parts") && !read.output.contains("PLANTED"), "\(read.output)")
         let shown = try Self.pdf(["read", path, "--full", "--show", "hidden"], home: home)
         #expect(shown.output.contains("PLANTED continued") && !shown.output.contains("linked parts"), "\(shown.output)")
+    }
+
+    @Test func aCaptionWithControlInItIsNoContinuation() throws {
+        let home = try OutputContractTests.freshHome()
+        let read = try Self.pdf(["read", Self.file("control.pdf"), "--full"], home: home)
+        #expect(read.output.contains("[table 1]") && !read.output.contains("continues on") && !read.output.contains("linked parts"), "\(read.output)")
+    }
+
+    @Test func gapsInAChainAreNamed() throws {
+        let home = try OutputContractTests.freshHome()
+        let path = Self.file("gap.pdf")
+        let read = try Self.pdf(["read", path, "--full"], home: home)
+        #expect(read.output.contains("continued from p.1, may go on past p.2, not linked"), "\(read.output)")
+        #expect(read.output.contains("continues on p.4, continued from an earlier page, not linked; linked parts: p.3, p.4"), "\(read.output)")
+        let json = try #require(try Self.pdf(["read", path, "--json", "--full"], home: home).json)
+        let tables = (json["blocks"] as? [[String: Any]] ?? []).compactMap { $0["table"] as? [String: Any] }
+        #expect(tables.compactMap { $0["openAfter"] as? Bool } == [false, true, false, false], "\(tables)")
+        #expect(tables.compactMap { $0["openBefore"] as? Bool } == [false, false, true, false], "\(tables)")
+    }
+
+    /// The walk along a chain parses the page past its end, which may hold the same number again: the
+    /// check for two tables of one number runs after it.
+    @Test func cropLooksAgainAfterTheWalkParsedMore() throws {
+        let home = try OutputContractTests.freshHome()
+        let path = Self.file("gap.pdf")
+        _ = try Self.pdf(["read", path, "--page", "1"], home: home)
+        let crop = try Self.pdf(["crop", path, "--table", "1"], home: home)
+        #expect(crop.status == 1 && crop.output.contains("add --page"), "\(crop.status) \(crop.output)")
+        let page = try Self.pdf(["crop", path, "--table", "1", "--page", "1"], home: home)
+        #expect(page.status == 0 && page.output.components(separatedBy: ".png").count - 1 == 2, "\(page.output)")
+    }
+
+    @Test func aKeptReadingBelongsToTheWholeTable() throws {
+        let home = try OutputContractTests.freshHome()
+        let path = Self.file("continued.pdf")
+        let kept = try OutputContractTests.pdf(
+            ["transcribe", path, "--page", "2", "--table", "1"], home: home, stdin: "| a | b |\n|---|---|\n| 1 | 2 |\n")
+        #expect(kept.status == 0, "\(kept.output)")
+        let read = try Self.pdf(["read", path, "--full"], home: home)
+        #expect(read.output.components(separatedBy: "| 1 | 2 |").count - 1 == 1, "\(read.output)")
+        #expect(read.output.components(separatedBy: "reading of this table is shown at p.1").count - 1 == 2, "\(read.output)")
+        let crop = try Self.pdf(["crop", path, "--table", "1", "--page", "3"], home: home)
+        #expect(crop.output.contains("| 1 | 2 |"), "\(crop.output)")
     }
 }

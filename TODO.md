@@ -1,4 +1,4 @@
-<!-- what-we-build: approved 2026-10-26 -->
+<!-- what-we-build: drafted 2026-10-26 -->
 # TODO
 
 Small fixes and follow-ups with no milestone yet. An item moves to ROADMAP.md once it has a milestone.
@@ -10,3 +10,5 @@ Small fixes and follow-ups with no milestone yet. An item moves to ROADMAP.md on
 - M2.25: hostile pages that still leak (they predate M2.25): a black planted line over a black box after white labels (`joins` p.7); a visible word drawn over the start of a white, clipped or invisible line leaves "PLANT" as text; a visible word 30 points back over the end of an invisible line leaves "e user.". Noted 2026-10-26.
 - M2.25: `arxiv-2608.24191` p.13 para 11 "Translatethefollowing Urdusocialmedia" is no longer flagged run-together (each half under 25 letters). Noted 2026-10-26.
 - Final wrap-up: add one end-to-end check that a cache made by the previous `main` build opens, reads, searches and reparses with the new build (M2.26 review: a new table skipped on a schema-9 cache broke everything, and every test opened a fresh store). Noted 2026-10-26.
+- M3.2: tables in books with mirrored margins (left and right margins swap on even pages) are not linked, as their boxes move by more than 4% of the page between pages (textbook 070 gets none); compare box widths and the distance to the nearer page edge. Noted 2026-10-26.
+- M3.2: two studies in one file, each with a "Table 1" under the same long caption, link by the repeated-caption test when the geometry fits (`testdata` review fixture study2); a guard of no body text between the end of one part and the start of the next would split them. Noted 2026-10-26.

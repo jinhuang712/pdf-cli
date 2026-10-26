@@ -155,7 +155,7 @@ public struct Info: Encodable, Sendable {
                 if region.kind == .table, let link = TableLinks.link(of: position, on: index, layer: { byPage[$0] }) {
                     figure.continuesOn = link.continuesOn
                     figure.continuedFrom = link.continuedFrom
-                    figure.table = link.id
+                    if link.parts > 1 { figure.table = link.id }
                 }
                 return figure
             }

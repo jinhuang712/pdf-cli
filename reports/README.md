@@ -49,3 +49,4 @@ The spike's reports (M0) are in [spike/](../spike/README.md).
 | M2.23 A reparse keeps picks that still apply | 2026-10-25 | 0 high, 1 medium (open design question), 9 low; 8 fixed, 1 not testable | [M2.23](M2.23-keep-picks.md) |
 | M2.24 A reparse never deletes picks | 2026-10-25 | 0 high, 3 medium, 6 low; all fixed, doctor report left in TODO | [M2.24](M2.24-picks-stay.md) |
 | M2.26 Search reads stored edge summaries; refs DOIs | 2026-10-26 | 1 high, 2 medium, 4 low; all fixed | [M2.26](M2.26-search-summary.md) |
+| M3.2 Tables that continue across pages | 2026-10-26 | 1 high, 4 medium, lows bundled; all fixed but mirrored margins and the two-studies guard, recorded | [M3.2](M3.2-tables-across-pages.md) |

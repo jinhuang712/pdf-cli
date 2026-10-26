@@ -44,7 +44,12 @@ import Testing
         ] {
             #expect(TableLinks.saysContinued(caption), "\(caption)")
         }
-        for caption in ["Table 1: Continued fractions of the data", "Table 1: Results", "Table 1: Contents of the file", "Table 1: Content."] {
+        for caption in [
+            "Table 1: Continued fractions of the data", "Table 1: Results", "Table 1: Contents of the file", "Table 1: Content.",
+            "Table 1: Baseline (control vs. treatment)", "Table 1 (contrast between arms)", "Table 1 (continuous variables)",
+            "Table 1 (context length)", "Table 1 [suite A]", "Table 1 (continental data)", "Table 1: Control",
+            "Table 1: Results are continued in Table 2", "Table 1 (contingency table)",
+        ] {
             #expect(!TableLinks.saysContinued(caption), "\(caption)")
         }
     }
@@ -63,7 +68,8 @@ import Testing
         let middle = Box(x: 0.12, y: 0.30, width: 0.76, height: 0.30)
         let pages = [page(caption: "Table 1: Results", box: middle), page(caption: "Table 1 (continued)", box: topPart)]
         #expect(link(pages) == nil)
-        #expect(link(pages, page: 1) == nil)
+        // Its caption says it goes on, but nothing is linked: one part, named open.
+        #expect(link(pages, page: 1)?.parts == 1 && link(pages, page: 1)?.openBefore == true)
     }
 
     @Test func aContinuationThatStartsMidPageDoesNotLink() {
@@ -123,5 +129,17 @@ import Testing
     @Test func aPageNotParsedLeavesTheTablesApart() {
         let first = page(caption: "Table 1: Results", box: bottomPart)
         #expect(TableLinks.link(of: 0, on: 0, layer: { $0 == 0 ? first : nil }) == nil)
+    }
+
+    @Test func openEndsAreNamed() {
+        // A chain whose last part ends the page, and a lone part whose caption says it goes on.
+        let pages = [page(caption: "Table 1: Results", box: bottomPart), page(caption: "Table 1 (continued)", box: topPart)]
+        #expect(link(pages)?.openBefore == false && link(pages)?.openAfter == false)
+        #expect(link(pages, page: 1)?.openAfter == true && link(pages, page: 1)?.openBefore == false)
+        let lone = [page(caption: "Table 1: Results (continued)", box: Box(x: 0.12, y: 0.08, width: 0.76, height: 0.3))]
+        let alone = link(lone)
+        #expect(alone?.parts == 1 && alone?.openBefore == true && alone?.continuedFrom == nil)
+        // A lone table that ends the page says nothing: it may well end there.
+        #expect(link([page(caption: "Table 1: Results", box: bottomPart)]) == nil)
     }
 }

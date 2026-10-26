@@ -15,6 +15,11 @@ public struct TableLink: Codable, Equatable, Sendable {
     /// The page, counted from 1, where this part goes on, and the page it goes on from.
     public var continuesOn: Int?
     public var continuedFrom: Int?
+    /// The last part ends its page, yet nothing is linked to go on from it: the table may go on, in
+    /// a part the parse did not find. The first part's caption says it goes on, yet nothing is
+    /// linked before it.
+    public var openAfter: Bool = false
+    public var openBefore: Bool = false
 }
 
 /// Links a table to the one that goes on from it on the next page, only on strong evidence
@@ -40,12 +45,20 @@ public enum TableLinks {
     /// The longest chain followed, in pages.
     static let longest = 60
 
-    /// The words by which a caption says it goes on, in parentheses ("(continued)",
-    /// "(Continued from previous page)"), or after a dash or at the end ("Table 2 — Continued").
-    static let continued = try! NSRegularExpression(
-        pattern:
-            #"[(（\[]\s*(continued|cont\.?|cont'd|continuation|fortgesetzt|fortsetzung|suite|continuación|continuazione|продолжение|续|續|つづき|続き)[^)）\]]*[)）\]]|(?:[—–:.-]|\s)\s*(?:continued|cont'd|cont\.)\s*\.?\s*$"#,
-        options: [.caseInsensitive])
+    /// The words by which a caption says it goes on. In brackets, the keyword alone or followed by
+    /// "from", "on", "of" and the like and what they name: "(continued)", "(Continued from previous
+    /// page)", never "(control vs. treatment)" or "[suite A]"; the keyword ends at a non-letter. Or
+    /// after a dash, colon or period, or straight after the label, at the caption's end: "Table 1. Cont.",
+    /// "TABLE 2 — Continued", "Table 3 continued". Chinese and Japanese: "（续）", "(続き)".
+    static let continued: NSRegularExpression = {
+        let word =
+            #"(?:continued|continue|cont\.?|cont'd|continuation|fortgesetzt|fortsetzung|suite|continuación|continuazione|продолжение)(?!\p{L})"#
+        let more = #"(?:\s+(?:from|on|of|von|de|di|du|desde|da|с)(?!\p{L})[^)\]）]*)?"#
+        let pattern =
+            #"[(（\[]\s*"# + word + more + #"\s*[)）\]]"# + #"|[(（\[]\s*(?:续|續|つづき|続き)表?\s*[)）\]]"#
+            + #"|(?:[—–:.-]\s*|^\s*\p{L}+\.?\s*[\p{L}0-9.\-]+\s+)(?:continued|cont'd|cont\.)\s*\.?\s*$"#
+        return try! NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
+    }()
 
     /// The caption of a region as a reader sees it, label included.
     static func caption(_ region: Region, in layer: PageText) -> String {
@@ -132,18 +145,24 @@ public enum TableLinks {
         return parts
     }
 
-    /// The link of a table region, or nil when it has no other part.
+    /// The link of a table region, or nil when it has no other part and no caption saying it goes on
+    /// from one.
     public static func link(of region: Int, on page: Int, layer: (Int) -> PageText?) -> TableLink? {
         guard layer(page)?.regions?[safe: region]?.kind == .table else { return nil }
         let parts = chain(of: region, on: page, layer: layer)
-        guard parts.count > 1, let position = parts.firstIndex(where: { $0.page == page && $0.region == region }),
-            let head = parts.first, let number = layer(head.page)?.regions?[head.region].number
+        guard let position = parts.firstIndex(where: { $0.page == page && $0.region == region }),
+            let head = parts.first, let tail = parts.last, let headLayer = layer(head.page), let tailLayer = layer(tail.page)
         else { return nil }
-        let name = Region.normalized(number).lowercased().map { $0.isLetter || $0.isNumber ? String($0) : "-" }.joined()
+        let openBefore = saysContinued(caption(headLayer.regions![head.region], in: headLayer))
+        let openAfter = parts.count > 1 && endsPage(tail.region, in: tailLayer)
+        guard parts.count > 1 || openBefore else { return nil }
+        let name = Region.normalized(headLayer.regions![head.region].number).lowercased().map { $0.isLetter || $0.isNumber ? String($0) : "-" }
+            .joined()
         return TableLink(
             id: "table-\(name)-p\(head.page + 1)", part: position + 1, parts: parts.count, pages: parts.map { $0.page + 1 },
             continuesOn: position + 1 < parts.count ? parts[position + 1].page + 1 : nil,
-            continuedFrom: position > 0 ? parts[position - 1].page + 1 : nil)
+            continuedFrom: position > 0 ? parts[position - 1].page + 1 : nil,
+            openAfter: openAfter && position + 1 == parts.count, openBefore: openBefore && position == 0)
     }
 }
 
