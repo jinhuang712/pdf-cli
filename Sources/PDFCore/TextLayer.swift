@@ -680,8 +680,11 @@ enum TextLayer {
                     let steps = zip(boxes, boxes.dropFirst()).map { hypot($1.midX - $0.midX, $1.midY - $0.midY) }
                     stacked = steps.reduce(0, +) / CGFloat(steps.count) < 0.1 * median(boxes.map { max($0.width, $0.height) })
                 }
-                let verdict = visibility.check(rect, text: spelled, size: size, color: colors.compactMap { $0 }.first,
-                                               straight: straight, squeezed: squeezed, stacked: stacked)
+                let known = colors.compactMap { $0 }
+                let verdict = visibility.check(
+                    rect, text: spelled, size: size, color: known.first,
+                    straight: straight, squeezed: squeezed, stacked: stacked,
+                    uniform: known.allSatisfy { $0 == known[0] })
                 if unit.whole {
                     if case .hidden(let reason) = verdict {
                         hiddenStart[word[0]] = reason

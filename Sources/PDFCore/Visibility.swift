@@ -232,8 +232,10 @@ struct Visibility {
     ///   - stacked: its letters' boxes barely move on from one to the next, which counts where no
     ///     string is found for the word: PDFKit gives the letters of a short slanted label nearly
     ///     the same box.
-    func check(_ rect: CGRect, text: String, size: CGFloat, color: Color?, straight: Bool, squeezed: Bool = false,
-               stacked: Bool = false) -> Verdict {
+    func check(
+        _ rect: CGRect, text: String, size: CGFloat, color: Color?, straight: Bool, squeezed: Bool = false,
+        stacked: Bool = false, uniform: Bool = true
+    ) -> Verdict {
         let spelled = Visibility.normalized(text)
         let center = CGPoint(x: rect.midX, y: rect.midY)
         // The strings drawn where the word is, looked up only when a check below needs them: a
@@ -285,15 +287,31 @@ struct Visibility {
         // A point above and below the box, where PDFKit places some glyphs' boxes a little off
         // their ink; none to the sides, where the next word's ink starts.
         guard let ink = ink(in: rect.insetBy(dx: 0, dy: -1)) else { return .seen(nil) }
-        // A word in the color behind it draws no ink of its own, so the ink in its box is other
-        // strings': a white label set on a black box under a black line (M3.9). Their places do not
-        // count; what is left of the ink, if anything, is the word's.
-        if let color, !drawn.isEmpty, !color.stands(apartFrom: ink.background) {
-            let mine = Set(drawn.map(\.order))
-            let others = drawing.shownRuns(across: rect).filter { !mine.contains($0.order) }.map(\.bounds)
-            if !others.isEmpty, let rest = self.ink(in: rect.insetBy(dx: 0, dy: -1), ignoring: others) {
-                if rest.count < 2 || rest.share < 0.005 { return .hidden(.background) }
-            }
+        // A word with no ink of its own, in the color behind it or in a mode that paints nothing, has
+        // in its box the ink of other strings only: a white label set on a black box under a black
+        // line (M3.9). Their places do not count; if no ink is left, the word is hidden. Only words
+        // all of one color, drawn by straight strings that are not stroked (PDFKit gives the fill's
+        // color, not the stroke's), against other straight strings: a slanted or outlined string's
+        // extent holds ink that is not its own, and a pale watermark joined to a word lends it its color.
+        func leftWithoutInk() -> HiddenReason? {
+            let colored = color.map { uniform && !$0.stands(apartFrom: ink.background) } ?? false
+            guard colored || drawing.anyInvisible else { return nil }
+            let found =
+                needed
+                ? drawn
+                : {
+                    let here = drawing.runs(at: center)
+                    let own = drawing.plausible(here, for: rect, spelled: spelled)
+                    return own.isEmpty ? here : own
+                }()
+            let painless = !found.isEmpty && found.allSatisfy { $0.kind == .invisible }
+            guard colored || painless, !found.isEmpty, found.allSatisfy({ $0.toText.axisAligned && !$0.stroked }) else { return nil }
+            let mine = Set(found.map(\.order))
+            let others = drawing.shownRuns(across: rect).filter { !mine.contains($0.order) && $0.toText.axisAligned }.map(\.bounds)
+            guard !others.isEmpty || bare != nil,
+                let rest = self.ink(in: rect.insetBy(dx: 0, dy: -1), of: bare, ignoring: others)
+            else { return nil }
+            return rest.count < 2 || rest.share < 0.005 ? (painless ? .invisible : .background) : nil
         }
         if ink.count < 2 || ink.share < 0.005 {
             if let color, color.distance(ink.background) < 0.2 { return .hidden(.background) }
@@ -309,6 +327,7 @@ struct Visibility {
         // stood beside it. Elsewhere such a word's letters are checked, as over a dotted leader.
         case nil:
             let layer = drawing.underlay && !drawn.isEmpty && drawn.allSatisfy { $0.kind == .invisible }
+            if let reason = leftWithoutInk() { return .hidden(reason) }
             return .seen(straight && !layer ? ink : nil)
         }
     }
@@ -852,6 +871,8 @@ final class Drawing {
         var clipped = false
         /// How far its glyphs' ink reaches past where the pen ends, which negative spacing pulls back.
         var back: CGFloat = 0
+        /// Drawn in a mode that strokes its outlines, whose color PDFKit does not give.
+        var stroked = false
 
         func holds(_ point: CGPoint) -> Bool {
             guard bounds.contains(point) else { return false }
@@ -1092,6 +1113,8 @@ final class Drawing {
     var runs: [TextRun] = []
     var anyOff = false
     var anyCrushed = false
+    /// Some string is drawn in a mode that paints nothing, or with no opacity.
+    var anyInvisible = false
     /// The runs by band of the page, and those taller than 200 bands.
     var bands: [Int: [Int]]?
     var wide: [Int] = []
@@ -1509,11 +1532,14 @@ final class Drawing {
         let height = size * (vertical ? hypot(placed.a, placed.b) : hypot(placed.c, placed.d))
         anyOff = anyOff || kind == .off
         anyCrushed = anyCrushed || crushed
-        runs.append(TextRun(order: order, toText: placed.inverted(), reach: reach, vertical: vertical, size: size, kind: kind,
-                            crushed: crushed, text: spelling ?? "", height: height,
-                            across: abs(direction.x) >= abs(direction.y), bounds: local.applying(placed),
-                            glyphs: shown.glyphs, shown: shown.text, clipped: Self.clippedAway(local.applying(placed), by: current.clip),
-                            back: back))
+        anyInvisible = anyInvisible || kind == .invisible
+        runs.append(
+            TextRun(
+                order: order, toText: placed.inverted(), reach: reach, vertical: vertical, size: size, kind: kind,
+                crushed: crushed, text: spelling ?? "", height: height,
+                across: abs(direction.x) >= abs(direction.y), bounds: local.applying(placed),
+                glyphs: shown.glyphs, shown: shown.text, clipped: Self.clippedAway(local.applying(placed), by: current.clip),
+                back: back, stroked: [1, 2, 5, 6].contains(current.mode)))
     }
 
     /// Whether a clip leaves under half of a string's bounds.

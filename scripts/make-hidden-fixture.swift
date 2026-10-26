@@ -942,28 +942,82 @@ plantedRows += manifest(joinPages, file: "safety/hidden-joins.pdf")
 // and a dark box with white labels beside black words.
 let blackWriter = Writer()
 let blackFont = blackWriter.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>")
+let blackBold = blackWriter.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>")
+let blackTile = blackWriter.add(
+    stream: "/Type /Pattern /PatternType 1 /PaintType 1 /TilingType 1 /BBox [0 0 4 4] /XStep 4 /YStep 4 /Resources << >>",
+    "0 g 0 0 4 4 re f")
+let blackAlmost = blackWriter.add("<< /Type /ExtGState /ca 0.999 /CA 0.999 >>")
+// White labels in a square annotation's appearance, which readers draw over the page.
+let blackLook = blackWriter.add(
+    stream: "/Type /XObject /Subtype /Form /BBox [0 0 400 12] /Resources << /Font << /F1 \(blackFont) 0 R >> >>",
+    "1 g " + (0..<8).map { "BT /F1 9 Tf \(50 * $0) 2 Td (REDACTED) Tj ET" }.joined(separator: " "))
+let blackAnnot = blackWriter.add("<< /Type /Annot /Subtype /Square /Rect [70 679 470 691] /BS << /W 0 >> /F 4 /AP << /N \(blackLook) 0 R >> >>")
 let blackLine = "0 g " + joinLine
+let blackXs = (0..<8).map { 70 + 50 * $0 }
 func blackLabels(_ count: Int, text: String = "REDACTED") -> String {
     joinLabels((0..<count).map { 70 + 50 * $0 }, text: text)
 }
+// A string squeezed to a smudge elsewhere on the page, which makes the check look every string up.
+let crush = "BT /F1 10 Tf 72 100 Td -900 Tc (xxxx) Tj 0 Tc ET\n"
+let rounded =
+    "0 g 70 672 m 462 672 l 464 672 466 674 466 676 c 466 692 l 466 694 464 696 462 696 c "
+    + "70 696 l 68 696 66 694 66 692 c 66 676 l 66 674 68 672 70 672 c f\n"
+let black8 = blackLabels(8)
 let blackPages = [
-    Page(name: "a black line over a black box after 8 white labels", content: visible + joinBox + blackLabels(8) + blackLine),
-    Page(name: "the same with the line drawn first and the labels after", content: visible + joinBox + blackLine + blackLabels(8)),
+    Page(name: "a black line over a black box after 8 white labels", content: visible + joinBox + black8 + blackLine),
+    Page(name: "the same with the line drawn first and the labels after", content: visible + joinBox + blackLine + black8),
     Page(name: "2 labels", content: visible + joinBox + blackLabels(2) + blackLine),
     Page(name: "6 labels", content: visible + joinBox + blackLabels(6) + blackLine),
     Page(name: "10 labels", content: visible + joinBox + blackLabels(10) + blackLine),
-    Page(name: "8 labels, the line 10 points lower", content: visible + joinBox + blackLabels(8) + "0 g " + line(joinPlanted, y: 676)),
+    Page(name: "8 labels, the line 10 points lower", content: visible + joinBox + black8 + "0 g " + line(joinPlanted, y: 676)),
     Page(name: "8 labels of long words", content: visible + joinBox + blackLabels(8, text: "REDACTED REDACTED") + blackLine),
-    Page(name: "visible: white words on a dark box, nothing over them", content: visible + joinBox
-         + joinLabels((0..<8).map { 70 + 50 * $0 }, text: "Results")),
+    // Variants from the review: no other check made the words' strings be looked up on these pages.
+    Page(name: "the box drawn before any text", content: joinBox + black8 + blackLine + visible),
+    Page(name: "the box drawn first, the line, then the labels", content: joinBox + blackLine + black8 + visible),
+    Page(name: "a rounded box", content: visible + rounded + black8 + blackLine),
+    Page(name: "a box at opacity 0.999", content: visible + "q /GS1 gs " + joinBox + "Q " + black8 + blackLine),
+    Page(name: "a box filled with a black pattern", content: visible + "q /Pattern cs /P1 scn 66 672 400 24 re f Q " + black8 + blackLine),
+    Page(
+        name: "a white line on a white box under black labels",
+        content: visible + "1 g 66 672 400 24 re f " + joinLabels(blackXs, color: "0 g") + "1 g " + line(joinPlanted, y: 680) + "0 g\n"),
+    Page(name: "a line in 0.1 g", content: visible + joinBox + black8 + "0.1 g " + line(joinPlanted, y: 680)),
+    Page(
+        name: "the line in the mode that paints nothing, filled white",
+        content: visible + joinBox + black8
+            + "1 g BT 3 Tr /F1 12 Tf 72 680 Td (\(joinPlanted)) Tj 0 Tr ET 0 g\n"),
+    Page(
+        name: "the line as a clip, a black box filled after it",
+        content: visible + joinBox + black8
+            + "q 1 g BT 7 Tr /F1 12 Tf 72 680 Td (\(joinPlanted)) Tj ET 0 g 66 672 400 24 re f Q\n"),
+    Page(name: "the labels in an annotation's appearance", content: visible + joinBox + blackLine, extra: "/Annots [\(blackAnnot) 0 R]"),
+    Page(
+        name: "visible: white words on a dark box, nothing over them",
+        content: visible + joinBox
+            + joinLabels(blackXs, text: "Results")),
     Page(name: "visible: black words on a white box", content: visible + "1 g 66 672 400 24 re f 0 g " + line("Black words on a white box.", y: 680)),
     Page(name: "visible: dark words on a mid-grey box",
          content: visible + "0.7 g 66 672 400 24 re f 0.1 g " + line("Dark words on a grey box.", y: 680)),
     Page(name: "visible: a dark box with white labels, black words beside it",
          content: visible + "0 g 66 672 200 24 re f " + joinLabels((0..<4).map { 70 + 50 * $0 }, text: "Total")
                   + "0 g " + line("Black words beside the dark box.", y: 680, x: 280)),
+    // Controls from the review: words in one color against strings of another, which must read.
+    Page(
+        name: "visible: white words on a slanted bar",
+        content: visible + "q 0.98 0.17 -0.17 0.98 100 600 cm 0.6 0.3 0.5 rg 0 0 220 20 re f 1 g BT /F2 12 Tf 6 5 Td (tcolorbox 6.9.0) Tj ET Q\n"),
+    Page(
+        name: "visible: black words over a pale watermark",
+        content: visible + "0.9 g BT /F2 60 Tf 70 655 Td (SAMPLE) Tj ET 0 g "
+            + line("Black words over a watermark.", y: 680) + crush),
+    Page(
+        name: "visible: a white heading with a black outline under a large pale word",
+        content: visible
+            + "0.85 g BT /F2 80 Tf 60 650 Td (DRAFT) Tj ET 0 g 1 g 0 G 0.6 w BT 1 Tr /F2 20 Tf 72 670 Td (Outlined heading words) Tj 0 Tr ET 0 g "
+            + crush),
 ]
-try blackWriter.write(blackPages, resources: "<< /Font << /F1 \(blackFont) 0 R >> >>", to: "hidden-black-on-black.pdf", folder: "testdata/safety")
+try blackWriter.write(
+    blackPages,
+    resources: "<< /Font << /F1 \(blackFont) 0 R /F2 \(blackBold) 0 R >> /Pattern << /P1 \(blackTile) 0 R >> "
+        + "/ExtGState << /GS1 \(blackAlmost) 0 R >> >>", to: "hidden-black-on-black.pdf", folder: "testdata/safety")
 plantedRows += manifest(blackPages, file: "safety/hidden-black-on-black.pdf")
 
 try Data((plantedRows.joined(separator: "\n") + "\n").utf8).write(to: URL(fileURLWithPath: "testdata/safety/planted.tsv"))

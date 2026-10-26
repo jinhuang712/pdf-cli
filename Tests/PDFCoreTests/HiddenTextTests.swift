@@ -26,39 +26,41 @@ import Testing
         }
     }
 
-    @Test(arguments: [(0, HiddenReason.background), (1, .tiny), (2, .invisible), (3, .covered), (4, .invisible),
-                      (6, .invisible), (7, .invisible),
-                      // On a page whose background is a page-size image.
-                      (10, .covered), (11, .invisible), (12, .invisible), (13, .tiny), (14, .background),
-                      // Between grey rules and in a cell's frame; squeezed and stacked short words;
-                      // under images with a solid soft mask or drawn at 95%.
-                      (15, .background), (19, .tiny), (23, .covered),
-                      // Third review: a form switched off that shares words with the page; under
-                      // an annotation, a shading, a white box with bars on it, a black box with
-                      // labels on it; large white words beside small dots; under a keyed picture
-                      // with its words shown below it; letters overlapping by three quarters; white
-                      // words beside a large invisible string on a background image; marked
-                      // content whose layer membership is off.
-                      (33, .invisible), (34, .invisible), (35, .invisible), (36, .invisible), (37, .background),
-                      (38, .background), (39, .covered), (40, .tiny), (41, .background), (42, .invisible),
-                      // An annotation on a page whose media box starts away from the origin.
-                      (43, .invisible),
-                      // Fourth review: the annotation on pages turned 90, 180 and 270 degrees, and
-                      // turned with its media box away from the origin; half-point, clipped and
-                      // white lines beside a huge invisible glyph; a form switched off drawn one
-                      // glyph at a time; a membership off by its visibility expression.
-                      (44, .invisible), (45, .invisible), (46, .invisible), (47, .invisible),
-                      (50, .tiny), (51, .invisible), (52, .background), (53, .invisible), (54, .invisible),
-                      // Fifth review: under a blank page-size image with the visible lines over it;
-                      // white before a hairline image across the page; invisible over a page image
-                      // drawn with no opacity; white beside an invisible glyph twice its size;
-                      // letters stacked word by word, carried on by word spacing; a membership off
-                      // by an expression nested 9 deep.
-                      (57, .invisible), (58, .background), (59, .invisible), (60, .background), (61, .tiny),
-                      (64, .invisible),
-                      // Sixth review: an expression 30 levels deep that shares its parts; a line
-                      // set at an angle under a white box.
-                      (67, .invisible), (68, .invisible)])
+    @Test(arguments: [
+        (0, HiddenReason.background), (1, .tiny), (2, .invisible), (3, .covered), (4, .invisible),
+        (6, .invisible), (7, .invisible),
+        // On a page whose background is a page-size image.
+        (10, .covered), (11, .invisible), (12, .invisible), (13, .tiny), (14, .background),
+        // Between grey rules and in a cell's frame; squeezed and stacked short words;
+        // under images with a solid soft mask or drawn at 95%.
+        (15, .background), (19, .tiny), (23, .covered),
+        // Third review: a form switched off that shares words with the page; under
+        // an annotation, a shading, a white box with bars on it, a black box with
+        // labels on it; large white words beside small dots; under a keyed picture
+        // with its words shown below it; letters overlapping by three quarters; white
+        // words beside a large invisible string on a background image; marked
+        // content whose layer membership is off.
+        (33, .invisible), (34, .invisible), (35, .invisible), (36, .invisible), (37, .invisible),
+        (38, .background), (39, .covered), (40, .tiny), (41, .background), (42, .invisible),
+        // An annotation on a page whose media box starts away from the origin.
+        (43, .invisible),
+        // Fourth review: the annotation on pages turned 90, 180 and 270 degrees, and
+        // turned with its media box away from the origin; half-point, clipped and
+        // white lines beside a huge invisible glyph; a form switched off drawn one
+        // glyph at a time; a membership off by its visibility expression.
+        (44, .invisible), (45, .invisible), (46, .invisible), (47, .invisible),
+        (50, .tiny), (51, .invisible), (52, .background), (53, .invisible), (54, .invisible),
+        // Fifth review: under a blank page-size image with the visible lines over it;
+        // white before a hairline image across the page; invisible over a page image
+        // drawn with no opacity; white beside an invisible glyph twice its size;
+        // letters stacked word by word, carried on by word spacing; a membership off
+        // by an expression nested 9 deep.
+        (57, .invisible), (58, .background), (59, .invisible), (60, .background), (61, .tiny),
+        (64, .invisible),
+        // Sixth review: an expression 30 levels deep that shares its parts; a line
+        // set at an angle under a white box.
+        (67, .invisible), (68, .invisible),
+    ])
     func eachTrickHidesItsPlantedLineAndOnlyIt(page: Int, reason: HiddenReason) throws {
         let layer = try layer(page)
         let runs = hidden(layer)
@@ -89,8 +91,8 @@ import Testing
 
     /// A black planted line over a black box that white labels sit on (M3.9): the labels' ink in the
     /// line's words' boxes passed for the words' own, so the line read as text, in any order of
-    /// drawing and for any number of labels. The last four pages are controls that stay text.
-    @Test(arguments: 0..<7)
+    /// drawing and for any number of labels. The pages after them are controls that stay text, among them the review's: white words on a slanted bar, black words joined to a pale watermark, an outlined heading under a large word.
+    @Test(arguments: 0..<17)
     func aBlackLineOverABlackBoxWithWhiteLabelsStaysOut(page: Int) throws {
         let url = Self.fixture.deletingLastPathComponent().appendingPathComponent("../safety/hidden-black-on-black.pdf").standardized
         let visible = try layer(page, in: url).blocks.map(\.visibleText).joined(separator: " ")
@@ -98,8 +100,11 @@ import Testing
         #expect(visible.contains("Visible words after"))
     }
 
-    @Test(arguments: [(7, "Results Results"), (8, "Black words on a white box."), (9, "Dark words on a grey box."),
-                      (10, "Black words beside the dark box.")])
+    @Test(arguments: [
+        (17, "Results Results"), (18, "Black words on a white box."), (19, "Dark words on a grey box."),
+        (20, "Black words beside the dark box."), (21, "tcolorbox 6.9.0"), (22, "Black words over a watermark."),
+        (23, "Outlined heading words"),
+    ])
     func textOnADarkOrLightBoxStaysText(page: Int, words: String) throws {
         let url = Self.fixture.deletingLastPathComponent().appendingPathComponent("../safety/hidden-black-on-black.pdf").standardized
         let visible = try layer(page, in: url).blocks.map(\.visibleText).joined(separator: " ")
