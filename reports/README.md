@@ -50,3 +50,4 @@ The spike's reports (M0) are in [spike/](../spike/README.md).
 | M2.24 A reparse never deletes picks | 2026-10-25 | 0 high, 3 medium, 6 low; all fixed, doctor report left in TODO | [M2.24](M2.24-picks-stay.md) |
 | M2.26 Search reads stored edge summaries; refs DOIs | 2026-10-26 | 1 high, 2 medium, 4 low; all fixed | [M2.26](M2.26-search-summary.md) |
 | M3.2 Tables that continue across pages | 2026-10-26 | 1 high, 4 medium, lows bundled; all fixed but mirrored margins and the two-studies guard, recorded | [M3.2](M3.2-tables-across-pages.md) |
+| M3.7 CLI polish after the agent-usability review | 2026-10-26 | 0 high, 2 medium, 2 low groups; all fixed, dump/read and pick/transcribe overlap left open | [M3.7](M3.7-cli-polish.md) |
