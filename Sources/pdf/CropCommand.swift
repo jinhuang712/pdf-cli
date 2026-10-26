@@ -59,6 +59,7 @@ struct CropCommand: ParsableCommand {
     }
 
     func validate() throws {
+        try Repeated.reject(["--page", "--bbox", "--figure", "--table", "--equation"])
         if let pageSpec {
             if let many = ReadCommand.pages(pageSpec), Int(pageSpec) == nil, many.count > 1 || pageSpec.contains("-") || pageSpec.contains(",") {
                 throw ValidationError("crop takes one page; use --page N (pdf read takes ranges such as \(pageSpec))")

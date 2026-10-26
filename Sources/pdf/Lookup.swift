@@ -14,6 +14,9 @@ struct NoteCommand: ParsableCommand {
             document is parsed first, so the output says provisional while pages are still to parse. \
             The notes of the pages you read come with pdf read.
 
+            Exit codes: 0 found; 3 the file failed; 1 it could not run (a missing file, no such \
+            note, which lists the notes that exist); 64 used wrongly.
+
             Examples:
               pdf note paper.pdf 7
               pdf note book.pdf 3.7 --json
@@ -96,6 +99,9 @@ struct RefCommand: ParsableCommand {
         discussion: """
             The id is the entry's number or key, as 12, BK06 or Smith2020. The whole document is parsed \
             first, so the output says provisional while pages are still to parse. The entries a read cites come with pdf read.
+
+            Exit codes: 0 found; 3 the file failed; 1 it could not run (a missing file, no such \
+            entry or one name for several, which lists the ids); 64 used wrongly.
 
             Examples:
               pdf ref paper.pdf 12

@@ -13,7 +13,7 @@ struct PDF: AsyncParsableCommand {
               pdf note <pdf> 7               look up one footnote or endnote
               pdf ref <pdf> 12               look up one cited reference
               pdf crop <pdf> --figure 4      see a figure, table or equation
-              pdf dump <pdf> --figures       write text, figures, tables to files
+              pdf dump <pdf> --markdown --figures  write files
               pdf pick, pdf transcribe       keep what you read
               pdf reparse <pdf> --page 7     read pages again (--step ocr: by OCR)
               pdf add, ls, rm                the library: add, list, remove

@@ -22,6 +22,10 @@ struct ReparseCommand: ParsableCommand {
             reparse, then a plain one). The summary counts both. What you transcribed (an equation's LaTeX, a table's Markdown) is kept: it belongs to what the page \
             draws, which does not change. A file never read is just parsed, only the pages asked for.
 
+            Exit codes: 0 done; 2 some pages are flagged, or it stopped at its time limit before the \
+            last page; 3 the file failed; 1 it could not run (a missing file, a page out of range); \
+            64 used wrongly.
+
             Examples:
               pdf reparse paper.pdf
               pdf reparse paper.pdf --page 7

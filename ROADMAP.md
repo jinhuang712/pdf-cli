@@ -114,8 +114,9 @@ The spike shipped no features. It answered the riskiest questions.
   - ~~M3.1 The embedding model chosen, and `pdf search` by meaning, Chinese queries included~~ Dropped on 2026-10-26: Apple's embeddings found too little and a downloaded model costs a task for an unproven gain (DESIGNS.md → "Decision: no search by meaning")
 - **Crop** (F5): tables across pages
   - [x] M3.2 Tables that continue across pages, linked as one table with a crop per page: judged at read time on a continued caption and the same place on both pages, `continues on p.N` in `read`, `info` and `crop`, one crop per part Parser version stays 21. See DESIGNS.md → "Decision: a table's parts are linked at read time, only on a continued caption and the same place on both pages".
-- **Install**
+- **CLI polish**
   - [x] M3.7 CLI polish after the agent-usability review: the top-level list no longer wraps inside a parenthesis; flags that cannot go together end 64 naming both, and each command's `--help` states the rules and exit codes; `crop --page 3-5` ends 64 ("crop takes one page"); `pdf doctor --clean` is its own command, `pdf clean`, and `doctor` only shows (DESIGNS.md → Decision: one command, one job)
+- **Install**
   - [ ] M3.5 A Homebrew release that installs with one command
 
 M3.1, search by meaning, was dropped on 2026-10-26 (DESIGNS.md → "Decision: no search by meaning"). M3.3, a local vision model for hard pages and formulas, was dropped on 2026-10-18 (DESIGNS.md → "Decision: no local vision model; PDFKit and Apple's OCR read, the agent looks"), and M3.4, `pdf memo`, moved to Later on 2026-10-17.

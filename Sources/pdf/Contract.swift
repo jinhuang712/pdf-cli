@@ -109,3 +109,15 @@ enum Contract {
         return "\(error)"
     }
 }
+
+/// A single-value option given twice would keep the last silently; it ends 64 instead (M3.7).
+enum Repeated {
+    /// Throws for the first of `flags` that the command line holds more than once.
+    static func reject(_ flags: [String], in arguments: [String] = CommandLine.arguments) throws {
+        let end = arguments.firstIndex(of: "--") ?? arguments.endIndex
+        for flag in flags {
+            let seen = arguments[..<end].filter { $0 == flag || $0.hasPrefix(flag + "=") }.count
+            if seen > 1 { throw ValidationError("\(flag) given twice; it takes one value") }
+        }
+    }
+}

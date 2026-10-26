@@ -9,6 +9,9 @@ struct InfoCommand: ParsableCommand {
         commandName: "info",
         abstract: "Give a first look at a PDF: its title, size, sections, flagged pages, comments, attachments and scripts.",
         discussion: """
+            Exit codes: 0 done, with the flagged pages named in the output; 3 the file failed to \
+            open; 1 it could not run (a missing file); 64 used wrongly.
+
             Examples:
               pdf info paper.pdf
               pdf info paper.pdf --json

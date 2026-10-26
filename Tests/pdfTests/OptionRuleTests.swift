@@ -91,7 +91,9 @@ import Testing
         #expect(names.contains("clean") && names.contains("doctor") && names.count >= 17)
         for command in PDF.configuration.subcommands where command.configuration.shouldDisplay {
             let help = PDF.helpMessage(for: command)
-            #expect(help.contains("Examples:") && help.contains("USAGE:"), "pdf \(command._commandName) --help has no Examples")
+            #expect(
+                help.contains("Examples:") && help.contains("USAGE:") && help.contains("Exit codes"),
+                "pdf \(command._commandName) --help has no Examples or no Exit codes")
         }
         // `pdf help <command>` shows the same help.
         let viaHelp = try Self.run(["help", "clean"])
@@ -106,5 +108,20 @@ import Testing
             #expect(line.filter { $0 == "(" }.count == line.filter { $0 == ")" }.count, "\(line)")
         }
         #expect(list.contains("pdf clean"))
+    }
+
+    @Test func aSingleValueOptionGivenTwiceEnds64() throws {
+        let cases: [[String]] = [
+            ["read", Self.file, "--section", "A", "--section", "B"], ["read", Self.file, "--printed-page", "1", "--printed-page", "2"],
+            ["crop", Self.file, "--page", "3", "--page", "4"], ["transcribe", Self.file, "--page", "3", "--page", "6", "--equation", "1"],
+        ]
+        for arguments in cases {
+            let run = try Self.run(arguments)
+            let flag = arguments.first { $0.hasPrefix("--") } ?? ""
+            let named = arguments.first { name in name.hasPrefix("--") && arguments.filter { $0 == name }.count > 1 } ?? flag
+            #expect(run.status == 64 && run.errors.contains("\(named) given twice"), "\(arguments): \(run.errors)")
+        }
+        // --page of read may repeat.
+        #expect(try Self.run(["read", "/no/such.pdf", "--page", "1", "--page", "3"]).status == 1)
     }
 }

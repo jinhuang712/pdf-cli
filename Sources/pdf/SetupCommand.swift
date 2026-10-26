@@ -17,6 +17,9 @@ struct SetupCommand: ParsableCommand {
             terminal, pdf setup asks; with --memory it does not. Without a terminal and without --memory it \
             changes nothing and shows the setting.
 
+            Exit codes: 0 shown or set; 1 it could not write the setting; 64 used wrongly (a size \
+            below 64 MB, an unknown preset).
+
             Examples:
               pdf setup
               pdf setup --memory balanced

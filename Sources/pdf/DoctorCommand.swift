@@ -11,8 +11,9 @@ struct DoctorCommand: ParsableCommand {
         discussion: """
             Shows the macOS version and what a newer one unlocks, the parser version, the models installed, the size \
             and counts of the cache and the library, the parsing settings in force and where each comes from, what \
-            runs now, what pdf clean would remove, and the problems found. It changes nothing, takes no PDF, and \
-            ends 0 and lists the problems it found; 1 if it could not run; 64 used wrongly.
+            runs now, what pdf clean would remove, and the problems found. It changes nothing and takes no PDF.
+
+            Exit codes: 0 done, with the problems it found listed; 1 it could not run; 64 used wrongly.
 
             To remove what no read can use, run pdf clean (pdf clean --dry-run first says what it would remove). \
             The parsing settings are the user's: pdf setup.

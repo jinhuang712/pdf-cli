@@ -56,6 +56,7 @@ struct TranscribeCommand: ParsableCommand {
     }
 
     func validate() throws {
+        try Repeated.reject(["--page", "--equation", "--table"])
         if Int(pageSpec) == nil, pageSpec.contains("-") || pageSpec.contains(","), ReadCommand.pages(pageSpec) != nil {
             throw ValidationError("transcribe takes one page; use --page N")
         }

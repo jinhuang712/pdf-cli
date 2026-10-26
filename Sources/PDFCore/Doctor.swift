@@ -4,7 +4,7 @@ import GRDB
 
 /// What `pdf doctor` shows (FEATURES.md → F12): the Mac, the parser, the models, what the cache and
 /// the library hold, the parsing settings in force, what is running, and what is wrong. It reads
-/// everything read-only, so it changes nothing and never parses; `Doctor.clean` is what `--clean`
+/// everything read-only, so it changes nothing and never parses; `Doctor.clean` is what `pdf clean`
 /// adds, the job `pdf gc` had.
 /// A value that encodes as `null` when it is missing, where a plain optional would leave its key out:
 /// every key of a command's JSON is always there (FEATURES.md → F7).
@@ -120,7 +120,7 @@ public struct DoctorReport: Encodable {
     /// What is wrong and needs the user. A state the next normal command repairs is a note, not a problem.
     public var problems: [String]
     public var notes: [String]
-    /// The problems that `--clean` fixes: a subset of `problems`.
+    /// The problems that `pdf clean` fixes: a subset of `problems`.
     public var fixedByClean: [String]
 }
 
@@ -174,7 +174,7 @@ public enum Doctor {
                 garbage = try store.wouldCollectGarbage()
                 reclaimable = try store.freePageBytes()
                 if leftoverLocks > 0 {
-                    let problem = "\(leftoverLocks) runner lock\(leftoverLocks == 1 ? "" : "s") left by runners that are gone; --clean removes them"
+                    let problem = "\(leftoverLocks) runner lock\(leftoverLocks == 1 ? "" : "s") left by runners that are gone; pdf clean removes them"
                     problems.append(problem)
                     fixable.append(problem)
                 }
@@ -214,7 +214,7 @@ public enum Doctor {
                 goneEntries = library.filesMissing
                 if library.filesMissing > 0 {
                     let problem =
-                        "\(library.filesMissing) PDF\(library.filesMissing == 1 ? " in the library no longer exists" : "s in the library no longer exist"); --clean removes \(library.filesMissing == 1 ? "it" : "them") (pdf ls names \(library.filesMissing == 1 ? "it" : "them"))"
+                        "\(library.filesMissing) PDF\(library.filesMissing == 1 ? " in the library no longer exists" : "s in the library no longer exist"); pdf clean removes \(library.filesMissing == 1 ? "it" : "them") (pdf ls names \(library.filesMissing == 1 ? "it" : "them"))"
                     problems.append(problem)
                     fixable.append(problem)
                 }

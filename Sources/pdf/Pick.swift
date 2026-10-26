@@ -12,7 +12,7 @@ struct PickCommand: ParsableCommand {
             Later reads show the picked words in place, labelled [picked] with the date. --dry-run says what would be \
             kept, and whether it would replace an earlier pick, and changes nothing; it needs the page read before.
 
-            The block is its address as an unsure block names it, p<page>.<paragraph>, and the reading is a or b; \
+            The block is its address as an unsure block names it, p<page>.<paragraph>, and the reading is a or b, in either case; \
             anything else ends 64. The only flags are --dry-run and --json, and they combine.
 
             Exit codes: 0 kept (or, with --dry-run, would be); 3 the file failed; 1 it could not run (a missing \

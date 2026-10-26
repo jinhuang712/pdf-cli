@@ -111,6 +111,7 @@ struct ReadCommand: ParsableCommand {
     var headers: Bool { Self.shown(shows)?.contains("headers") ?? false }
 
     func validate() throws {
+        try Repeated.reject(["--section", "--printed-page", "--from", "--budget", "--format", "--notes", "--refs"])
         if footnote != nil { throw ValidationError("`--footnote` is now its own command: pdf note <pdf> 7") }
         if ref != nil { throw ValidationError("`--ref` is now its own command: pdf ref <pdf> 12") }
         if removedRaw { throw ValidationError("`--raw` is now `--show raw`") }

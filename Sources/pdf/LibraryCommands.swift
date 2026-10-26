@@ -11,6 +11,10 @@ struct AddCommand: ParsableCommand {
         discussion: """
             Accepts files, folders and glob patterns. A folder adds every PDF in it and in its subfolders.
 
+            Exit codes: 0 every page read well; 2 some pages failed or are flagged, the rest are \
+            cached; 3 every path failed and one failed to open; 1 none could be tried (every path \
+            missing); 64 used wrongly.
+
             Examples:
               pdf add paper.pdf
               pdf add ~/papers
@@ -165,6 +169,9 @@ struct ListCommand: ParsableCommand {
         commandName: "ls",
         abstract: "List every PDF in the library, with its ID, title, page count and flagged pages.",
         discussion: """
+            Exit codes: 0 done, also when the library is empty; 1 it could not read the library; 64 \
+            used wrongly.
+
             Examples:
               pdf ls
               pdf ls --json
@@ -241,6 +248,9 @@ struct RemoveCommand: ParsableCommand {
         discussion: """
             Picks stay, so a PDF added again shows them again. --dry-run says what would go and what would stay (the \
             picks, and the results another copy of the file still uses), and removes nothing.
+
+            Exit codes: 0 removed (with --dry-run, what would be); 1 it could not run (a file or ID \
+            not in the library); 64 used wrongly.
 
             Examples:
               pdf rm paper.pdf

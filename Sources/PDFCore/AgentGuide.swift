@@ -36,7 +36,8 @@ public enum AgentGuide {
         | `pdf add <pdfs or folders>` | Parses PDFs ahead. |
         | `pdf reparse <pdf>` | Reads pages again: `--page 7`, or `--step ocr` for a scan read badly. Deletes no picks. |
         | `pdf ls`, `pdf rm <pdf or ID>` | Lists the PDFs read; forgets one. |
-        | `pdf doctor`, `pdf clean` | What works, what is wrong; removes what no read can use. |
+        | `pdf doctor` | Shows what works, what is wrong. |
+        | `pdf clean` | Removes what no read can use. |
         | `pdf setup` | Parsing's memory is the user's call: ask, then `pdf setup --memory balanced` (or `light`, `fastest`). |
         | `pdf agent-guide` | Prints this guide; `--install claude-code` installs it as a skill. |
 

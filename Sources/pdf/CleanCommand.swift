@@ -13,8 +13,7 @@ struct CleanCommand: ParsableCommand {
             Removes cached results for files that no longer exist or changed and for old parser versions, the \
             library entries of files that no longer exist, leftover runner locks and crops older than 7 days, then \
             gives the cache's free space back. A file on a drive not plugged in keeps all of it. Picks, \
-            transcripts, notes and the settings are never removed: they are your work, and only pdf rm drops a \
-            file's own.
+            transcripts and the settings are never removed, by clean or by pdf rm.
 
             pdf doctor shows what a clean would remove, without removing it; --dry-run here says the same \
             in full, opens both databases read-only, parses nothing and changes nothing.

@@ -84,6 +84,8 @@ import Testing
         let database = home.appendingPathComponent("Caches/cache.sqlite")
         try DryRunTests.sqlite(database, "INSERT INTO runner_lock (lock_key, pid, heartbeat_at) VALUES ('path:/x', 999999, 0)")
         let locked = try Self.pdf(["doctor"], home: home)
+        #expect(!locked.output.contains("--clean") && locked.output.contains("pdf clean removes"), "\(locked.output)")
+        #expect(!(try Self.pdf(["doctor", "--json"], home: home)).output.contains("--clean"))
         #expect(locked.status == 0 && locked.output.contains("problem: 1 runner lock left by runners that are gone"), "\(locked.output)")
         let cleaned = try Self.pdf(["clean"], home: home)
         #expect(cleaned.status == 0 && cleaned.output.contains("1 runner lock left over"), "\(cleaned.output)")
