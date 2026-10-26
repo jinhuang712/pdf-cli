@@ -310,7 +310,7 @@ wait
 check "crops of many files at once all make their images" "^6$" "$(cat "$parallel"-*.out | grep -c '\.png  (~')"
 settle
 
-# The library: pdf add, ls, rm and doctor --clean, and a locked file.
+# The library: pdf add, ls, rm and clean, and a locked file.
 library() { PDF_CLI_HOME=$work/library $pdf "$@" 2>&1; echo "exit $?"; }
 output=$(library add testdata/ocr)
 check "pdf add takes a folder" "added 3 of 3 PDFs" "$output"
@@ -327,9 +327,9 @@ check "removed PDFs leave the list" "^1$" "$(library ls | grep -c 'testdata/ocr'
 cp testdata/smoke/arxiv-2609.22884.pdf "$work/temporary.pdf"
 library add "$work/temporary.pdf" >/dev/null
 rm "$work/temporary.pdf"
-output=$(library doctor --clean)
-check "pdf doctor --clean removes a file that is gone" "removed 1 file gone or changed, 1 document, 15 page results, 1 library entry" "$output"
-check "pdf doctor --clean frees space" "freed [1-9]" "$output"
+output=$(library clean)
+check "pdf clean removes a file that is gone" "removed 1 file gone or changed, 1 document, 15 page results, 1 library entry" "$output"
+check "pdf clean frees space" "freed [1-9]" "$output"
 check "the rest of the library stays" "Dataset Distillation" "$(library ls)"
 
 locked=testdata/locked/locked.pdf

@@ -12,14 +12,23 @@ struct ReadCommand: ParsableCommand {
             Without --page, reading starts at the first page. Output stops at about 5,000 tokens and ends with \
             the command that goes on from there; --budget all turns the limit off.
 
-            Which part: --page, --printed-page, --section, --full, --from.
-            How much and in what form: --budget, --format, --json.
+            Which part: --page, --printed-page, --section, --full, --from. --page takes ranges and lists (3, 3-5, \
+            3,7-9) and may repeat. --page, --printed-page, --section and --full each choose the part to read, so \
+            two of them end 64 with a line naming the two. --from does not choose a part: it goes on from an \
+            address inside the part chosen (or inside the whole file), so it combines with any of the four, \
+            and ends 1 if the address is on a page the part does not hold. --budget combines with all.
+            How much and in what form: --budget, --format, --json. --json has its own form, so --json with \
+            --format text ends 64.
             Set-aside text, shown on request: --show raw,hidden,headers.
             Notes and references: --notes, --refs. To look up one note or entry: pdf note, pdf ref.
+
+            Exit codes: 0 every requested page read well; 2 some pages flagged, the rest valid; 3 the file failed, \
+            or no page has text; 1 it could not run (a missing file, a page out of range); 64 used wrongly.
 
             Examples:
               pdf read paper.pdf --section Method
               pdf read paper.pdf --page 3-5 --notes inline
+              pdf read paper.pdf --page 3-5 --from p4.7
               pdf read paper.pdf --budget all --format text
             """
     )
@@ -37,9 +46,11 @@ struct ReadCommand: ParsableCommand {
     }
 
     @Argument(help: "Path to a PDF file.") var path: String
-    @Option(name: .customLong("page"),
-            help: ArgumentHelp("Pages by their position in the file, such as 3, 3-5 or 3,7-9. The flag can repeat.",
-                               valueName: "pages"))
+    @Option(
+        name: .customLong("page"),
+        help: ArgumentHelp(
+            "Pages by their position in the file; takes ranges and lists, such as 3, 3-5 or 3,7-9 (pdf crop takes one page). The flag can repeat. Not with --printed-page, --section or --full.",
+            valueName: "pages"))
     var pageSpecs: [String] = []
     @Option(name: .customLong("printed-page"), help: ArgumentHelp("A page by the number printed on it, such as 237 or iv.", valueName: "label"))
     var printedPage: String?
@@ -115,8 +126,12 @@ struct ReadCommand: ParsableCommand {
         if pageSpecs.contains(where: { Self.pages($0) == nil }) {
             throw ValidationError("--page takes pages such as 3, 3-5 or 3,7-9")
         }
-        let scopes = [!pageSpecs.isEmpty, printedPage != nil, section != nil, full].filter { $0 }.count
-        if scopes > 1 { throw ValidationError("choose one of --page, --printed-page, --section and --full") }
+        let scopes = [("--page", !pageSpecs.isEmpty), ("--printed-page", printedPage != nil), ("--section", section != nil), ("--full", full)]
+            .filter(\.1).map(\.0)
+        if scopes.count > 1 {
+            throw ValidationError("\(scopes[0]) and \(scopes[1]) cannot go together: each chooses which part to read; give one of them")
+        }
+        if json, format == .text { throw ValidationError("--json and --format text cannot go together: --json has its own form") }
     }
 
     func run() throws {

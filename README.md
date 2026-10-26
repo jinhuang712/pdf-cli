@@ -36,7 +36,7 @@ The first four work today, built from source, and so does cropping a page or a r
 
 ## Known limits
 
-- Only `pdf add`, `pdf info`, `pdf read`, `pdf search`, `pdf crop`, `pdf pick`, `pdf transcribe`, `pdf reparse`, `pdf dump`, `pdf note`, `pdf ref`, `pdf ls`, `pdf rm`, `pdf doctor`, `pdf setup` and `pdf agent-guide` are built so far, from source, and every target in [GOALS.md](GOALS.md) is still unmeasured.
+- Only `pdf add`, `pdf info`, `pdf read`, `pdf search`, `pdf crop`, `pdf pick`, `pdf transcribe`, `pdf reparse`, `pdf dump`, `pdf note`, `pdf ref`, `pdf ls`, `pdf rm`, `pdf doctor`, `pdf clean`, `pdf setup` and `pdf agent-guide` are built so far, from source, and every target in [GOALS.md](GOALS.md) is still unmeasured.
 - It supports macOS 11 and newer, and no other platform.
 - The document structure of scanned pages needs macOS 26.
 - Scanned pages in Japanese or Korean need macOS 13.

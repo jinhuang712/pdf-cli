@@ -54,13 +54,13 @@ import Testing
         try await DryRunTests.settle(home)
         try FileManager.default.removeItem(at: copy)
         let before = DryRunTests.snapshot(home)
-        let dry = try Self.pdf(["doctor", "--clean", "--dry-run"], home: home)
-        let dryJSON = try Self.pdf(["doctor", "--clean", "--dry-run", "--json"], home: home)
+        let dry = try Self.pdf(["clean", "--dry-run"], home: home)
+        let dryJSON = try Self.pdf(["clean", "--dry-run", "--json"], home: home)
         #expect(dry.status == 0 && dryJSON.status == 0, "\(dry.output)")
         #expect(dry.output.hasPrefix("dry run: would remove 1 file gone or changed, 1 document, "), "\(dry.output)")
         #expect(dry.output.contains("nothing was removed"))
         #expect(DryRunTests.snapshot(home) == before, "a dry clean changed the cache or the library")
-        let real = try Self.pdf(["doctor", "--clean", "--json"], home: home)
+        let real = try Self.pdf(["clean", "--json"], home: home)
         #expect(real.status == 0, "\(real.output)")
         let dryClean = try #require(dryJSON.json?["clean"] as? [String: Any])
         let realClean = try #require(real.json?["clean"] as? [String: Any])
@@ -72,7 +72,7 @@ import Testing
         // The text of a real clean keeps the words pdf gc used, with the space it freed.
         let ls = try Self.pdf(["ls", "--json"], home: home)
         #expect((ls.json?["documents"] as? [Any])?.isEmpty == true)
-        let text = try Self.pdf(["doctor", "--clean"], home: home)
+        let text = try Self.pdf(["clean"], home: home)
         #expect(
             text.output.hasPrefix("removed 0 files gone or changed, 0 documents, 0 page results, 0 library entries for files gone"), "\(text.output)")
     }
@@ -85,7 +85,7 @@ import Testing
         try DryRunTests.sqlite(database, "INSERT INTO runner_lock (lock_key, pid, heartbeat_at) VALUES ('path:/x', 999999, 0)")
         let locked = try Self.pdf(["doctor"], home: home)
         #expect(locked.status == 0 && locked.output.contains("problem: 1 runner lock left by runners that are gone"), "\(locked.output)")
-        let cleaned = try Self.pdf(["doctor", "--clean"], home: home)
+        let cleaned = try Self.pdf(["clean"], home: home)
         #expect(cleaned.status == 0 && cleaned.output.contains("1 runner lock left over"), "\(cleaned.output)")
         #expect(try Self.pdf(["doctor"], home: home).status == 0)
         // An older schema is a note, not a problem: the next normal command repairs it. Doctor ends 0,
@@ -99,15 +99,22 @@ import Testing
             olderText.output.contains("note: the cache is from an older version") && olderText.output.contains("problems: none"),
             "\(olderText.output)")
         #expect(!olderText.output.contains("--dry-run"), "\(olderText.output)")
-        let refused = try Self.pdf(["doctor", "--clean", "--dry-run", "--json"], home: home)
-        #expect(refused.status == 1 && refused.json?["file"] as? String == "pdf doctor" && refused.json?["failed"] != nil, "\(refused.output)")
+        let refused = try Self.pdf(["clean", "--dry-run", "--json"], home: home)
+        #expect(refused.status == 1 && refused.json?["file"] as? String == "pdf clean" && refused.json?["failed"] != nil, "\(refused.output)")
         let reason = refused.json?["failed"] as? String ?? ""
         #expect(reason.contains("pdf read") == false && reason.contains("pdf ls"), "\(refused.output)")
     }
 
-    @Test func aDryRunWithoutCleanIsAUsageError() throws {
+    @Test func doctorCleanAndDryRunAreStubsThatPointToClean() throws {
         let home = try OutputContractTests.freshHome()
-        #expect(try Self.pdf(["doctor", "--dry-run"], home: home).status == 64)
+        for arguments in [["doctor", "--clean"], ["doctor", "--clean", "--dry-run"], ["doctor", "--dry-run"], ["doctor", "--clean", "--json"]] {
+            let run = try Self.pdf(arguments, home: home)
+            #expect(run.status == 64 && run.output.isEmpty && run.errors.contains("pdf clean"), "\(arguments): \(run.status) \(run.errors)")
+        }
+        #expect(try FileManager.default.contentsOfDirectory(atPath: home.path).isEmpty)
+        // The help of doctor offers no --clean any more, and clean takes no PDF.
+        #expect(!PDF.helpMessage(for: DoctorCommand.self).contains("--clean"))
+        #expect(try Self.pdf(["clean", "x.pdf"], home: home).status == 64)
     }
 
     @Test func gcIsGoneAndPointsToDoctor() throws {
@@ -115,7 +122,7 @@ import Testing
         for arguments in [["gc"], ["gc", "--json"], ["gc", "--dry-run"]] {
             let run = try Self.pdf(arguments, home: home)
             #expect(run.status == 64 && run.output.isEmpty, "\(arguments): \(run.status) \(run.output)")
-            #expect(run.errors.contains("`pdf gc` is now `pdf doctor --clean`"), "\(run.errors)")
+            #expect(run.errors.contains("`pdf gc` is now `pdf clean`"), "\(run.errors)")
         }
         // It runs nothing, and the top-level help does not list it.
         #expect(try FileManager.default.contentsOfDirectory(atPath: home.path).isEmpty)

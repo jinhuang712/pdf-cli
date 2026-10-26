@@ -2,36 +2,35 @@ import ArgumentParser
 import Foundation
 import PDFCore
 
-/// Shows what works on this Mac and what is wrong, and with `--clean` removes what no read can use
-/// (FEATURES.md → F12; it took over `pdf gc`).
+/// Shows what works on this Mac and what is wrong, and changes nothing (FEATURES.md → F12). Its
+/// `--clean` went into `pdf clean` (M3.7); the flag stays hidden, as a stub that ends 64.
 struct DoctorCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "doctor",
-        abstract: "Show what works on this Mac and what is wrong; --clean removes what no read can use.",
+        abstract: "Show what works on this Mac and what is wrong. It changes nothing.",
         discussion: """
             Shows the macOS version and what a newer one unlocks, the parser version, the models installed, the size \
             and counts of the cache and the library, the parsing settings in force and where each comes from, what \
-            runs now, and the problems found. It ends 0 and lists the problems it found. Without --clean it changes nothing.
+            runs now, what pdf clean would remove, and the problems found. It changes nothing, takes no PDF, and \
+            ends 0 and lists the problems it found; 1 if it could not run; 64 used wrongly.
 
-            --clean removes cached results for files that no longer exist or changed and for old parser versions, \
-            the library entries of files that no longer exist, leftover runner locks and crops older than 7 days, \
-            then gives the cache's free space back. A file on a drive not plugged in keeps all of it. --dry-run \
-            says what --clean would remove, and removes nothing.
+            To remove what no read can use, run pdf clean (pdf clean --dry-run first says what it would remove). \
+            The parsing settings are the user's: pdf setup.
 
             Examples:
               pdf doctor
               pdf doctor --json
-              pdf doctor --clean --dry-run
-              pdf doctor --clean
             """
     )
 
-    @Flag(help: "Remove what no read can use any more, and say how much space that gave back.") var clean = false
-    @Flag(help: "With --clean: say what would be removed, and change nothing.") var dryRun = false
+    // Moved to `pdf clean` (M3.7); hidden, they run nothing.
+    @Flag(help: .private) var clean = false
+    @Flag(help: .private) var dryRun = false
     @Flag(help: "Print JSON.") var json = false
 
     func validate() throws {
-        if dryRun && !clean { throw ValidationError("--dry-run goes with --clean: pdf doctor --clean --dry-run") }
+        if clean { throw ValidationError("`pdf doctor --clean` is now `pdf clean` (and `--dry-run` goes with it: pdf clean --dry-run)") }
+        if dryRun { throw ValidationError("`--dry-run` belongs to `pdf clean`: pdf clean --dry-run") }
     }
 
     func run() throws {
@@ -39,35 +38,8 @@ struct DoctorCommand: ParsableCommand {
     }
 
     func diagnose() throws {
-        let cleaned = clean ? try Doctor.clean(dryRun: dryRun) : nil
         let report = Doctor.inspect()
-        if json {
-            struct Body: Encodable {
-                var report: DoctorReport
-                var clean: CleanReport?
-                func encode(to encoder: Encoder) throws {
-                    try report.encode(to: encoder)
-                    var container = encoder.container(keyedBy: Key.self)
-                    try container.encodeIfPresent(clean, forKey: Key("clean"))
-                }
-                struct Key: CodingKey {
-                    var stringValue: String
-                    var intValue: Int? { nil }
-                    init(_ name: String) { stringValue = name }
-                    init?(stringValue: String) { self.stringValue = stringValue }
-                    init?(intValue: Int) { nil }
-                }
-            }
-            print(Contract.json(Body(report: report, clean: cleaned)))
-        } else if let cleaned {
-            print(Self.cleanLine(cleaned))
-            for note in report.notes { print("note: \(note)") }
-            let left = dryRun ? report.problems.filter { !report.fixedByClean.contains($0) } : report.problems
-            for problem in left { print("problem: \(problem)") }
-        } else {
-            print(Self.render(report))
-        }
-        // Like info, search and crop, it ends 0 and lists what it found; --clean ends as the clean did.
+        print(json ? Contract.json(report) : Self.render(report))
     }
 
     static func size(_ bytes: Int64) -> String {
@@ -95,7 +67,7 @@ struct DoctorCommand: ParsableCommand {
             + (clean.compacted
                 ? " · compacted the cache, freed \(size(clean.freedBytes))"
                 : (clean.freedBytes > 0 ? " · freed \(size(clean.freedBytes)) of crops" : ""))
-            + (clean.parseRunning ? "\na parse is running, so the rest of the space returns after the next pdf doctor --clean" : "")
+            + (clean.parseRunning ? "\na parse is running, so the rest of the space returns after the next pdf clean" : "")
     }
 
     /// Where a setting comes from, in words.
@@ -158,8 +130,8 @@ struct DoctorCommand: ParsableCommand {
         if !would.isEmpty {
             // A dry run needs a cache it can open read-only; with any other state, say only what the clean does.
             lines.append(
-                "pdf doctor --clean would remove \(would.joined(separator: ", "))"
-                    + (cache.state == "ok" ? "; to see first: pdf doctor --clean --dry-run" : ""))
+                "pdf clean would remove \(would.joined(separator: ", "))"
+                    + (cache.state == "ok" ? "; to see first: pdf clean --dry-run" : ""))
         }
         for note in report.notes { lines.append("note: \(note)") }
         lines.append(report.problems.isEmpty ? "problems: none" : report.problems.map { "problem: \($0)" }.joined(separator: "\n"))

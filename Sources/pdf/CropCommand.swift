@@ -14,15 +14,32 @@ struct CropCommand: ParsableCommand {
             --table and --equation take the number their caption gives, as pdf read and pdf info show it; \
             --page picks one where two share a number. Images stay in the cache folder for 7 days.
 
+            What combines: --page N alone crops the whole page; --page N --bbox crops a region of it (--bbox needs \
+            --page); --figure, --table or --equation crops that item, and --page narrows the search to one page; \
+            --grid draws its lines on any of these. --bbox with --figure, --table or --equation, two of those three, \
+            or none of --page, --figure, --table and --equation end 64 with a line naming the flags. --page takes one \
+            page here, so a range such as --page 3-5 ends 64 with "crop takes one page; use --page N"; pdf read \
+            takes ranges. It prints the image's path and cost, at most about 1,600 image tokens.
+
+            Exit codes: 0 done; 3 the file failed (a locked one needs --password-stdin); 1 it could not run (a \
+            missing file, a page out of range, no such figure); 64 used wrongly.
+
             Examples:
               pdf crop paper.pdf --figure 4
               pdf crop paper.pdf --page 3 --bbox 0.1,0.4,0.8,0.3
               pdf crop paper.pdf --page 3 --grid
+              pdf crop paper.pdf --equation 5 --page 4 --json
             """
     )
 
     @Argument(help: "Path to a PDF file.") var path: String
-    @Option(help: ArgumentHelp("The page, by its position in the file.", valueName: "N")) var page: Int?
+    @Option(
+        name: .customLong("page"),
+        help: ArgumentHelp(
+            "The page, by its position in the file. One page here, not a range (pdf read takes ranges). With --figure, --table or --equation it picks where two share a number.",
+            valueName: "N"))
+    var pageSpec: String?
+    var page: Int? { pageSpec.flatMap { Int($0) } }
     @Option(help: ArgumentHelp("A region: x,y,width,height in fractions of the page, such as 0.1,0.4,0.8,0.3.",
                                valueName: "region"))
     var bbox: String?
@@ -42,14 +59,23 @@ struct CropCommand: ParsableCommand {
     }
 
     func validate() throws {
-        if let page, page < 1 { throw ValidationError("--page takes a page number, 1 or more") }
+        if let pageSpec {
+            if let many = ReadCommand.pages(pageSpec), Int(pageSpec) == nil, many.count > 1 || pageSpec.contains("-") || pageSpec.contains(",") {
+                throw ValidationError("crop takes one page; use --page N (pdf read takes ranges such as \(pageSpec))")
+            }
+            guard let page, page >= 1 else { throw ValidationError("--page takes one page number, 1 or more") }
+        }
         if let bbox, Box.parse(bbox) == nil {
             throw ValidationError("--bbox takes x,y,width,height in fractions of the page, such as 0.1,0.4,0.8,0.3")
         }
         if [figure, table, equation].compactMap({ $0 }).count > 1 {
-            throw ValidationError("--figure, --table and --equation take one at a time")
+            throw ValidationError("--figure, --table and --equation cannot go together: give one of them")
         }
-        if wanted != nil, bbox != nil { throw ValidationError("--bbox crops a region of a page; --figure, --table and --equation crop their own") }
+        if wanted != nil, bbox != nil {
+            throw ValidationError(
+                "--bbox and \(wanted!.kind == .figure ? "--figure" : wanted!.kind == .table ? "--table" : "--equation") cannot go together: --bbox crops a region of the page you name with --page; --figure, --table and --equation crop their own"
+            )
+        }
         if wanted == nil, page == nil { throw ValidationError("give --page, or --figure, --table or --equation") }
     }
 

@@ -387,7 +387,7 @@ One SQLite file holds the cache and both kinds of search.
 
 What the tool can rebuild from the PDFs goes to `~/Library/Caches/pdf-cli/`: the SQLite cache with its keyword index, and the crop images. The agent's own work goes to `~/Library/Application Support/pdf-cli/`: the library list, picks and memos. These are the folders macOS sets aside for each kind of data, so a cleanup tool that clears caches costs time and leaves the agent's work intact.
 
-The cache keeps every parse result until `pdf rm` or `pdf doctor --clean` removes it, as the principle "Pay once, read many times" says. Crop images are the exception: each one goes 7 days after it is written, because making it again needs no parse.
+The cache keeps every parse result until `pdf rm` or `pdf clean` removes it, as the principle "Pay once, read many times" says. Crop images are the exception: each one goes 7 days after it is written, because making it again needs no parse.
 
 The 10 sample papers hold 3.8 KB of text per page, measured with PDFKit. With positions and the keyword index, a page likely takes 10–20 KB, so a 30-page paper takes about 0.3–0.6 MB, against 1.6 MB for the average sample PDF itself. The estimate stays unmeasured until the cache exists.
 
@@ -564,7 +564,7 @@ Searches took 34–79 ms on cached files. Naming each hit's section costs more o
 - **Which way up:** a region is given in fractions of the page as stored, before its rotation, the same frame as the positions in `pdf read --json` and the crop commands in failure blocks. The image comes out upright. A test draws a black box and crops it at 0°, 90°, 180° and 270°.
 - **Rounding:** a region is rounded outward to hundredths of the page, its near edges down and its far edges up, and that region is both drawn and named. Rounding to the nearest hundredth, as the first version did, cut 4 pt off a block's edge and turned a region thinner than half a hundredth into the whole page, as the review found.
 - **What it shows:** the page as a reader sees it, comments and highlights included. So the image belongs to one version of one file, its path and state, not to the document shared by every copy.
-- **Kept:** in the cache folder for 7 days; the same command within them answers in about 35 ms, and `pdf doctor --clean` removes older images. A finished image replaces the old one at once, with `rename(2)`, and a folder is removed only when it has been empty for an hour, since a crop waiting for its worker holds an empty folder: removing it at once failed 9 of 10 crops run together in the review.
+- **Kept:** in the cache folder for 7 days; the same command within them answers in about 35 ms, and `pdf clean` removes older images. A finished image replaces the old one at once, with `rename(2)`, and a folder is removed only when it has been empty for an hour, since a crop waiting for its worker holds an empty folder: removing it at once failed 9 of 10 crops run together in the review.
 - **Locked files:** `--password-stdin` hands the password to the worker in its environment, as `pdf add` does.
 
 Crops took 90–120 ms on cached files with the release build, and 0.84 s for the first crop of an unseen 456-page file, most of it the index.
@@ -968,3 +968,16 @@ Options it beat:
 - **Link on a table that touches the page's end and a table that starts the next page, without a caption.** The parse finds a table only from its caption, so there is no region to link.
 - **Compare the number of columns.** The parse stores no columns, only a box; text lines mix the cells of a row. Left out, the left edge and width stand in.
 - **Link when the caption says "continued" even if the earlier part ends mid-page.** Cases seen (NIST AI 100-1's Tables 2 and 3) are a first part that the table finder cut short, so a link would crop a part that stops before the rows; the rule asks for the geometry the user named.
+
+## Decision: one command, one job; clean split from doctor — 2026-10-26
+
+The agent-usability review judged the CLI mostly good and found `pdf doctor --clean` odd: a command that shows now deletes, behind a flag. M3.7 splits it. `pdf clean` removes what no read can use, with `--dry-run` and `--json` and the output `doctor --clean` had; `pdf doctor` only shows. `pdf doctor --clean` stays as a hidden stub that ends 64 and names `pdf clean`, as `pdf gc` and the old `read` flags do. The same task makes flags that cannot go together end 64 with a line naming both, and states each command's rule in its own `--help`.
+
+| Option | For | Against |
+|---|---|---|
+| **Split `clean` from `doctor`** | A command that reads never deletes; an agent told "run doctor" cannot remove data; `--dry-run` belongs to the one command it is about; the guide's `--dry-run` line names `clean` like `rm`. | One more name for an agent to hold (it shares a row with `doctor` in the guide). |
+| Keep `doctor --clean` | No new name. | Diagnosis and deletion behind one word; `--dry-run` is an error without `--clean`. |
+| Merge `dump` into `read` | One command less. | `read` is paged text for the agent's context and `dump` writes files; the flags do not overlap. Not asked for. |
+| Merge `pick` and `transcribe` | Both keep what the agent decided. | One chooses between two readings, the other stores text from standard input. Not asked for. |
+
+Only `clean` was split, because it was the one the user named. Open observations, not decided: `dump --markdown` and `read` produce the same text, so a user may ask for one; `pick` and `transcribe` both keep the agent's work beside the cache and might share a verb.

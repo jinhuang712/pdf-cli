@@ -13,12 +13,13 @@ struct PDF: AsyncParsableCommand {
               pdf note <pdf> 7               look up one footnote or endnote
               pdf ref <pdf> 12               look up one cited reference
               pdf crop <pdf> --figure 4      see a figure, table or equation
-              pdf dump <pdf> --markdown --figures  write them to files
+              pdf dump <pdf> --figures       write text, figures, tables to files
               pdf pick, pdf transcribe       keep what you read
-              pdf reparse <pdf> --page 7     read pages again, or with --step ocr by OCR
+              pdf reparse <pdf> --page 7     read pages again (--step ocr: by OCR)
               pdf add, ls, rm                the library: add, list, remove
-              pdf doctor [--clean]           what works on this Mac and what is wrong; clean up
-              pdf setup                      how much memory parsing may take (for the user)
+              pdf doctor                     what works on this Mac, what is wrong
+              pdf clean [--dry-run]          remove what no read can use
+              pdf setup                      parsing's memory (the user's call)
               pdf agent-guide                the guide that teaches an agent
 
             Examples:
@@ -38,7 +39,8 @@ struct PDF: AsyncParsableCommand {
             AddCommand.self, ReparseCommand.self, InfoCommand.self, ReadCommand.self, NoteCommand.self, RefCommand.self, SearchCommand.self,
             CropCommand.self, DumpCommand.self, PickCommand.self, TranscribeCommand.self,
             ListCommand.self, RemoveCommand.self,
-            DoctorCommand.self, SetupCommand.self, GCCommand.self, AgentGuideCommand.self, Spike.self, DebugPages.self, DebugOCR.self,
+            DoctorCommand.self, CleanCommand.self, SetupCommand.self, GCCommand.self, AgentGuideCommand.self, Spike.self, DebugPages.self,
+            DebugOCR.self,
             RunnerCommand.self, WorkerCommand.self,
         ]
     )

@@ -13,6 +13,15 @@ struct SearchCommand: ParsableCommand {
             Hits come best first, each with its page, paragraph, section and the words around it. Output stops \
             at about 5,000 tokens and ends with the command that goes on.
 
+            What combines: words (every one must be in the paragraph; else some, as the output says) or --regex \
+            with a pattern and at most a PDF, never both, and one of them is required: words with --regex, or \
+            neither, end 64. --top, --from (a hit number, not a page) and --budget limit what is shown and \
+            combine with either. --show takes headers only; raw and hidden end 64, since hidden words are \
+            never searched.
+
+            Exit codes: 0 done, with or without hits (flagged pages are named in the output); 3 the file failed; \
+            1 it could not run (a missing file); 64 used wrongly.
+
             Examples:
               pdf search paper.pdf dropout ablation
               pdf search dropout

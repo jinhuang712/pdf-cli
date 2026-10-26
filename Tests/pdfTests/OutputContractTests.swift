@@ -84,7 +84,7 @@ import Testing
             (["pick", file, "p1.1", "a"], [1], "failed"), (["transcribe", file, "--page", "1", "--equation", "1"], [1], "failed"),
             (["note", file, "1"], [1], "failed"), (["ref", file, "1"], [1], "failed"),
             (["agent-guide"], [0], "guide"), (["agent-guide", "--install", "claude-code"], [0], "installed"),
-            (["rm", file], [0], "title"), (["doctor", "--clean"], [0], "clean"), (["doctor"], [0, 2], "cache"),
+            (["rm", file], [0], "title"), (["clean"], [0], "clean"), (["doctor"], [0, 2], "cache"),
             (["setup"], [0], "workers"), (["setup", "--memory", "balanced"], [0], "memoryMB"),
         ]
         for command in commands {
@@ -124,7 +124,7 @@ import Testing
         // The library commands: an unknown PDF is not there (1), a wrong flag is 64.
         let removed = try Self.pdf(["rm", Self.missing, "--json"], home: home)
         #expect(removed.status == 1 && removed.json?["failed"] != nil && removed.json?["file"] as? String == Self.missing)
-        for name in ["ls", "rm", "doctor", "setup", "agent-guide"] {
+        for name in ["ls", "rm", "doctor", "clean", "setup", "agent-guide"] {
             #expect(try Self.pdf([name, "--no-such-flag"], home: home).status == 64, "pdf \(name) --no-such-flag")
         }
     }
@@ -223,7 +223,7 @@ import Testing
         _ = try Self.pdf(["add", Self.fixture], home: home)
         try await DryRunTests.settle(home)
         for _ in 0..<2 {
-            let run = try Self.pdf(["doctor", "--clean"], home: home)
+            let run = try Self.pdf(["clean"], home: home)
             #expect(run.status == 0 && run.output.contains("freed") && !run.output.contains("pdf rm"), "\(run.output)")
         }
     }

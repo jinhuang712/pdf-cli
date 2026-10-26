@@ -36,7 +36,7 @@ public enum AgentGuide {
         | `pdf add <pdfs or folders>` | Parses PDFs ahead. |
         | `pdf reparse <pdf>` | Reads pages again: `--page 7`, or `--step ocr` for a scan read badly. Deletes no picks. |
         | `pdf ls`, `pdf rm <pdf or ID>` | Lists the PDFs read; forgets one. |
-        | `pdf doctor` | What works, what is wrong; `--clean` removes what no read can use. |
+        | `pdf doctor`, `pdf clean` | What works, what is wrong; removes what no read can use. |
         | `pdf setup` | Parsing's memory is the user's call: ask, then `pdf setup --memory balanced` (or `light`, `fastest`). |
         | `pdf agent-guide` | Prints this guide; `--install claude-code` installs it as a skill. |
 
@@ -47,7 +47,7 @@ public enum AgentGuide {
         - Columns read one after the other. Running headers, footers and page numbers are left out of reads and searches, and counted in the first line; `--show headers` shows them.
         - Output stops at about 5,000 tokens with a `next:` line: run that command as given.
         - `^{...}` and `_{...}` mark raised and lowered characters, as `10^{-5}`.
-        - `pick`, `transcribe`, `rm`, `doctor` (with `--clean`) take `--dry-run`: they say what they would do. Every command takes `--json`. Exit 0 done; 2 pages flagged, rest valid (`read`, `add`, `reparse`, `dump` only; `info`, `search`, `crop` end 0 and name them); 3 the file failed, or `read` found no text; 1 could not run, as on a missing file; 64 used wrongly. A failure reads `<path>: failed: <reason>`, in `--json` `{"file": …, "failed": …}`.
+        - `pick`, `transcribe`, `rm`, `clean` take `--dry-run`: they say what they would do. Every command takes `--json`. Exit 0 done; 2 pages flagged, rest valid (`read`, `add`, `reparse`, `dump` only; `info`, `search`, `crop` end 0 and name them); 3 the file failed, or `read` found no text; 1 could not run, as on a missing file; 64 used wrongly. A failure reads `<path>: failed: <reason>`, in `--json` `{"file": …, "failed": …}`.
 
         ## Beside the text
 

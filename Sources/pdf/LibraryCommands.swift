@@ -341,20 +341,20 @@ struct RemoveCommand: ParsableCommand {
     }
 }
 
-/// `pdf gc` went into `pdf doctor --clean` (M2.11; DESIGNS.md → Decision: `read` reads, `note` and
+/// `pdf gc` went into `pdf clean` (M2.11; DESIGNS.md → Decision: `read` reads, `note` and
 /// `ref` look up, `--show` shows what was set aside, `doctor` cleans). It stays as a hidden stub that
 /// ends 64 with the pointer and runs nothing; it is no alias.
 struct GCCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "gc",
-        abstract: "Removed: `pdf gc` is now `pdf doctor --clean`.",
+        abstract: "Removed: `pdf gc` is now `pdf clean`.",
         shouldDisplay: false
     )
 
     @Argument(parsing: .unconditionalRemaining) var arguments: [String] = []
 
     func validate() throws {
-        throw ValidationError("`pdf gc` is now `pdf doctor --clean`")
+        throw ValidationError("`pdf gc` is now `pdf clean`")
     }
 
     func run() throws {}

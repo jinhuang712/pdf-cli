@@ -114,7 +114,7 @@ public struct DoctorReport: Encodable {
     public var library: Library
     public var parsing: Parsing
     public var running: Running
-    /// What `pdf doctor --clean` would remove now.
+    /// What `pdf clean` would remove now.
     public var cleanable: Cleanable
     public var missing: [Missing]
     /// What is wrong and needs the user. A state the next normal command repairs is a note, not a problem.
@@ -124,7 +124,7 @@ public struct DoctorReport: Encodable {
     public var fixedByClean: [String]
 }
 
-/// What `pdf doctor --clean` removed, or with `dryRun` would.
+/// What `pdf clean` removed, or with `dryRun` would.
 public struct CleanReport: Encodable {
     public var removed: [String: Int]
     /// Space given back. With `dryRun`, at least that much: the crop images and the free space in

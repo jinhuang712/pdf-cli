@@ -16,6 +16,13 @@ struct TranscribeCommand: ParsableCommand {
             4,000 characters for an equation, 12,000 for a table. --dry-run reads the text, says what would be kept, \
             replaced or removed, and changes nothing; it needs the page read before.
 
+            What combines: --page N (one page; a range ends 64) with exactly one of --equation and --table (both, \
+            or neither, end 64). --clear takes no text, and reads none from standard input. --dry-run goes with \
+            either form.
+
+            Exit codes: 0 kept or removed (or, with --dry-run, would be); 3 the file failed; 1 it could not run (a \
+            missing file, no such equation or table on that page, no text given, text too long); 64 used wrongly.
+
             Examples:
               printf '%s\\n' '\\frac{a}{b}' | pdf transcribe paper.pdf --page 4 --equation 5
               pdf transcribe paper.pdf --page 6 --table 2 < table.md
@@ -26,7 +33,9 @@ struct TranscribeCommand: ParsableCommand {
     )
 
     @Argument(help: "Path to a PDF file.") var path: String
-    @Option(help: ArgumentHelp("The page, by its position in the file.", valueName: "N")) var page: Int
+    @Option(name: .customLong("page"), help: ArgumentHelp("The page, by its position in the file. One page, not a range.", valueName: "N"))
+    var pageSpec: String
+    var page: Int { Int(pageSpec) ?? 0 }
     @Option(help: ArgumentHelp("An equation, by its number, as pdf read shows it, such as 5.", valueName: "N")) var equation: String?
     @Option(help: ArgumentHelp("A table, by its number, as pdf read shows it, such as 2.", valueName: "N")) var table: String?
     @Flag(help: "Remove what is kept for it.") var clear = false
@@ -47,8 +56,12 @@ struct TranscribeCommand: ParsableCommand {
     }
 
     func validate() throws {
-        if page < 1 { throw ValidationError("--page takes a page number, 1 or more") }
-        if (equation == nil) == (table == nil) { throw ValidationError("give --equation or --table, one of them") }
+        if Int(pageSpec) == nil, pageSpec.contains("-") || pageSpec.contains(","), ReadCommand.pages(pageSpec) != nil {
+            throw ValidationError("transcribe takes one page; use --page N")
+        }
+        if page < 1 { throw ValidationError("--page takes one page number, 1 or more") }
+        if equation != nil, table != nil { throw ValidationError("--equation and --table cannot go together: give one of them") }
+        if equation == nil, table == nil { throw ValidationError("give --equation or --table, one of them") }
         if wanted?.number.isEmpty != false { throw ValidationError("--equation and --table take a number, such as 5") }
     }
 

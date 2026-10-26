@@ -19,6 +19,13 @@ struct DumpCommand: ParsableCommand {
             Where: -o. Only some pages, for --markdown and --text alone: --page.
             Locked PDFs and output: --password-stdin, --json.
 
+            --page limits --markdown and --text only; with --figures, --tables, --notes, --refs, --attachments or \
+            --scripts beside them, those still cover the whole file. --page alone, without --markdown or --text, \
+            ends 64, as does a page list that does not parse. No flag from the first list ends 64 too.
+
+            Exit codes: 0 done; 2 some pages were flagged (the files are written); 3 the file failed; 1 it could \
+            not run (a missing file, an output folder that cannot be made); 64 used wrongly.
+
             Examples:
               pdf dump paper.pdf --markdown --figures
               pdf dump paper.pdf --text --page 2-5 -o paper-text
