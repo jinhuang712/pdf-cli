@@ -285,6 +285,16 @@ struct Visibility {
         // A point above and below the box, where PDFKit places some glyphs' boxes a little off
         // their ink; none to the sides, where the next word's ink starts.
         guard let ink = ink(in: rect.insetBy(dx: 0, dy: -1)) else { return .seen(nil) }
+        // A word in the color behind it draws no ink of its own, so the ink in its box is other
+        // strings': a white label set on a black box under a black line (M3.9). Their places do not
+        // count; what is left of the ink, if anything, is the word's.
+        if let color, !drawn.isEmpty, !color.stands(apartFrom: ink.background) {
+            let mine = Set(drawn.map(\.order))
+            let others = drawing.shownRuns(across: rect).filter { !mine.contains($0.order) }.map(\.bounds)
+            if !others.isEmpty, let rest = self.ink(in: rect.insetBy(dx: 0, dy: -1), ignoring: others) {
+                if rest.count < 2 || rest.share < 0.005 { return .hidden(.background) }
+            }
+        }
         if ink.count < 2 || ink.share < 0.005 {
             if let color, color.distance(ink.background) < 0.2 { return .hidden(.background) }
             return .hidden(.invisible)
@@ -668,8 +678,18 @@ struct Visibility {
     /// or an underline, or a strip of a shape, not letters, and does not count: two grey rules
     /// along white text's box would otherwise read as its ink. A box of more than
     /// `inkSamples` pixels is read every few pixels each way.
-    func ink(in rect: CGRect, of source: [UInt8]? = nil) -> Ink? {
+    /// - Parameter ignoring: places in page space whose pixels do not count as ink, where other
+    ///   strings' glyphs are drawn.
+    func ink(in rect: CGRect, of source: [UInt8]? = nil, ignoring: [CGRect] = []) -> Ink? {
         let source = source ?? pixels
+        // The places to leave out, as ranges of pixel columns and rows.
+        let skipped = ignoring.map { place -> (columns: Range<Int>, rows: Range<Int>) in
+            let first = Visibility.pixel(((place.minX - crop.minX) * scale).rounded(.down))
+            let last = Visibility.pixel(((place.maxX - crop.minX) * scale).rounded(.up))
+            let top = Visibility.pixel(((crop.maxY - place.maxY) * scale).rounded(.down))
+            let bottom = Visibility.pixel(((crop.maxY - place.minY) * scale).rounded(.up))
+            return (first..<max(first, last), top..<max(top, bottom))
+        }
         let left = max(0, Visibility.pixel(((rect.minX - crop.minX) * scale).rounded(.down)))
         let right = min(width, Visibility.pixel(((rect.maxX - crop.minX) * scale).rounded(.up)))
         let top = max(0, Visibility.pixel(((crop.maxY - rect.maxY) * scale).rounded(.down)) - 1)
@@ -729,7 +749,9 @@ struct Visibility {
             for row in stride(from: top, to: bottom, by: step) {
                 rows += 1
                 var found = 0, key = -1, oneColor = true
+                let rowSkips = skipped.filter { $0.rows.contains(row) }
                 for (index, column) in stride(from: left, to: right, by: step).enumerated() {
+                    if !rowSkips.isEmpty, rowSkips.contains(where: { $0.columns.contains(column) }) { continue }
                     let at = (row * width + column) * 4
                     let (red, green, blue) = (Int(pixels[at]), Int(pixels[at + 1]), Int(pixels[at + 2]))
                     if red == base.0 && green == base.1 && blue == base.2 { continue }

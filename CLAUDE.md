@@ -15,7 +15,7 @@ Read this before designing anything. Each line points to where it is written dow
 
 ## Versions
 
-Parser version 21, page key 2, index checks 11, summary version 1, cache schema 9: raise the parser version when the parse's output changes, the page key's when what it hashes changes, the index checks when the index's checks change, and the summary version (`Furniture.summaryVersion`, the stored edge summaries of `pdf search`) when what a summary holds changes.
+Parser version 22, page key 2, index checks 11, summary version 1, cache schema 9: raise the parser version when the parse's output changes, the page key's when what it hashes changes, the index checks when the index's checks change, and the summary version (`Furniture.summaryVersion`, the stored edge summaries of `pdf search`) when what a summary holds changes.
 
 ## How to work
 

@@ -935,6 +935,37 @@ let joinPages = [
 try joinsWriter.write(joinPages, resources: "<< /Font << /F1 \(joinsFont) 0 R >> >>", to: "hidden-joins.pdf", folder: "testdata/safety")
 plantedRows += manifest(joinPages, file: "safety/hidden-joins.pdf")
 
+// A black planted line over a black box that white labels sit on (M3.9): the labels' ink inside the line's
+// words' boxes once passed for the words' own, whatever their number, so the line read as text. The
+// pages draw the box, the labels and the black line in each order; the "visible" pages are controls that
+// must keep reading: white words on a dark box with nothing over them, black on white, dark on mid-grey,
+// and a dark box with white labels beside black words.
+let blackWriter = Writer()
+let blackFont = blackWriter.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>")
+let blackLine = "0 g " + joinLine
+func blackLabels(_ count: Int, text: String = "REDACTED") -> String {
+    joinLabels((0..<count).map { 70 + 50 * $0 }, text: text)
+}
+let blackPages = [
+    Page(name: "a black line over a black box after 8 white labels", content: visible + joinBox + blackLabels(8) + blackLine),
+    Page(name: "the same with the line drawn first and the labels after", content: visible + joinBox + blackLine + blackLabels(8)),
+    Page(name: "2 labels", content: visible + joinBox + blackLabels(2) + blackLine),
+    Page(name: "6 labels", content: visible + joinBox + blackLabels(6) + blackLine),
+    Page(name: "10 labels", content: visible + joinBox + blackLabels(10) + blackLine),
+    Page(name: "8 labels, the line 10 points lower", content: visible + joinBox + blackLabels(8) + "0 g " + line(joinPlanted, y: 676)),
+    Page(name: "8 labels of long words", content: visible + joinBox + blackLabels(8, text: "REDACTED REDACTED") + blackLine),
+    Page(name: "visible: white words on a dark box, nothing over them", content: visible + joinBox
+         + joinLabels((0..<8).map { 70 + 50 * $0 }, text: "Results")),
+    Page(name: "visible: black words on a white box", content: visible + "1 g 66 672 400 24 re f 0 g " + line("Black words on a white box.", y: 680)),
+    Page(name: "visible: dark words on a mid-grey box",
+         content: visible + "0.7 g 66 672 400 24 re f 0.1 g " + line("Dark words on a grey box.", y: 680)),
+    Page(name: "visible: a dark box with white labels, black words beside it",
+         content: visible + "0 g 66 672 200 24 re f " + joinLabels((0..<4).map { 70 + 50 * $0 }, text: "Total")
+                  + "0 g " + line("Black words beside the dark box.", y: 680, x: 280)),
+]
+try blackWriter.write(blackPages, resources: "<< /Font << /F1 \(blackFont) 0 R >> >>", to: "hidden-black-on-black.pdf", folder: "testdata/safety")
+plantedRows += manifest(blackPages, file: "safety/hidden-black-on-black.pdf")
+
 try Data((plantedRows.joined(separator: "\n") + "\n").utf8).write(to: URL(fileURLWithPath: "testdata/safety/planted.tsv"))
 print("wrote testdata/safety/hidden-annotations.pdf and testdata/safety/planted.tsv")
 
