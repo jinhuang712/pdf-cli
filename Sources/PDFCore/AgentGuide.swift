@@ -42,16 +42,16 @@ public enum AgentGuide {
 
         ## Reading the output
 
-        - `## p.4` starts a page and `¶7` its seventh block, most often a paragraph. Cite "p.4 ¶7"; `pdf read paper.pdf --from p4.7` reads on from there. `## p.12 (printed 237)` gives the number printed on it. `--json` gives each block's position, in `crop`'s fractions.
+        - `## p.4` starts a page and `¶7` its seventh block. Cite "p.4 ¶7"; `pdf read paper.pdf --from p4.7` reads on from there. `## p.12 (printed 237)` gives the number printed on it. `--json` gives each block's position, in `crop`'s fractions.
         - The first line sums up the read: pages read and flagged, what was set aside or hidden with its flag, `provisional` while the file parses.
         - Columns read one after the other. Running headers, footers and page numbers are left out of reads and searches, and counted in the first line; `--show headers` shows them.
         - Output stops at about 5,000 tokens with a `next:` line: run that command as given.
-        - `^{...}` and `_{...}` mark raised and lowered characters, as in `10^{-5}` and `x_{2}`.
+        - `^{...}` and `_{...}` mark raised and lowered characters, as `10^{-5}`.
         - `pick`, `transcribe`, `rm`, `doctor` (with `--clean`) take `--dry-run`: they say what they would do. Every command takes `--json`. Exit 0 done; 2 pages flagged, rest valid (`read`, `add`, `reparse`, `dump` only; `info`, `search`, `crop` end 0 and name them); 3 the file failed, or `read` found no text; 1 could not run, as on a missing file; 64 used wrongly. A failure reads `<path>: failed: <reason>`, in `--json` `{"file": …, "failed": …}`.
 
         ## Beside the text
 
-        A figure, a table or a numbered equation is one block, `¶5 [table 2] <caption>` with its `crop:` command, in place of its text: read a table's cells and an equation from the image. `--show raw` shows their flat text. Once read, keep it: `pdf transcribe paper.pdf --page 4 --equation 5 <<'EOF'`, its LaTeX, then `EOF`, or a table's Markdown with `--table 2`; later reads show it in place.
+        A figure, a table or a numbered equation is one block, `¶5 [table 2] <caption>` with its `crop:` command, in place of its text: read a table's cells and an equation from the image. `--show raw` shows their flat text. Keep what you read: `pdf transcribe paper.pdf --page 4 --equation 5 <<'EOF'`, its LaTeX, then `EOF`, or a table's Markdown with `--table 2`; later reads show it in place. A table over pages says `continues on p.7`; `--table 2` crops every part.
 
         A footnote or endnote is `[^7]` in the text, its words under `## Notes`; `--notes inline` puts each by its paragraph, `--notes off` drops them. `[margin]`, `[headnote]`: a margin note, a chapter's summary.
 

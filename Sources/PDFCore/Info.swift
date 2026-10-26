@@ -78,6 +78,12 @@ public struct Info: Encodable, Sendable {
         public var page: Int
         /// Its caption, without its label.
         public var caption: String
+        /// For a table that runs over a page break: the page, counted from 1, where it goes on,
+        /// and the page it goes on from (`TableLinks`).
+        public var continuesOn: Int? = nil
+        public var continuedFrom: Int? = nil
+        /// One id for all the parts of such a table.
+        public var table: String? = nil
     }
 
     public struct RunningHeader: Encodable, Equatable, Sendable {
@@ -141,10 +147,17 @@ public struct Info: Encodable, Sendable {
             pages: pages.map(\.index),
             in: Dictionary(layers.compactMap { index, layer in layer.map { (index, $0) } }) { first, _ in first })
         self.runningHeaders = Info.runningHeaders(pages, furniture: furniture)
+        let byPage = Dictionary(layers.compactMap { index, layer in layer.map { (index, $0) } }) { first, _ in first }
         self.figures = layers.flatMap { index, layer -> [Figure] in
             guard let layer else { return [] }
-            return (layer.regions ?? []).filter { $0.kind != .equation }.map { region in
-                Figure(kind: region.kind.rawValue, number: region.number, page: index + 1, caption: region.captionText(in: layer))
+            return (layer.regions ?? []).enumerated().filter { $0.element.kind != .equation }.map { position, region in
+                var figure = Figure(kind: region.kind.rawValue, number: region.number, page: index + 1, caption: region.captionText(in: layer))
+                if region.kind == .table, let link = TableLinks.link(of: position, on: index, layer: { byPage[$0] }) {
+                    figure.continuesOn = link.continuesOn
+                    figure.continuedFrom = link.continuedFrom
+                    figure.table = link.id
+                }
+                return figure
             }
         }
         if !facts.outline.isEmpty {
@@ -592,8 +605,11 @@ public struct Info: Encodable, Sendable {
             for figure in figures.prefix(Info.maxSectionRows) {
                 let name = (figure.kind == "table" ? "tbl " : "fig ") + figure.number
                 let caption = figure.caption.count > 70 ? String(figure.caption.prefix(69)) + "…" : figure.caption
-                table.append("  " + name.padding(toLength: max(name.count + 1, 9), withPad: " ", startingAt: 0)
-                             + "p.\(figure.page)".padding(toLength: 7, withPad: " ", startingAt: 0) + caption)
+                table.append(
+                    "  " + name.padding(toLength: max(name.count + 1, 9), withPad: " ", startingAt: 0)
+                        + "p.\(figure.page)".padding(toLength: 7, withPad: " ", startingAt: 0) + caption
+                        + [figure.continuedFrom.map { " · continued from p.\($0)" }, figure.continuesOn.map { " · continues on p.\($0)" }]
+                        .compactMap { $0 }.joined())
             }
             if figures.count > Info.maxSectionRows {
                 table.append("  and \(figures.count - Info.maxSectionRows) more; pdf info --json lists them")

@@ -79,6 +79,8 @@ struct CropCommand: ParsableCommand {
         var keepable: (kind: Region.Kind, number: String)?
         var twins = 1
         var unsearched: [Int] = []
+        var linked: [(page: Int, region: Region)] = []
+        var link: TableLink?
         // The pages whose text mentions it, as "Fig. 4", in the pages parsed so far.
         var mentioned: [Int] = []
         if let wanted {
@@ -88,6 +90,8 @@ struct CropCommand: ParsableCommand {
             caption = found.caption
             twins = found.twins
             unsearched = found.unsearched
+            linked = found.parts
+            link = found.link
             let layers = try InfoCommand.cachedPages(docID: docID, store: store).compactMap { page -> (index: Int, layer: PDFCore.PageText)? in
                 page.result.pageText.map { (page.index, $0) }
             }
@@ -115,6 +119,25 @@ struct CropCommand: ParsableCommand {
             throw Contract.fail(path, "p.\(number) could not be drawn: \(reason)", json: json)
         }
         let tokens = Crop.tokens(width: made.width, height: made.height)
+        // The other parts of a table that runs over a page break, one crop each, in page order.
+        var others: [(page: Int, made: Crop.Made, caption: String)] = []
+        if let link {
+            for part in linked where part.page + 1 != number {
+                do {
+                    let layer = try InfoCommand.cachedPages(docID: docID, store: store).first { $0.index == part.page }?.result.pageText
+                    others.append(
+                        (
+                            part.page + 1,
+                            try Crop.make(path: path, page: part.page + 1, region: part.region.box.outward, grid: false, password: password),
+                            layer.map { part.region.captionText(in: $0) } ?? ""
+                        ))
+                } catch {
+                    throw Contract.fail(
+                        path, "p.\(part.page + 1), part of \(link.id), could not be drawn: \((error as? CropError)?.description ?? "\(error)")",
+                        json: json)
+                }
+            }
+        }
         if json {
             struct Body: Encodable {
                 var file: String
@@ -130,6 +153,31 @@ struct CropCommand: ParsableCommand {
                 var transcribed: String?
                 var mentionedOn: [Int]?
                 var notSearched: [Int]?
+                var table: TableLink?
+                var parts: [Part]?
+            }
+            struct Part: Encodable {
+                var page: Int
+                var bbox: String
+                var image: String
+                var width: Int
+                var height: Int
+                var tokens: Int
+                var caption: String?
+            }
+            let everyPart: [Part]? = link.map { _ in
+                linked.compactMap { part -> Part? in
+                    if part.page + 1 == number {
+                        return Part(
+                            page: number, bbox: Output.format(part.region.box.outward), image: made.url.path, width: made.width,
+                            height: made.height, tokens: tokens, caption: caption)
+                    }
+                    guard let other = others.first(where: { $0.page == part.page + 1 }) else { return nil }
+                    return Part(
+                        page: other.page, bbox: Output.format(part.region.box.outward), image: other.made.url.path, width: other.made.width,
+                        height: other.made.height, tokens: Crop.tokens(width: other.made.width, height: other.made.height),
+                        caption: other.caption)
+                }
             }
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.withoutEscapingSlashes, .sortedKeys]
@@ -142,7 +190,7 @@ struct CropCommand: ParsableCommand {
                             latex: kept?.kind == .equation ? kept?.text : nil,
                             markdown: kept?.kind == .table ? kept?.text : nil, transcribed: kept?.day,
                             mentionedOn: wanted == nil ? nil : mentioned,
-                            notSearched: unsearched.isEmpty ? nil : unsearched.map { $0 + 1 })),
+                            notSearched: unsearched.isEmpty ? nil : unsearched.map { $0 + 1 }, table: link, parts: everyPart)),
                     as: UTF8.self))
         } else {
             print("\(made.url.path)  (~\(Info.thousands(tokens)) image tokens, \(made.width)×\(made.height) px)")
@@ -150,6 +198,17 @@ struct CropCommand: ParsableCommand {
                 print("p.\(number) · caption: \(caption)")
             } else if wanted != nil, keepable == nil {
                 print("p.\(number)")
+            }
+            if let link {
+                print(
+                    "p.\(number) · one table, \(link.id), linked over p.\(link.pages.map(String.init).joined(separator: ", p.")): a crop for each linked part, in page order, this one first"
+                )
+                for other in others {
+                    print(
+                        "\(other.made.url.path)  (~\(Info.thousands(Crop.tokens(width: other.made.width, height: other.made.height))) image tokens, \(other.made.width)×\(other.made.height) px)"
+                    )
+                    print("p.\(other.page) · linked part" + (other.caption.isEmpty ? "" : " · caption: \(other.caption)"))
+                }
             }
             if let wanted, twins > 1 {
                 print("p.\(number) numbers \(twins) \(wanted.kind.rawValue)s \(wanted.number): this is the first of them")
@@ -188,7 +247,7 @@ struct CropCommand: ParsableCommand {
     static func locate(
         _ wanted: (kind: Region.Kind, number: String), page: Int?, path: String, password: String?, docID: String,
         store: Store, reader: Reader
-    ) throws -> (page: Int, region: Region, caption: String, twins: Int, unsearched: [Int]) {
+    ) throws -> (page: Int, region: Region, caption: String, twins: Int, unsearched: [Int], parts: [(page: Int, region: Region)], link: TableLink?) {
         func layers() throws -> [(index: Int, layer: PDFCore.PageText)] {
             try InfoCommand.cachedPages(docID: docID, store: store).compactMap { page -> (index: Int, layer: PDFCore.PageText)? in
                 page.result.pageText.map { (page.index, $0) }
@@ -257,10 +316,27 @@ struct CropCommand: ParsableCommand {
             }
             throw NotFound(description: message)
         }
-        if found.count > 1, Set(found.map(\.page)).count > 1 {
+        // A table that runs over page breaks is one table with a crop per part: the chain of the
+        // first one found, with the pages beyond its ends parsed (M3.2).
+        var parts: [(page: Int, region: Region)] = []
+        var link: TableLink?
+        if wanted.kind == .table, let anchor = found.first {
+            let tablePages = TablePages(known: [:], keys: keys, store: store) { other in
+                _ = try? reader.read(path: path, pages: [other], password: password)
+            }
+            if let index = tablePages.layer(anchor.page)?.regions?.firstIndex(of: anchor.region) {
+                link = TableLinks.link(of: index, on: anchor.page, in: tablePages)
+                if link != nil {
+                    parts = TableLinks.chain(of: index, on: anchor.page, layer: tablePages.layer).compactMap { part in
+                        tablePages.layer(part.page)?.regions.map { (part.page, $0[part.region]) }
+                    }
+                }
+            }
+        }
+        if found.count > 1, Set(found.map(\.page)).count > 1, !found.allSatisfy({ item in parts.contains { $0.page == item.page } }) {
             throw NotFound(description: "\(name) is on " + found.map { "p.\($0.page + 1)" }.joined(separator: " and ") + "; add --page")
         }
         let layer = pages.first { $0.index == first.page }!.layer
-        return (first.page, first.region, first.region.captionText(in: layer), found.filter { $0.page == first.page }.count, unsearched)
+        return (first.page, first.region, first.region.captionText(in: layer), found.filter { $0.page == first.page }.count, unsearched, parts, link)
     }
 }

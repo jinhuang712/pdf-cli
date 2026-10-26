@@ -1161,3 +1161,108 @@ try tinyNear.write(
             hides: ["ABC DEF", "GHI JKL"])
     ],
     resources: "<< /Font << /F1 \(tinyNearFont) 0 R >> >>", to: "tiny-near-prose.pdf")
+
+// Tables that continue across pages (M3.2): testdata/tables. A table is a caption over ruled rows.
+// continued.pdf: Table 1 runs from the bottom of page 1 over page 2 to the middle of page 3, the
+// next parts headed "Table 1 (continued)" and standing over the same columns: three linked parts.
+// separate.pdf and narrow.pdf must link nothing: a short caption repeated with no "continued" and
+// a table that ends mid-page; a table that ends mid-page followed by a "(continued)"; a
+// continuation over other columns. hidden-continued.pdf: the word "(continued)" is there, drawn
+// invisible (render mode 3), so it must not link. repeated.pdf: the whole caption repeated is
+// a continuation.
+let tables = Writer()
+let tablesFont = tables.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>")
+let tablesResources = "<< /Font << /F1 \(tablesFont) 0 R >> >>"
+
+/// Ruled rows from `top` down to `bottom` (PDF y), 20 pt apart, from `left` to `right`, numbered
+/// from `first`; a rule above each row and under the last.
+func tableRows(top: Int, bottom: Int, left: Int = 72, right: Int = 540, first: Int = 1) -> String {
+    var content = ""
+    var y = top
+    var number = first
+    content += "0.5 w \(left) \(y) m \(right) \(y) l S\n"
+    while y - 20 >= bottom {
+        content += line("Row \(number)", y: y - 14, size: 10, x: left + 8)
+        content += line("0.\(100 + number)", y: y - 14, size: 10, x: left + (right - left) / 3)
+        content += line("\(number * 7 % 90).\(number % 10)", y: y - 14, size: 10, x: left + 2 * (right - left) / 3)
+        y -= 20
+        number += 1
+        content += "0.5 w \(left) \(y) m \(right) \(y) l S\n"
+    }
+    return content
+}
+let intro =
+    line("The measured values of the second trial are listed in the table below.", y: 700)
+    + line("Each row is one sample and each column one reading taken that day.", y: 680)
+func tablePage(
+    caption: String, captionY: Int, top: Int, bottom: Int, first: Int = 1, left: Int = 72, right: Int = 540,
+    before: String = "", after: String = ""
+) -> String {
+    before + line(caption, y: captionY, x: left) + tableRows(top: top, bottom: bottom, left: left, right: right, first: first) + after
+}
+let after =
+    line("The values above were checked twice by two different people in the lab.", y: 420)
+    + line("Their sum agrees with the total given in the next section of this report.", y: 400)
+
+try tables.write(
+    [
+        Page(
+            name: "Table 1 to the page's end",
+            content: tablePage(caption: "Table 1: Measured values by sample.", captionY: 580, top: 566, bottom: 90, before: intro)),
+        Page(
+            name: "Table 1 (continued) over the page",
+            content: tablePage(caption: "Table 1 (continued)", captionY: 730, top: 716, bottom: 90, first: 25)),
+        Page(
+            name: "Table 1 (continued) to the middle",
+            content: tablePage(caption: "Table 1 (continued)", captionY: 730, top: 716, bottom: 450, first: 49, after: after)),
+    ],
+    resources: tablesResources, to: "continued.pdf", folder: "testdata/tables")
+
+try tables.write(
+    [
+        Page(name: "Table 1 to the page's end", content: tablePage(caption: "Table 1: Results", captionY: 580, top: 566, bottom: 90, before: intro)),
+        Page(
+            name: "the same short caption again, no continued",
+            content: tablePage(caption: "Table 1: Results", captionY: 730, top: 716, bottom: 450, first: 25, after: after)),
+        Page(
+            name: "Table 2 ends mid-page",
+            content: tablePage(caption: "Table 2: Wide results by sample.", captionY: 600, top: 586, bottom: 330, before: intro, after: after)),
+        Page(
+            name: "Table 2 (continued) after a mid-page end",
+            content: tablePage(caption: "Table 2 (continued)", captionY: 730, top: 716, bottom: 450, first: 14, after: after)),
+    ],
+    resources: tablesResources, to: "separate.pdf", folder: "testdata/tables")
+
+try tables.write(
+    [
+        Page(
+            name: "Table 1 to the page's end",
+            content: tablePage(caption: "Table 1: Measured values by sample.", captionY: 580, top: 566, bottom: 90, before: intro)),
+        Page(
+            name: "Table 1 (continued) over other columns",
+            content: tablePage(caption: "Table 1 (continued)", captionY: 730, top: 716, bottom: 450, first: 25, right: 380)),
+    ],
+    resources: tablesResources, to: "narrow.pdf", folder: "testdata/tables")
+
+try tables.write(
+    [
+        Page(
+            name: "Table 1 to the page's end",
+            content: tablePage(caption: "Table 1: Measured values by sample.", captionY: 580, top: 566, bottom: 90, before: intro)),
+        Page(
+            name: "a hidden \"(continued)\"",
+            content: "BT /F1 12 Tf 72 730 Td (Table 1: Values.) Tj 3 Tr ( PLANTED continued) Tj 0 Tr ET\n"
+                + tableRows(top: 716, bottom: 450, first: 25)),
+    ],
+    resources: tablesResources, to: "hidden-continued.pdf", folder: "testdata/tables")
+
+try tables.write(
+    [
+        Page(
+            name: "Table 3 to the page's end",
+            content: tablePage(caption: "Table 3: Measured values by sample and day.", captionY: 580, top: 566, bottom: 90, before: intro)),
+        Page(
+            name: "Table 3 with its whole caption again",
+            content: tablePage(caption: "Table 3: Measured values by sample and day.", captionY: 730, top: 716, bottom: 450, first: 25)),
+    ],
+    resources: tablesResources, to: "repeated.pdf", folder: "testdata/tables")

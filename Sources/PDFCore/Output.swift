@@ -25,11 +25,14 @@ public enum Output {
         /// The page's citations of the list of references and its cross-references, judged
         /// against the document (`References`).
         public var citations: PageCitations
+        /// The links of the page's tables to their other parts, by the region's position on the page
+        /// (`TableLinks`).
+        public var tableLinks: [Int: TableLink]
 
         public init(
             index: Int, result: PageResult, key: String, annotations: [FileFacts.Annotation] = [],
             moreAnnotations: Int = 0, whyAnnotations: Int = 0, furniture: [Int: Furniture.Kind] = [:], notes: PageNotes = PageNotes(),
-            citations: PageCitations = PageCitations()
+            citations: PageCitations = PageCitations(), tableLinks: [Int: TableLink] = [:]
         ) {
             self.index = index
             self.result = result
@@ -40,6 +43,7 @@ public enum Output {
             self.furniture = furniture
             self.notes = notes
             self.citations = citations
+            self.tableLinks = tableLinks
         }
     }
 
@@ -139,6 +143,9 @@ public enum Output {
         public var latex: String?
         public var markdown: String?
         public var transcribed: String?
+        /// A table that runs over a page break: which part this is, and where the others are
+        /// (`TableLinks`).
+        public var table: TableLink?
         /// A note's id, as "7" or "3.7", and for a note listed after the text, the page it is on.
         public var id: String?
         public var place: String?
@@ -331,6 +338,10 @@ public enum Output {
                 var block = Block(kind: kind, page: number, block: index + 1, box: region.box, text: text.isEmpty ? nil : Output.caption(text),
                                   commands: ["crop": "pdf crop \(path) --page \(number) --\(region.kind.rawValue) \(region.number)"])
                 block.number = region.number
+                if let link = page.tableLinks[position] {
+                    block.table = link
+                    block.commands?["crop"] = "pdf crop \(path) --page \(number) --table \(region.number)"
+                }
                 // What the agent kept for an equation or a table, which goes out in place of its flat
                 // text: for the first region of its number on the page, which `pdf crop` crops.
                 let regionNumber = Region.normalized(region.number)
@@ -1470,7 +1481,13 @@ public enum Output {
         case .figure, .table, .equation:
             let text = placed(block.text ?? "", links: block.links ?? [], style: style)
             let label = "\(address(block)) [\(block.kind.rawValue) \(block.number ?? "")]"
-            let crop = "crop: \(commands["crop"] ?? "")"
+            var crop = "crop: \(commands["crop"] ?? "")"
+            if let link = block.table {
+                let where_ = [link.continuedFrom.map { "continued from p.\($0)" }, link.continuesOn.map { "continues on p.\($0)" }]
+                crop +=
+                    " (crops all \(link.parts) linked parts)\n  " + where_.compactMap { $0 }.joined(separator: ", ")
+                    + "; linked parts: p." + link.pages.map(String.init).joined(separator: ", p.")
+            }
             // The agent's LaTeX or Markdown, labelled as its reading, its lines indented four
             // spaces, below the block's own command lines and inert in Markdown, so that none reads
             // as a page, a block, a command or a fence of its own; the crop stays, to check it by.

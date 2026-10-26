@@ -174,6 +174,16 @@ struct DebugPages: ParsableCommand {
                     }
                 }
             }
+            if regions {
+                let layers = Dictionary(results.compactMap { page, result in result.pageText.map { (page, $0) } }) { first, _ in first }
+                for (page, layer) in layers.sorted(by: { $0.key < $1.key }) {
+                    for index in (layer.regions ?? []).indices {
+                        if let link = TableLinks.link(of: index, on: page, layer: { layers[$0] }) {
+                            print("  link p.\(page + 1) \(layer.regions![index].name): \(link)")
+                        }
+                    }
+                }
+            }
             if results.contains(where: { $0.result.status == .failed }) { throw ExitCode(2) }
         }
     }

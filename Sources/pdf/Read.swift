@@ -225,13 +225,21 @@ struct ReadCommand: ParsableCommand {
             try? referenceIndex.refresh(keys: keys, store: store)
             let cited = referenceIndex.resolve(pages: results.map(\.page), notes: judged)
             document.listEntries = referenceIndex.entryCount(notes: judged)
+            // Tables that run over a page break, linked where both parts are parsed: a table that ends
+            // a page asks for the next page to be parsed, one that starts it with a caption that says
+            // it goes on asks for the one before.
+            let known = Dictionary(results.compactMap { page, result in result.pageText.map { (page, $0) } }) { first, _ in first }
+            let tableLinks = TableLinks.resolve(
+                pages: results.map(\.page),
+                in: TablePages(known: known, keys: keys, store: store) { other in _ = try? reader.read(path: path, pages: [other]) })
             for (page, result) in results {
                 let resume = index == 0 && page + 1 == start?.page
                 let added = document.add(
                     Output.Page(
                         index: page, result: result, key: keys[page], annotations: annotations[page]?.annotations ?? [],
                         moreAnnotations: annotations[page]?.more ?? 0, whyAnnotations: annotations[page]?.why ?? 0,
-                        furniture: furniture[page] ?? [:], notes: judged[page] ?? PageNotes(), citations: cited[page] ?? PageCitations()),
+                        furniture: furniture[page] ?? [:], notes: judged[page] ?? PageNotes(), citations: cited[page] ?? PageCitations(),
+                        tableLinks: tableLinks[page] ?? [:]),
                     from: resume ? start?.block : nil, offset: resume ? start?.offset : nil)
                 if !added { break reading }
                 index += 1
