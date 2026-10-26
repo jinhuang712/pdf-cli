@@ -118,6 +118,7 @@ The spike shipped no features. It answered the riskiest questions.
 - **Cleanup**
   - [x] M3.8 Leftover cleanup (docs only, the user: items not worth doing are cleaned out): every item of TODO.md, FEATURES.md Gaps, DESIGNS.md open questions and ROADMAP.md "Later" notes was checked on 2026-10-26; the stale and the false ones are corrected or removed, the limits sit in FEATURES.md Gaps, TODO.md keeps only what is still to fix, and the missing report of M2.25 is written. Also written: reports/M2.25-determinism.md.
   - [x] M3.9 A planted line no longer reads as text when white labels sit on the black box under it (parser version 22): a word with no ink of its own, in the color behind it or in a mode that paints nothing, does not take other strings' ink in its box as its own; fixtures in `testdata/safety/hidden-black-on-black.pdf`. Done 2026-10-26 (reviewed). See DESIGNS.md → "Decision: ink that other strings draw does not make a word with no ink of its own visible" and `reports/M3.9-black-on-black.md`.
+  - [x] M3.10 The old-cache check: `testdata/scripts/old-cache-check.sh <old-commit>` builds an older commit outside the repo, makes a cache with it (add, read, search, pick, transcript), opens it with the new build and compares reads and searches with a fresh cache; it came from the M2.26 review (a new table skipped on an old cache broke every command). Done 2026-10-26 (a test script; no reviewer). See `reports/M3.10-old-cache-check.md`.
 - **Install**
   - [ ] M3.5 A Homebrew release that installs with one command
 
