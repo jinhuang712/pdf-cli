@@ -473,7 +473,7 @@ This follows "Pay once, read many times" and "Same file, same answer". A documen
 
 Each parse job starts its own worker process, which exits when the job ends. A short-lived runner process starts the workers for one file: it stops any worker that spends more than 30 s on a page or holds more than 2 GB of memory, retries a page whose worker crashed once, and writes what the workers report to the cache. An index or page worker says nothing until it has opened the file, and until then it may stay silent 90 s, under the 120 s an agent's command commonly gets: a large file, or one on a slow disk or network volume, opens slowly through no fault of its own. A file that takes longer is slow to open, not damaged: commands in the next 10 minutes get that verdict at once, and the first command after them tries the file again. Until the TODO fixes of 2026-10-16, opening had the 30 s limit, and three slow opens cached the file as damaged until it changed; such verdicts are tried again. The sample check and the facts say nothing until they finish, and keep their own limits. The runner never opens PDF content itself. A command that needs only one page returns once that page is ready, and the runner goes on with the rest of the document in the background, then exits. The runner holds a lock per file and per document in the SQLite cache, so two commands never parse the same page twice.
 
-Task M1.1 measured this on a 456-page file built from the sample papers: the first page in 0.73 s, the whole file within 4 s, and a cached read in 20–30 ms per command. Three commands at once on the new file started one runner, and each page went to one worker. A planted hang, runaway memory or crash cost one page, and the rest of the file read normally (`scripts/test-cache.sh`).
+Task M1.1 measured this on a 456-page file built from the sample papers: the first page in 0.73 s, the whole file within 4 s, and a cached read in 20–30 ms per command. Three commands at once on the new file started one runner, and each page went to one worker. A planted hang, runaway memory or crash cost one page, and the rest of the file read normally (`scripts/test-cache.sh`). Measured again 2026-10-26 (M3.8, release build, a fresh home each): `read --page 1` took 0.86, 0.98 and 0.91 s on an 889-page file, 1.00 to 1.12 s on a 592-page file and 0.42 to 0.46 s on a 15-page file, all within G2's 2 s; an earlier note that a file over about 700 pages would miss it no longer holds. A first run right after the build took 25 s, probably the new binary's first launch; it was not repeated or explained.
 
 The principle "Untrusted files stay in a child process" already pays a process start for each job, and the start is cheap enough: the M0 spike read a whole paper's text and page 1's figures in at most 0.36 s per file, each in a fresh process, against the 2 s of goal G2. The decision reopens when a model joins the default and its load time breaks goal G2 or G4.
 
@@ -815,11 +815,9 @@ The tool returns text, crops and failure reports, and the calling agent does all
 ## Open questions
 
 - How to measure reading-order doubt on layouts beyond LaTeX papers, such as Word reports, magazines and textbooks with sidebars. The M0 spike's count of jumps between the left and right halves of a page is a candidate, tested only on two-column LaTeX papers.
-- Resolved 2026-10-26, not built: the embedding model for search by meaning (see "Decision: no search by meaning").
 - The quality thresholds that make a page `low-quality`. They get tuned until goal G11 in [GOALS.md](GOALS.md) passes. The OCR agreement's 0.85 rests on 33 scans made from three pages.
 - How to find the lines in doubt on a scan whose blocks are too short to judge alone, so the failure block covers less than the whole page.
 - How to check, page by page, a scan's old OCR text layer that passed the sample check. The NACA report's third page reads "TECH LM3ARY" from its old layer, unflagged.
-- How to serve the first page of a very long file within goal G2. The runner reads every page's key and font check before it parses any page, at about 2.4 ms per page, so a file of more than about 700 pages likely misses G2's 2 s. A 456-page file gave its first page in 1.52 s.
 
 ## Decision: a dry run answers from what is kept and never parses — 2026-10-25
 
@@ -911,7 +909,7 @@ Options, with numbers (smoke set, this macOS):
 | The document recognizer pinned to the CPU (`setComputeDevice(.cpu)` for the main and post-processing stages) | The review got one answer in 16 of 16 processes on the arXiv page and 6 of 6 on the NACA page where the default differed 2 of 6; same speed (2.49 s against 2.65 s); would make scans deterministic too. | M2.25 measured it and could not show a gain: the default also gave one answer in all of my 12 + 14 + 16 fresh processes, and 10 of 10 on NACA p.17 both ways, so the flip could not be reproduced to check the fix. Its text differs from the default's: on the arXiv paper it joined "stationarity;Shift", "Zheng,Wen" and "]for" (2 glitches, against 0 for the default document recognizer and 1 for the text recognizer). Not "at least as good", so not taken. Left as an option in TODO. |
 | The document recognizer as it was, read twice and compared | Keeps recall. | Doubles 0.65 s a page, and when the two differ there is no rule for which is right. |
 
-Not covered: a scan is still read by the document recognizer, so a scan can read differently in two fresh caches; `pdf reparse` reads it again and may change it. The cache keeps a reading until a reparse.
+Not covered: a scan is still read by the document recognizer, so a scan can read differently in two fresh caches; `pdf reparse` reads it again and may change it. The cache keeps a reading until a reparse. Checked again 2026-10-26 (M3.8): the same `read --page N --show raw --budget all` in 8 fresh homes gave one identical output each on three scanned pages (24 of 24 runs); the difference did not reproduce, so the CPU pin stays unbuilt and unproven.
 
 ## Decision: an OCR line that reads as prose is no "too small to read" text — 2026-10-25
 
@@ -980,4 +978,4 @@ The agent-usability review judged the CLI mostly good and found `pdf doctor --cl
 | Merge `dump` into `read` | One command less. | `read` is paged text for the agent's context and `dump` writes files; the flags do not overlap. Not asked for. |
 | Merge `pick` and `transcribe` | Both keep what the agent decided. | One chooses between two readings, the other stores text from standard input. Not asked for. |
 
-Only `clean` was split, because it was the one the user named. Open observations, not decided: `dump --markdown` and `read` produce the same text, so a user may ask for one; `pick` and `transcribe` both keep the agent's work beside the cache and might share a verb.
+Only `clean` was split, because it was the one the user named.
