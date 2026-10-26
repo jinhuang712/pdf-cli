@@ -1,4 +1,4 @@
-<!-- what-we-build: approved 2026-10-26 -->
+<!-- what-we-build: drafted 2026-10-26 -->
 # Features
 
 ✅ built · 🚧 built with a gap · ⬜ planned
@@ -189,7 +189,7 @@ Finds the right page, in one PDF or across the whole library.
 
 | Command | What happens |
 |---|---|
-| `pdf search <path> <query>` | Searches by keyword and by meaning. Each result shows the page, the position, the section and a short snippet. |
+| `pdf search <path> <query>` | Searches by keyword. Each result shows the page, the position, the section and a short snippet. |
 | `pdf search <query>` | Searches every PDF in the library. |
 | `pdf search <path> --regex <pattern>` | Finds exact matches, including matches that cross a line or column break. |
 | `--in body\|notes\|refs\|memos\|all` | Limits the search to one part of the document. The default is `all`. |
@@ -197,7 +197,7 @@ Finds the right page, in one PDF or across the whole library.
 | `--from N` | Starts the list at result N. |
 | `--show headers` | Brings back the hits on running headers, footers, page numbers and publisher stamps, each labelled `[header]`, `[footer]` or `[publisher stamp]` (`--json`: `runningHeader`). Without it they are left out and counted in the first line, `running headers and footers: 12 hits left out (show: --show headers)` (`--json`: `setAside.runningHeaders`). Any other value ends 64. |
 
-A query in another language finds matches by meaning, for example a Chinese query on an English paper.
+Search matches words, not meaning: a query in another language, or a paraphrase, finds nothing unless the words are in the text. The agent retries with other keywords or translates the query itself.
 
 A hit inside a table names the table and the command that crops it. A hit inside hidden text shows as a marker, without the hidden words. While a PDF is still parsing, every result says how many of its pages were searched, so an empty result reads as partial.
 
@@ -215,7 +215,7 @@ next: pdf search paper.pdf 'influence matching' --from 11
 A keyword finds its other forms, as "dropouts" finds "dropout", and ignores accents. Every word must be in the same paragraph; when no paragraph holds them all, the result lists paragraphs that hold some of them, and says so. A search of one PDF that is not fully parsed waits up to 10 s for its pages. A search of the library searches the pages parsed so far, starts no parse, and searches copies of one file once. `--json` gives each hit with its file, page, paragraph, section and snippet, within the same budget. A hit on a flagged page names the page's status. A pattern stops counting at 10,000 matches in a PDF, and one that runs longer than 10 s stops with an error that says so.
 
 Gap:
-- Search by meaning, and so queries in another language, come with M3.1.
+- No search by meaning (M3.1 dropped, 2026-10-26; DESIGNS.md → "Decision: no search by meaning").
 - `--in` comes with notes and references in M2.7 and M2.8, and memos when `pdf memo` is built, later; search covers all the text until then.
 - A hit inside a figure, a table or an equation names it, with its crop command, as `in table 3 (crop: pdf crop paper.pdf --page 6 --table 3)`, and a hit inside hidden text shows as a marker.
 - Running headers, footers and page numbers stay in the index, and are judged when a search runs, by the same rule as `pdf read` (F14), against the pages parsed so far (DESIGNS.md → Decision: search judges running headers on the query). Before the pages around a page are parsed, nothing repeats yet, so a header can still show as a hit; the first line then adds a line of its own saying that headers are judged on the pages parsed so far. Only text a read would set aside is left out, so a search and a read of the same pages agree; where the rule is wrong, as for a text that repeats on each page in the footer area, both are. A search by pattern leaves them out after matching, so the 10,000-match cap counts them, and a match that starts in a running header and runs on is left out. When every block that holds all the words is a running header, the answer is no hit and the left-out line, not the some-words fallback, which is for a search where no block at all holds every word. The whole list of hits is judged before `--top` or the budget cuts it, so the left-out count is exact; a search for a word on every page of a long file reads each page's stored summary of its edge blocks (DESIGNS.md → Decision: search keeps a summary of each page's edge blocks), 0.16 s for 3,678 hits in 625 pages, release build; a cache from before the summaries makes them on the first search.
@@ -456,7 +456,7 @@ What the macOS version unlocks, as the code uses it: before macOS 26 a scanned p
 
 Parsing's memory is stored in `settings.json` in the agent's folder (`~/Library/Application Support/pdf-cli/`), where `Env` reads it for every process (DESIGNS.md → Decision: parsing's memory in `settings.json`, and `doctor --clean`). If that file is a link, `pdf setup` writes through it, and `--memory default` writes an empty object through it instead of deleting the link or its target. Only a file that is not there means nothing is set: one that cannot be read, is not valid or holds a size outside 512 MB to 1 TB is a problem in `doctor`, and the defaults hold. The workers' limits add up to at most the budget: the count is the budget over 2 GB, at least 1 and at most the greater of 2 and the performance cores, and a worker is stopped at 2 GB, or at the budget when that is smaller. Until `pdf setup` runs, the pool is what it was: half the performance cores, at least 2, each with 2 GB, which is exactly `balanced`, so the unset default is never above `fastest` or below `balanced`. Two things differ from before for every Mac: the pool runs fewer workers when macOS reports memory pressure, a hot Mac or Low Power Mode (half; one when critical), and a file read by OCR or by space repair runs half as many workers as a text file, but never fewer than two where the pool has two. A pool of one slot (`light`, or pressure) shares slot 0: pages nobody waits for take it only while no command waits for a slot, and a runner stops a background worker that holds it, at once, when a command starts to wait, so a page a command waits on never queues behind a background parse (about 0.8 s with `light` and with `PDF_CLI_PRESSURE=high`, against 30.8 s and 16.2 s before the fix, with a scan parsing in the background). An agent says how soon it needs pages only by what it asks for, never how many workers; the guide has it ask the user to run `pdf setup`.
 
-`pdf setup` shows each model's licence before it downloads it, and the user accepts it first: MIT covers only this tool's own code. No model is built yet (M2.4's layout model comes only if rules fail a goal, and M3.1's embedding model only if Apple's falls short), so the list is empty and nothing is downloaded; the notice's text and the list are tested.
+`pdf setup` shows each model's licence before it downloads it, and the user accepts it first: MIT covers only this tool's own code. No model is built yet (M2.4's layout model comes only if rules fail a goal), so the list is empty and nothing is downloaded; the notice's text and the list are tested.
 
 Gap: the budgets' numbers are estimates, since a worker's memory on text and on OCR pages is not measured (ROADMAP.md → Final wrap-up). The OCR weighting is per runner: two runners reading scans each keep their share, so the pool's slots, not the weights, cap the Mac. A background worker that yields loses the page it was reading, which it reads again later. Doctor's runner and slot counts are a moment's reading. The licence notice has no code that downloads and no accept step yet; the first model brings both. `doctor` does not check the PDFs themselves, only the tool's folders.
 

@@ -1,4 +1,4 @@
-<!-- what-we-build: approved 2026-10-18 -->
+<!-- what-we-build: drafted 2026-10-26 -->
 # Goals
 
 Each goal is a check with a number. Unless a row says otherwise, goals are measured on an M3 MacBook with 24 GB, against two sets the project builds: the open test set (60 open-access PDFs: 20 journal papers, 10 textbook chapters, 10 reports, 10 essays or articles, 10 scans) and the question set (200 questions, each with a known answer and the page that holds it). The open test set includes Word-made files, pages with dense tables, and scans that carry an old OCR text layer.
@@ -7,7 +7,7 @@ Every goal is measured in two setups and reported side by side: **Base** (the `p
 
 | # | Goal | Want | Measure | Method | Measured on | Status |
 |---|---|---|---|---|---|---|
-| G1 | Tokens per question | Cheap | ≤ 20% of the tokens spent reading the PDF directly | Run the question set in Claude Code twice, once with pdf-cli and once with the built-in Read tool, and compare the token counts | Question set | ⬜ Open |
+| G1 | Tokens per question | Cheap | ≤ 20% of the tokens spent reading the PDF directly | Run the question set in Claude Code twice, once with pdf-cli and once with the built-in Read tool, and compare the token counts | Question set | ❌ Dropped 2026-10-26 with M3.1: no search by meaning, and no Chinese query on an English paper |
 | G2 | First page on an unseen PDF | Fast | ≤ 2 s until the requested page is readable | A script times `pdf read --page N` with an empty cache | Open test set, scans excluded | ⬜ Open |
 | G3 | Full parse speed | Fast | ≤ 0.5 s per page on average | A script times a full parse of every PDF | Open test set, scans excluded | ⬜ Open |
 | G4 | Cached reads | Fast | ≤ 200 ms for `pdf info` or `pdf read` | A script runs both commands on every cached PDF | Open test set | ⬜ Open |

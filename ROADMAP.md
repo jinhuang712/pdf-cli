@@ -1,4 +1,4 @@
-<!-- what-we-build: approved 2026-10-26 -->
+<!-- what-we-build: drafted 2026-10-26 -->
 # Roadmap
 
 **Current milestone:** M2. M1's tasks are all built; its exit criteria, the goals measured and a week of daily use, wait for the final wrap-up, as every milestone's do (the user, 2026-10-17).
@@ -8,7 +8,7 @@
 - ✅ **M0 — Spike.** Proven: Swift and Apple's engines carry the design. About 2 weeks.
 - ⬜ **M1 — Daily reader.** Usable: an agent reads born-digital and scanned PDFs through the cache, with keyword search and page crops. About 5–7 weeks, after M0.
 - ⬜ **M2 — Accurate layout.** Proven: two-column papers, footnotes, citations and figures read right. About 2–3 months, after M1.
-- ⬜ **M3 — Complete.** Usable: search by meaning, tables across pages and a one-command install; then a final wrap-up of detailed tests and tuning. About 1–2 months, after M2.
+- ⬜ **M3 — Complete.** Usable: tables across pages and a one-command install; then a final wrap-up of detailed tests and tuning. About 1–2 months, after M2.
 
 Each milestone groups its tasks by feature, in the order the tasks are built. A feature's number points to [FEATURES.md](FEATURES.md), and "Later" names the task that finishes it. A task's ID, such as M1.1, names its branches and commits.
 
@@ -65,7 +65,7 @@ The spike shipped no features. It answered the riskiest questions.
   - [x] M1.14 Every image and drawing marked in place, with its crop command
 - **Search** (F4): by keyword and by pattern
   - [x] M1.8 `pdf search` by keyword and with `--regex`
-  - Later: search by meaning (M3.1)
+  - Dropped: search by meaning (M3.1), 2026-10-26
 - **Crop** (F5): whole pages and regions
   - [x] M1.9 `pdf crop` for pages and regions
   - Figures, tables and equations came with M2.6
@@ -110,16 +110,16 @@ The spike shipped no features. It answered the riskiest questions.
 
 ## M3 — Complete ⬜
 
-- **Search** (F4): by meaning
-  - [ ] M3.1 The embedding model chosen, and `pdf search` by meaning, Chinese queries included
+- **Search** (F4): by meaning, dropped
+  - ~~M3.1 The embedding model chosen, and `pdf search` by meaning, Chinese queries included~~ Dropped on 2026-10-26: Apple's embeddings found too little and a downloaded model costs a task for an unproven gain (DESIGNS.md → "Decision: no search by meaning")
 - **Crop** (F5): tables across pages
   - [ ] M3.2 Tables that continue across pages, linked as one table with a crop per page
 - **Install**
   - [ ] M3.5 A Homebrew release that installs with one command
 
-M3.3, a local vision model for hard pages and formulas, was dropped on 2026-10-18 (DESIGNS.md → "Decision: no local vision model; PDFKit and Apple's OCR read, the agent looks"), and M3.4, `pdf memo`, moved to Later on 2026-10-17.
+M3.1, search by meaning, was dropped on 2026-10-26 (DESIGNS.md → "Decision: no search by meaning"). M3.3, a local vision model for hard pages and formulas, was dropped on 2026-10-18 (DESIGNS.md → "Decision: no local vision model; PDFKit and Apple's OCR read, the agent looks"), and M3.4, `pdf memo`, moved to Later on 2026-10-17.
 
-**Exit criteria:** GOALS.md G1, G10, G14 and G15, measured at the final wrap-up.
+**Exit criteria:** GOALS.md G1, G14 and G15 (G10 is dropped), measured at the final wrap-up.
 
 ## Final wrap-up ⬜
 
