@@ -216,7 +216,6 @@ next: pdf search paper.pdf 'influence matching' --from 11
 A keyword finds its other forms, as "dropouts" finds "dropout", and ignores accents. Every word must be in the same paragraph; when no paragraph holds them all, the result lists paragraphs that hold some of them, and says so. A search of one PDF that is not fully parsed waits up to 10 s for its pages. A search of the library searches the pages parsed so far, starts no parse, and searches copies of one file once. `--json` gives each hit with its file, page, paragraph, section and snippet, within the same budget. A hit on a flagged page names the page's status. A pattern stops counting at 10,000 matches in a PDF, and one that runs longer than 10 s stops with an error that says so.
 
 Gap:
-- No search by meaning (M3.1 dropped, 2026-10-26; DESIGNS.md → "Decision: no search by meaning").
 - `--in` is not built: search covers all the text.
 - Running headers, footers and page numbers stay in the index, and are judged when a search runs, by the same rule as `pdf read` (F14), against the pages parsed so far (DESIGNS.md → Decision: search judges running headers on the query). Before the pages around a page are parsed, nothing repeats yet, so a header can still show as a hit; the first line then adds a line of its own saying that headers are judged on the pages parsed so far. Only text a read would set aside is left out, so a search and a read of the same pages agree; where the rule is wrong, as for a text that repeats on each page in the footer area, both are. A search by pattern leaves them out after matching, so the 10,000-match cap counts them, and a match that starts in a running header and runs on is left out. When every block that holds all the words is a running header, the answer is no hit and the left-out line, not the some-words fallback, which is for a search where no block at all holds every word. The whole list of hits is judged before `--top` or the budget cuts it, so the left-out count is exact; a search for a word on every page of a long file reads each page's stored summary of its edge blocks (DESIGNS.md → Decision: search keeps a summary of each page's edge blocks), 0.16 s for 3,678 hits in 625 pages, release build; a cache from before the summaries makes them on the first search.
 
@@ -436,7 +435,7 @@ Shows and cleans up what the tool has cached.
 | `pdf rm <path or ID>` | `--json`. `--dry-run` says what would go and what would stay, and removes nothing. Removes one PDF from the library and its results from the cache. Results that another copy of the file still uses stay, and so do the agent's picks, which show again if the PDF comes back. |
 | `pdf clean` | Took over `pdf gc` (F12), by way of `pdf doctor --clean`. `pdf gc` itself is gone: it ends 64 and names this command. |
 
-Parse results and crop images live in `~/Library/Caches/pdf-cli/`. The library list, picks, transcripts and memos live in `~/Library/Application Support/pdf-cli/`. The cache keeps every parse result until `pdf rm` or `pdf clean` removes it, and `pdf doctor` shows its size. A macOS update leaves cached results as they are, and `pdf reparse` reads a file again on the running macOS.
+Parse results and crop images live in `~/Library/Caches/pdf-cli/`. The library list, picks and transcripts live in `~/Library/Application Support/pdf-cli/`. The cache keeps every parse result until `pdf rm` or `pdf clean` removes it, and `pdf doctor` shows its size. A macOS update leaves cached results as they are, and `pdf reparse` reads a file again on the running macOS.
 
 Settings: none.
 
@@ -571,19 +570,6 @@ Gap:
 - An **entry** of a numbered list, `[12]` or `12.`, starts where its number, the one after the last, stands: at a block's start, where a number up to three past it is taken too, so a lost entry costs only itself; or inside a block that holds several. Where a list sets its numbers in a column of their own, as PLOS and JMIR do, PDFKit gives the numbers in one run, and the entries after them are matched to them by the authors' names that start each, only when the names count as many as the numbers: on the test set, 016's list comes out in part, and 019's and 095's not at all. An entry with a printed key, `[BK06]`, starts at its key. In a list by author and year, a block that starts at its column's left edge with a capital starts an entry, and the parse, since parser version 18, parts the entries a hanging indent sets; inside a block, an entry starts where a surname and initials follow the end of the one before. Such an entry is named by its first author's surname, as "Smith, J." or "Smith J" or "John Smith" give it, and its year; one with no year is left out. An entry's words are PDFKit's, with LaTeX's back-references, as "2, 6, 7", at its end.
 - A **citation** in brackets names entries by number, range or key, as `[3, 5–7]` or `[BK06, Thm. 2]`, and counts only where every one it names is in the list. A raised number cites the list only in a document that cites so more often than in brackets, and not where M2.7 leads it to a note; it may follow a word, a punctuation mark, a per cent sign or a closing bracket. A citation by author and year, `(Smith, 2020; Lee and Kim, 2019a)` or `Smith et al. (2020)`, leads to the entries of that first author and year, a year without its letter to all of them, a second author narrowing them; a surname with a particle set in capitals, as "Le Bris", can miss. A citation leads to the nearest list after it of its kind, or else the last before it, so chapters that each end in their own list cite their own. Citations in captions, notes and tables read as printed and count for no `--refs end`.
 - A **cross-reference** is "Fig. 4" or "Figure 4", "Table 2", "Eq. (5)" or "Equation 5", "Section 3.2", "Sec. 3.2" or "§3.2", and "Appendix A", in any case. It leads to the one page whose figure, table or equation M2.6 found with that number, or whose section the bookmarks or a numbered heading number so: a number that pages far apart hold, as an appendix that numbers its tables again, leads nowhere, and a table on pages that follow one another to its first. "Table 1 of [12]", another paper's table, leads to this one's. A lettered heading counts only after the list of references or as "Appendix A", so a title "A Survey of …" names no appendix. Where the file links the words already, its link stays.
-
-## F16 — Memos ⬜
-
-Lets an agent save what it understood, so the next session reads the memo instead of looking again.
-
-| Command | What happens |
-|---|---|
-| `pdf memo <path> --figure 4 "<text>"` | Saves a memo on a figure, a table, a page or a region. Takes the same flags as `crop`. |
-| `pdf memo <path> --list` | Lists every memo on the PDF. |
-
-A memo shows up in `read` beside the part it describes, labelled `[memo]` with its date, so it is never mistaken for the document's own text. `pdf search … --in memos` searches memos.
-
-Settings: none.
 
 ## Later, if needed
 

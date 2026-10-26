@@ -65,7 +65,6 @@ The spike shipped no features. It answered the riskiest questions.
   - [x] M1.14 Every image and drawing marked in place, with its crop command
 - **Search** (F4): by keyword and by pattern
   - [x] M1.8 `pdf search` by keyword and with `--regex`
-  - Dropped: search by meaning (M3.1), 2026-10-26
 - **Crop** (F5): whole pages and regions
   - [x] M1.9 `pdf crop` for pages and regions
   - Figures, tables and equations came with M2.6
@@ -109,8 +108,6 @@ The spike shipped no features. It answered the riskiest questions.
 
 ## M3 — Complete ⬜
 
-- **Search** (F4): by meaning, dropped
-  - ~~M3.1 The embedding model chosen, and `pdf search` by meaning, Chinese queries included~~ Dropped on 2026-10-26: Apple's embeddings found too little and a downloaded model costs a task for an unproven gain (DESIGNS.md → "Decision: no search by meaning")
 - **Crop** (F5): tables across pages
   - [x] M3.2 Tables that continue across pages, linked as one table with a crop per page: judged at read time on a continued caption and the same place on both pages, `continues on p.N` in `read`, `info` and `crop`, one crop per part Parser version stays 21. See DESIGNS.md → "Decision: a table's parts are linked at read time, only on a continued caption and the same place on both pages".
 - **CLI polish**
@@ -119,12 +116,11 @@ The spike shipped no features. It answered the riskiest questions.
   - [x] M3.8 Leftover cleanup (docs only, the user: items not worth doing are cleaned out): every item of TODO.md, FEATURES.md Gaps, DESIGNS.md open questions and ROADMAP.md "Later" notes was checked on 2026-10-26; the stale and the false ones are corrected or removed, the limits sit in FEATURES.md Gaps, TODO.md keeps only what is still to fix, and the missing report of M2.25 is written. Also written: reports/M2.25-determinism.md.
   - [x] M3.9 A planted line no longer reads as text when white labels sit on the black box under it (parser version 22): a word with no ink of its own, in the color behind it or in a mode that paints nothing, does not take other strings' ink in its box as its own; fixtures in `testdata/safety/hidden-black-on-black.pdf`. Done 2026-10-26 (reviewed). See DESIGNS.md → "Decision: ink that other strings draw does not make a word with no ink of its own visible" and `reports/M3.9-black-on-black.md`.
   - [x] M3.10 The old-cache check: `testdata/scripts/old-cache-check.sh <old-commit>` builds an older commit outside the repo, makes a cache with it (add, read, search, pick, transcript), opens it with the new build and compares reads and searches with a fresh cache; it came from the M2.26 review (a new table skipped on an old cache broke every command). Done 2026-10-26 (a test script; no reviewer). See `reports/M3.10-old-cache-check.md`.
+  - [x] M3.11 Docs pruned (docs only, the user, 2026-10-26: items we dropped or marked not to do are cleaned out of the docs): search by meaning (M3.1), the local vision model (M3.3), `pdf memo` (M3.4, F16) and goal G10 are removed from ROADMAP.md, GOALS.md, FEATURES.md and CLAUDE.md; the two Decision sections in DESIGNS.md stay as the record of why. Done 2026-10-26 (docs only; no reviewer).
 - **Install**
   - [ ] M3.5 A Homebrew release that installs with one command
 
-M3.1, search by meaning, was dropped on 2026-10-26 (DESIGNS.md → "Decision: no search by meaning"). M3.3, a local vision model for hard pages and formulas, was dropped on 2026-10-18 (DESIGNS.md → "Decision: no local vision model; PDFKit and Apple's OCR read, the agent looks"), and M3.4, `pdf memo`, moved to Later on 2026-10-17.
-
-**Exit criteria:** GOALS.md G1, G14 and G15 (G10 is dropped), measured at the final wrap-up.
+**Exit criteria:** GOALS.md G1, G14 and G15, measured at the final wrap-up.
 
 ## Final wrap-up ⬜
 
@@ -139,7 +135,5 @@ Until every milestone is built, each task gets its unit and end-to-end tests and
   - [ ] Every goal measured, M1's again in full
 
 ## Later
-
-- `pdf memo` (F16), moved out of M3 on 2026-10-17: the user finds it not essential.
 
 See [FEATURES.md → Later, if needed](FEATURES.md#later-if-needed).

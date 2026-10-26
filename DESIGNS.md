@@ -385,7 +385,7 @@ One SQLite file holds the cache and both kinds of search.
 
 ## Decision: macOS's Library folders, with no size limit — 2026-10-15
 
-What the tool can rebuild from the PDFs goes to `~/Library/Caches/pdf-cli/`: the SQLite cache with its keyword index, and the crop images. The agent's own work goes to `~/Library/Application Support/pdf-cli/`: the library list, picks and memos. These are the folders macOS sets aside for each kind of data, so a cleanup tool that clears caches costs time and leaves the agent's work intact.
+What the tool can rebuild from the PDFs goes to `~/Library/Caches/pdf-cli/`: the SQLite cache with its keyword index, and the crop images. The agent's own work goes to `~/Library/Application Support/pdf-cli/`: the library list, picks and transcripts. These are the folders macOS sets aside for each kind of data, so a cleanup tool that clears caches costs time and leaves the agent's work intact.
 
 The cache keeps every parse result until `pdf rm` or `pdf clean` removes it, as the principle "Pay once, read many times" says. Crop images are the exception: each one goes 7 days after it is written, because making it again needs no parse.
 
@@ -950,7 +950,7 @@ Apple's embeddings were NLEmbedding (sentence and word) and NLContextualEmbeddin
 
 **Why dropped.** The agent can retry with other keywords or translate the query itself. The gain of (b) is uncertain, and its cost and a misleading flag are not worth it. The tool's job is to cut the tokens and time an agent spends on a PDF.
 
-**What is kept.** Branch `m3-1-meaning` (commit 15c659e, worktree `.claude/worktrees/m3-1-meaning`) holds the weak version, unmerged, for reference. Reopening M3.1 needs a user decision. Goal G10 is marked dropped.
+**What is kept.** Branch `m3-1-meaning` (commit 15c659e, worktree `.claude/worktrees/m3-1-meaning`) holds the weak version, unmerged, for reference. Reopening M3.1 needs a user decision. Goal G10 (search) is removed from GOALS.md.
 
 ## Decision: a table's parts are linked at read time, only on a continued caption and the same place on both pages — 2026-10-26
 
