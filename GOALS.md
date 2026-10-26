@@ -7,7 +7,7 @@ Every goal is measured in two setups and reported side by side: **Base** (the `p
 
 | # | Goal | Want | Measure | Method | Measured on | Status |
 |---|---|---|---|---|---|---|
-| G1 | Tokens per question | Cheap | ≤ 20% of the tokens spent reading the PDF directly | Run the question set in Claude Code twice, once with pdf-cli and once with the built-in Read tool, and compare the token counts | Question set | ❌ Dropped 2026-10-26 with M3.1: no search by meaning, and no Chinese query on an English paper |
+| G1 | Tokens per question | Cheap | ≤ 20% of the tokens spent reading the PDF directly | Run the question set in Claude Code twice, once with pdf-cli and once with the built-in Read tool, and compare the token counts | Question set | ⬜ Open |
 | G2 | First page on an unseen PDF | Fast | ≤ 2 s until the requested page is readable | A script times `pdf read --page N` with an empty cache | Open test set, scans excluded | ⬜ Open |
 | G3 | Full parse speed | Fast | ≤ 0.5 s per page on average | A script times a full parse of every PDF | Open test set, scans excluded | ⬜ Open |
 | G4 | Cached reads | Fast | ≤ 200 ms for `pdf info` or `pdf read` | A script runs both commands on every cached PDF | Open test set | ⬜ Open |
@@ -16,7 +16,7 @@ Every goal is measured in two setups and reported side by side: **Base** (the `p
 | G7 | Footnotes | Accurate | ≥ 95% of footnotes kept out of the body text | Compare the output with the labelled footnotes | Open test set | ⬜ Open |
 | G8 | Figures and tables | Sees figures | ≥ 95% of figures and tables found, vector charts included, each crop holding the whole figure or table and its caption | Compare the crops with the labelled figures and tables | Open test set | ⬜ Open |
 | G9 | Reuse | Reusable | 0 pages parsed again when a file is read again unchanged, or with only new highlights appended to it. A file that macOS Preview or another PDFKit app saved counts as a new file | A script counts parse jobs | Open test set | ⬜ Open |
-| G10 | Search | Searchable | The right page in the top 5 results for ≥ 90% of queries, Chinese queries included | Run the question set's queries through `pdf search` | Question set | ⬜ Open |
+| G10 | Search | Searchable | The right page in the top 5 results for ≥ 90% of queries, Chinese queries included | Run the question set's queries through `pdf search` | Question set | ❌ Dropped 2026-10-26 with M3.1: no search by meaning, and no Chinese query on an English paper (DESIGNS.md → "Decision: no search by meaning") |
 | G11 | Flags | Honest | ≥ 95% of bad pages flagged, and ≤ 10% of good pages flagged | Compare the flags with the pages labelled bad | Open test set | ⬜ Open |
 | G12 | Addresses | Traceable | 100% of output blocks carry a page and a position | A schema check in CI | Open test set | ⬜ Open |
 | G13 | Offline parsing | Private | 0 network connections while parsing | Parse under a network monitor | Open test set | ⬜ Open |
