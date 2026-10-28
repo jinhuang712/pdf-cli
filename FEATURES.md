@@ -1,4 +1,4 @@
-<!-- what-we-build: drafted 2026-10-26 -->
+<!-- what-we-build: drafted 2026-10-29 -->
 # Features
 
 ✅ built · 🚧 built with a gap · ⬜ planned
@@ -254,6 +254,8 @@ A region uses the same fractions as the positions in `pdf read --json` and the c
 
 Gap:
 - `--figure 4b` crops a sub-figure only where a caption numbers it so; a figure's panels are not found one by one. A table's notes below it are not part of its crop. `--table 1` on a table linked to its other parts (F3) crops all of them, one image each, whichever part `--page` names. `mentioned on` names the pages whose text names it, as "Fig. 4" or "Table 2" does (F15), in the pages parsed so far.
+
+- A big table is a crop, and a question that needs many of its rows costs the agent many turns. NIST SP 800-53's Table C-18 (SC family, about 100 rows over five pages): counting the withdrawn SC-7 enhancements took 12 turns and 11 tool calls, against 9 turns for reading the pages directly (M3.6, `reports/M3.6-first-question-runs.md`). The user decided on 2026-10-29 that whatever is not plain text goes to the model as it is, so no text view or row search of tables is built. A search for `SC-7(6) Withdrawn` returned no row of that table (cause not examined).
 
 Settings: none.
 
