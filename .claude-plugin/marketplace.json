@@ -1,0 +1,15 @@
+{
+  "name": "pdf-cli",
+  "owner": {
+    "name": "jinhuang712"
+  },
+  "description": "pdf-cli: a guide that teaches an agent to read PDFs with the pdf command",
+  "plugins": [
+    {
+      "name": "pdf-cli",
+      "displayName": "pdf-cli",
+      "source": "./",
+      "description": "Teaches a coding agent to read PDFs on a Mac with the pdf command: a map of the file, only the pages it needs, search, crops of tables and figures, and flags on what it could not read well. Local; nothing is uploaded. Needs pdf on the PATH."
+    }
+  ]
+}

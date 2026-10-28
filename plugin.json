@@ -1,0 +1,13 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "pdf-cli",
+  "version": "0.1.0",
+  "description": "Teaches a coding agent to read PDFs on a Mac with the pdf command: a map of the file, only the pages it needs, search, crops of tables and figures, and flags on what it could not read well. Local; nothing is uploaded. Needs pdf on the PATH.",
+  "author": {
+    "name": "jinhuang712"
+  },
+  "keywords": ["pdf", "cli", "ocr", "macos", "skill"],
+  "homepage": "https://github.com/jinhuang712/pdf-cli",
+  "repository": "https://github.com/jinhuang712/pdf-cli",
+  "license": "MIT"
+}

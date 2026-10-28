@@ -236,6 +236,17 @@ import Testing
         #expect(!AgentGuide.skill.contains("```!"))
     }
 
+    /// The plugin ships the guide as `skills/pdf-cli/SKILL.md`; `scripts/sync-skill.sh` writes it, and
+    /// this fails when the guide changed and the copy did not.
+    @Test func thePluginsSkillIsTheGuide() throws {
+        let file = OutputContractTests.root.appendingPathComponent("skills/pdf-cli/SKILL.md")
+        let shipped = try String(contentsOf: file, encoding: .utf8)
+        #expect(shipped == AgentGuide.skill + "\n" || shipped == AgentGuide.skill, "run scripts/sync-skill.sh")
+        let plugin = try Data(contentsOf: OutputContractTests.root.appendingPathComponent(".claude-plugin/plugin.json"))
+        let manifest = try #require(try JSONSerialization.jsonObject(with: plugin) as? [String: Any])
+        #expect(manifest["name"] as? String == AgentGuide.skillName)
+    }
+
     @Test func theSkillGoesWhereClaudeCodeLooks() {
         let home = AgentGuide.claudeCodeSkillFile(environment: ["HOME": "/Users/someone"])
         #expect(home.path == "/Users/someone/.claude/skills/pdf-cli/SKILL.md")
