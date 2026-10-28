@@ -45,8 +45,8 @@ public enum AgentGuide {
 
         - `## p.4` starts a page and `¶7` its seventh block. Cite "p.4 ¶7"; `pdf read paper.pdf --from p4.7` reads on from there. `## p.12 (printed 237)` gives the number printed on it. `--json` gives each block's position, in `crop`'s fractions.
         - The first line sums up the read: pages read and flagged, what was set aside or hidden with its flag, `provisional` while the file parses.
-        - Columns read one after the other. Running headers, footers and page numbers are left out of reads and searches, and counted in the first line; `--show headers` shows them.
-        - Output stops at about 5,000 tokens with a `next:` line: run that command as given.
+        - Columns read in turn. Running headers, footers and page numbers are left out of reads and searches, and counted in the first line; `--show headers` shows them.
+        - Output stops at about 5,000 tokens with a `next:` line: run it. For one passage, `--budget 800`.
         - `^{...}` and `_{...}` mark raised and lowered characters, as `10^{-5}`.
         - `pick`, `transcribe`, `rm`, `clean` take `--dry-run`: they say what they would do. Every command takes `--json`. Exit 0 done; 2 pages flagged, rest valid (`read`, `add`, `reparse`, `dump` only; `info`, `search`, `crop` end 0 and name them); 3 the file failed, or `read` found no text; 1 could not run, as on a missing file; 64 used wrongly. A failure reads `<path>: failed: <reason>`, in `--json` `{"file": …, "failed": …}`.
 

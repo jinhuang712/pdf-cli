@@ -142,7 +142,8 @@ struct SearchCommand: ParsableCommand {
             }
         }
         let docIDs = targets.map(\.docID)
-        let limit = ReadCommand.tokens(budget)!
+        // A hit in JSON is about twice its text, and Claude Code files away output past 30,000 characters.
+        let limit = ReadCommand.tokens(budget)!.map { json ? $0 / 2 : $0 }
         let wanted = top.map { $0 } ?? Int.max
 
         // Hits come in pages of 200, best first, until the budget or --top stops them.

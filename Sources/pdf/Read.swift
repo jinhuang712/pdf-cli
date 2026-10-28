@@ -189,7 +189,9 @@ struct ReadCommand: ParsableCommand {
         let resolved = Reader.resolve(path)
         let fileStat = FileStat(path: resolved)
         let facts = try fileStat.flatMap { try store.facts(path: resolved, stat: $0) }
-        let limit = Self.tokens(budget)!
+        // The host Claude Code files away a command's output past 30,000 characters (measured
+        // 2026-10-29), and a block in JSON is about 1.4 times the text, so --json counts less.
+        let limit = Self.tokens(budget)!.map { json ? $0 * 7 / 10 : $0 }
         let picks = try Picks().picks(keys: keys)
         let transcripts = try Transcripts().transcripts(keys: keys)
         let shownList = Self.shownValues.filter { Self.shown(shows)!.contains($0) }
