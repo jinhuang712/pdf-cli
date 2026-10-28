@@ -107,28 +107,10 @@ import Testing
         #expect(reason.contains("pdf read") == false && reason.contains("pdf ls"), "\(refused.output)")
     }
 
-    @Test func doctorCleanAndDryRunAreStubsThatPointToClean() throws {
+    @Test func doctorOffersNoCleanAndCleanTakesNoPDF() throws {
         let home = try OutputContractTests.freshHome()
-        for arguments in [["doctor", "--clean"], ["doctor", "--clean", "--dry-run"], ["doctor", "--dry-run"], ["doctor", "--clean", "--json"]] {
-            let run = try Self.pdf(arguments, home: home)
-            #expect(run.status == 64 && run.output.isEmpty && run.errors.contains("pdf clean"), "\(arguments): \(run.status) \(run.errors)")
-        }
-        #expect(try FileManager.default.contentsOfDirectory(atPath: home.path).isEmpty)
-        // The help of doctor offers no --clean any more, and clean takes no PDF.
         #expect(!PDF.helpMessage(for: DoctorCommand.self).contains("--clean"))
         #expect(try Self.pdf(["clean", "x.pdf"], home: home).status == 64)
-    }
-
-    @Test func gcIsGoneAndPointsToDoctor() throws {
-        let home = try OutputContractTests.freshHome()
-        for arguments in [["gc"], ["gc", "--json"], ["gc", "--dry-run"]] {
-            let run = try Self.pdf(arguments, home: home)
-            #expect(run.status == 64 && run.output.isEmpty, "\(arguments): \(run.status) \(run.output)")
-            #expect(run.errors.contains("`pdf gc` is now `pdf clean`"), "\(run.errors)")
-        }
-        // It runs nothing, and the top-level help does not list it.
-        #expect(try FileManager.default.contentsOfDirectory(atPath: home.path).isEmpty)
-        #expect(!PDF.helpMessage(for: PDF.self).contains("gc"))
     }
 
     @Test func eachPresetANumberAndDefaultAreStoredAndShownByDoctor() throws {

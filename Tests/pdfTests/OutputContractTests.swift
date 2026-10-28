@@ -152,9 +152,6 @@ import Testing
         // An empty id is a wrong use: 64.
         #expect(try Self.pdf(["note", file, ""], home: home).status == 64)
         #expect(try Self.pdf(["ref", file, " "], home: home).status == 64)
-        // The old flags are gone; hidden, they point to the new commands and run nothing.
-        #expect(try Self.pdf(["read", file, "--footnote", "1"], home: home).status == 64)
-        #expect(try Self.pdf(["read", file, "--ref", "1"], home: home).status == 64)
     }
 
     /// `--show` takes raw, hidden and headers, as a comma list or repeated; the three flags it
@@ -171,10 +168,6 @@ import Testing
         let file = Self.fixture
         let unknown = try Self.pdf(["read", file, "--show", "Hidden"], home: home)
         #expect(unknown.status == 64 && unknown.errors.contains("--show: 'Hidden' is not raw, hidden or headers"), "\(unknown.errors.prefix(200))")
-        for (old, new) in [("--raw", "--show raw"), ("--include-hidden", "--show hidden"), ("--headers", "--show headers")] {
-            let run = try Self.pdf(["read", file, old], home: home)
-            #expect(run.status == 64 && run.errors.contains("`\(old)` is now `\(new)`"), "\(old): \(run.errors.prefix(200))")
-        }
         // Only hidden shows hidden words, however --show is spelled (hidden-color.pdf has one hidden run).
         let hidden = Self.root.appendingPathComponent("testdata/safety/hidden-color.pdf").path
         for (shows, expected) in [

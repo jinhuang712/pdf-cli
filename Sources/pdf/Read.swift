@@ -79,13 +79,6 @@ struct ReadCommand: ParsableCommand {
             valueName: "end|off"))
     var refs: RefsOption = .off
     @Flag(help: "Print JSON.") var json = false
-    // The removed flags stay only to point to their commands (M2.16): hidden, they run nothing.
-    @Option(help: .private) var footnote: String?
-    @Option(help: .private) var ref: String?
-    // The same for the three flags that `--show` took over (M2.17).
-    @Flag(name: .customLong("raw"), help: .private) var removedRaw = false
-    @Flag(name: .customLong("include-hidden"), help: .private) var removedIncludeHidden = false
-    @Flag(name: .customLong("headers"), help: .private) var removedHeaders = false
 
     /// What `--show` asks for (DESIGNS.md → Decision: `--show` shows what was set aside, M2.17).
     static let shownValues = ["raw", "hidden", "headers"]
@@ -112,11 +105,6 @@ struct ReadCommand: ParsableCommand {
 
     func validate() throws {
         try Repeated.reject(["--section", "--printed-page", "--from", "--budget", "--format", "--notes", "--refs"])
-        if footnote != nil { throw ValidationError("`--footnote` is now its own command: pdf note <pdf> 7") }
-        if ref != nil { throw ValidationError("`--ref` is now its own command: pdf ref <pdf> 12") }
-        if removedRaw { throw ValidationError("`--raw` is now `--show raw`") }
-        if removedIncludeHidden { throw ValidationError("`--include-hidden` is now `--show hidden`") }
-        if removedHeaders { throw ValidationError("`--headers` is now `--show headers`") }
         if let bad = Self.badShown(shows) {
             throw ValidationError("--show: '\(bad)' is not raw, hidden or headers")
         }

@@ -24,15 +24,7 @@ struct DoctorCommand: ParsableCommand {
             """
     )
 
-    // Moved to `pdf clean` (M3.7); hidden, they run nothing.
-    @Flag(help: .private) var clean = false
-    @Flag(help: .private) var dryRun = false
     @Flag(help: "Print JSON.") var json = false
-
-    func validate() throws {
-        if clean { throw ValidationError("`pdf doctor --clean` is now `pdf clean` (and `--dry-run` goes with it: pdf clean --dry-run)") }
-        if dryRun { throw ValidationError("`--dry-run` belongs to `pdf clean`: pdf clean --dry-run") }
-    }
 
     func run() throws {
         try Contract.guarding("pdf doctor", json: json) { try diagnose() }

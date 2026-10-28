@@ -1,6 +1,6 @@
 # M0 spike — findings
 
-Measured 2026-10-14 on an M3 MacBook (24 GB, macOS 26.4), on the 11 PDFs in `testdata/smoke/` (10 CC BY 4.0 arXiv papers, 9 of them two-column, and one public-domain NACA scan). The detailed reports sit next to this file.
+Measured 2026-10-14 on an M3 MacBook (24 GB, macOS 26.4), on the 11 PDFs in `testdata/smoke/` (10 CC BY 4.0 arXiv papers, 9 of them two-column, and one public-domain NACA scan). The detailed reports sit next to this file. The scripts that made them (`scripts/spike/*.py`) and the hidden `pdf spike` command they called (`text`, `docs`, `figures`) were removed in M3.12; the last commit that has them is the parent of M3.12's, and `spike/coreml/` stays as the recipe to convert a layout model.
 
 ## Answers
 

@@ -39,7 +39,7 @@ struct PDF: AsyncParsableCommand {
             AddCommand.self, ReparseCommand.self, InfoCommand.self, ReadCommand.self, NoteCommand.self, RefCommand.self, SearchCommand.self,
             CropCommand.self, DumpCommand.self, PickCommand.self, TranscribeCommand.self,
             ListCommand.self, RemoveCommand.self,
-            DoctorCommand.self, CleanCommand.self, SetupCommand.self, GCCommand.self, AgentGuideCommand.self, Spike.self, DebugPages.self,
+            DoctorCommand.self, CleanCommand.self, SetupCommand.self, AgentGuideCommand.self, DebugPages.self,
             DebugOCR.self,
             RunnerCommand.self, WorkerCommand.self,
         ]

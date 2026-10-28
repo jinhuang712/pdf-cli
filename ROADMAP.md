@@ -1,4 +1,4 @@
-<!-- what-we-build: drafted 2026-10-26 -->
+<!-- what-we-build: drafted 2026-10-29 -->
 # Roadmap
 
 **Current milestone:** M2. M1's tasks are all built; its exit criteria, the goals measured and a week of daily use, wait for the final wrap-up, as every milestone's do (the user, 2026-10-17).
@@ -117,6 +117,7 @@ The spike shipped no features. It answered the riskiest questions.
   - [x] M3.9 A planted line no longer reads as text when white labels sit on the black box under it (parser version 22): a word with no ink of its own, in the color behind it or in a mode that paints nothing, does not take other strings' ink in its box as its own; fixtures in `testdata/safety/hidden-black-on-black.pdf`. Done 2026-10-26 (reviewed). See DESIGNS.md → "Decision: ink that other strings draw does not make a word with no ink of its own visible" and `reports/M3.9-black-on-black.md`.
   - [x] M3.10 The old-cache check: `testdata/scripts/old-cache-check.sh <old-commit>` builds an older commit outside the repo, makes a cache with it (add, read, search, pick, transcript), opens it with the new build and compares reads and searches with a fresh cache; it came from the M2.26 review (a new table skipped on an old cache broke every command). Done 2026-10-26 (a test script; no reviewer). See `reports/M3.10-old-cache-check.md`.
   - [x] M3.11 Docs pruned (docs only, the user, 2026-10-26: items we dropped or marked not to do are cleaned out of the docs): search by meaning (M3.1), the local vision model (M3.3), `pdf memo` (M3.4, F16) and goal G10 are removed from ROADMAP.md, GOALS.md, FEATURES.md and CLAUDE.md; the two Decision sections in DESIGNS.md stay as the record of why. Done 2026-10-26 (docs only; no reviewer).
+  - [x] M3.12 Code pruned (the user, 2026-10-29): the M0 spike's hidden `pdf spike` command (`text`, `docs`, `figures`; three files, 1,039 lines) and `scripts/spike/*.py` (543 lines), the `pdf gc` stub, and the hidden flags that only pointed to what replaced them (`read --raw`, `--include-hidden`, `--headers`, `--footnote`, `--ref`; `doctor --clean`, `--dry-run`): these now end 64 as any unknown option. Nothing in the product used them; the tool is not released, so no one needs the pointer. Done 2026-10-29 (build, and the unit tests of the commands touched; not reviewed). See `reports/M3.12-code-pruned.md`.
 - **Install**
   - [ ] M3.5 A Homebrew release that installs with one command
 
