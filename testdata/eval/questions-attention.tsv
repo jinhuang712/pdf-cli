@@ -1,0 +1,8 @@
+q1	text	What is the inner-layer dimensionality d_ff of the feed-forward network?
+q2	text	What value of warmup_steps is used for the learning rate schedule?
+q3	table	In Table 2, what is the EN-FR BLEU score of the Transformer (big) model?
+q4	table	In Table 3, row (C) where d_model is 1024: what are the dev BLEU and the params (x10^6)?
+q5	table	In Table 2, what is the EN-DE training cost in FLOPs of the ConvS2S Ensemble?
+q6	equation	Give the formula (equation 3) for the learning rate lrate.
+q7	footnote	According to the author footnote, who proposed replacing RNNs with self-attention?
+q8	nonexistent	What GPU memory size (GB) did each P100 have, as stated in the paper?

@@ -54,3 +54,4 @@ The spike's reports (M0) are in [spike/](../spike/README.md).
 | M3.7 CLI polish after the agent-usability review | 2026-10-26 | 0 high, 2 medium, 2 low groups; all fixed, dump/read and pick/transcribe overlap left open | [M3.7](M3.7-cli-polish.md) |
 | M3.9 A planted line over a black box with white labels | 2026-10-26 | 1 high, 4 medium, 2 low; high and medium fixed but four recorded variants (pattern, stroke, shapes, stroked labels) | [M3.9](M3.9-black-on-black.md) |
 | M3.10 Old-cache check | 2026-10-26 | a test script, no reviewer; b466d84, 961d05a and 4cee773 caches all open and read as a fresh one | [M3.10](M3.10-old-cache-check.md) |
+| M3.6 First question runs (small, Haiku 5.5) | 2026-10-29 | not reviewed; 8 findings, big tables the open design question | [M3.6](M3.6-first-question-runs.md) |
