@@ -3,7 +3,7 @@ import Testing
 
 @testable import pdf
 
-/// Every command against the output contract (FEATURES.md → F7 and F8; DESIGNS.md → Decision: one
+/// Every command against the output contract (FEATURES.md → F7 and F8; plan/decisions/038-one-output-contract-for-every-command.md → Decision: one
 /// output contract for every command): each takes `--json` and prints JSON; a failure has one
 /// shape; the exit codes are 1 for a file that is not there, 3 for one that is no PDF, 64 for a
 /// wrong flag. The tests run the built `pdf`, as an agent would, each with a fresh home.

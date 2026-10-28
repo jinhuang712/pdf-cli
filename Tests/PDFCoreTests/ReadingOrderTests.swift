@@ -5,7 +5,7 @@ import Testing
 
 @testable import PDFCore
 
-/// The order of a page's lines across its columns (ROADMAP.md → M2.5).
+/// The order of a page's lines across its columns (plan/ROADMAP.md → M2.5).
 @Suite struct ReadingOrderTests {
     /// A line of a page 612 pt wide: in the left column, the right one, or across both.
     func left(_ y: CGFloat, width: CGFloat = 230) -> CGRect { CGRect(x: 72, y: y, width: width, height: 10) }

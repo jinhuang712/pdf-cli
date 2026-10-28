@@ -2,8 +2,8 @@ import Foundation
 import GRDB
 
 /// What the agent read from a crop, kept so that later reads show it in place (FEATURES.md → F3,
-/// ROADMAP.md → M2.13): an equation's LaTeX, or a table's Markdown. The tool rebuilds neither
-/// itself, as rules cannot promise them right (DESIGNS.md → Decision: the agent reads figures,
+/// plan/ROADMAP.md → M2.13): an equation's LaTeX, or a table's Markdown. The tool rebuilds neither
+/// itself, as rules cannot promise them right (plan/decisions/014-the-agent-reads-figures-tables-and-equations-from-their-crops.md → Decision: the agent reads figures,
 /// tables and equations from their crops, and its LaTeX is kept). It is the agent's reading, and
 /// the output says so.
 public struct Transcript: Equatable, Sendable {
@@ -40,7 +40,7 @@ public final class Transcripts: Sendable {
     let queue: DatabaseQueue
 
     /// With `readOnly`, the folder and the table are left as they are, which a dry run needs
-    /// (ROADMAP.md → M2.18); the file must exist, see `exists`.
+    /// (plan/ROADMAP.md → M2.18); the file must exist, see `exists`.
     public init(directory: URL = Env.supportDirectory, readOnly: Bool = false) throws {
         if !readOnly { try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true) }
         var configuration = Configuration()

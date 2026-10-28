@@ -7,7 +7,7 @@ import Foundation
 /// hands to its runner. None is a user setting.
 public enum Env {
     /// Part of every cache key. Raise it when a change alters what a parse produces, so each
-    /// page is parsed again on its next read (DESIGNS.md → Decision: macOS updates leave the
+    /// page is parsed again on its next read (plan/decisions/026-macos-updates-leave-the-cache-alone.md → Decision: macOS updates leave the
     /// cache alone).
     public static let parserVersion = 22
 
@@ -19,7 +19,7 @@ public enum Env {
     }
 
     /// What the tool can rebuild from the PDFs: the cache and the crop images
-    /// (DESIGNS.md → Decision: macOS's Library folders, with no size limit).
+    /// (plan/decisions/021-macos-s-library-folders-with-no-size-limit.md → Decision: macOS's Library folders, with no size limit).
     public static var cacheDirectory: URL {
         if let home { return home.appendingPathComponent("Caches", isDirectory: true) }
         let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]

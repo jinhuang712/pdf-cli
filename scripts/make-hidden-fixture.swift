@@ -6,7 +6,7 @@
 // Also testdata/hidden/broken.pdf: pages drawn in ways that once crashed the check, each with
 // visible lines that must read as text; testdata/hidden/unread.pdf: a page whose drawn text
 // PDFKit leaves out of the page's text, and a control it reads; and the safety set,
-// testdata/safety (ROADMAP.md → M1.12): one file per way of hiding text, the visible controls,
+// testdata/safety (plan/ROADMAP.md → M1.12): one file per way of hiding text, the visible controls,
 // files that carry comments, form fields, links, attachments and scripts, and files broken as a
 // whole. scripts/safety-check.sh runs it.
 //
@@ -606,7 +606,7 @@ try unread.write([
     + "/XObject << /Im \(unreadImage) 0 R >> >>", to: "unread.pdf")
 
 // Text PDFKit leaves out and the page still draws in letters a reader, and OCR, can read
-// (ROADMAP.md → M2.19): a Type 3 font with no text map whose glyphs are drawn with Helvetica. In
+// (plan/ROADMAP.md → M2.19): a Type 3 font with no text map whose glyphs are drawn with Helvetica. In
 // a layer switched off, or under an annotation, a reader never sees it, though PDFKit's rendering
 // draws it, and OCR reads that rendering.
 let outlined = Writer()

@@ -4,7 +4,7 @@ import Foundation
 import PDFCore
 
 /// Asks the user how much memory parsing may take, and downloads the models that need one
-/// (FEATURES.md → F12; DESIGNS.md → Decision: the user sets parsing's memory, the tool the worker
+/// (FEATURES.md → F12; plan/decisions/041-the-user-sets-parsing-s-memory-the-tool-the-worker-count.md → Decision: the user sets parsing's memory, the tool the worker
 /// count). It asks only at a terminal: an agent's shell has no one to answer, so there it takes
 /// the answer from `--memory` and never waits.
 struct SetupCommand: ParsableCommand {

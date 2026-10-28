@@ -29,7 +29,7 @@ public final class Picks: Sendable {
     let queue: DatabaseQueue
 
     /// With `readOnly`, the folder and the table are left as they are, which a dry run needs
-    /// (ROADMAP.md → M2.18); the file must exist, see `exists`.
+    /// (plan/ROADMAP.md → M2.18); the file must exist, see `exists`.
     public init(directory: URL = Env.supportDirectory, readOnly: Bool = false) throws {
         if !readOnly { try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true) }
         var configuration = Configuration()

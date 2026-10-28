@@ -1,6 +1,6 @@
 #!/bin/sh
 # Runs the safety set, testdata/safety (made by scripts/make-hidden-fixture.swift), and checks
-# goal G16 (GOALS.md): every planted hidden text is flagged and kept out of normal output, and
+# goal G16 (plan/GOALS.md): every planted hidden text is flagged and kept out of normal output, and
 # no file crashes or hangs the tool. It also checks that the visible controls read whole, that
 # what the files carry reaches `pdf info`, and that broken files fail with a reason.
 #

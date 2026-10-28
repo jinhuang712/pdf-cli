@@ -1396,7 +1396,7 @@ public enum Output {
 
     /// A block's text as it goes out: picked readings in place of unsure words, and a marker in
     /// place of each run a reader cannot see, or the run's words, labelled, with
-    /// `includeHidden` (DESIGNS.md → Decision: a marker in place of hidden text over its words
+    /// `includeHidden` (plan/decisions/034-a-marker-in-place-of-hidden-text-over-its-words-with-a-label.md → Decision: a marker in place of hidden text over its words
     /// with a label).
     static func shown(_ text: String, pick: Pick?, choices: [Unsure], hidden: [Hidden], includeHidden: Bool,
                       path: String, page: Int) -> String {
@@ -1596,7 +1596,7 @@ public enum Output {
 
     /// The address a text block starts with: its number on the page, under the page's heading.
     /// Its position stays in `--json`: the full position took about 22% of a read's tokens on
-    /// the arXiv samples, and the number alone about 7% (DESIGNS.md → Decision: paragraph
+    /// the arXiv samples, and the number alone about 7% (plan/decisions/029-paragraph-numbers-in-text-positions-in-json.md → Decision: paragraph
     /// numbers in text, positions in JSON).
     static func address(_ block: Block) -> String {
         "¶\(block.block ?? 0)"

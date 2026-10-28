@@ -1,9 +1,9 @@
-<!-- what-we-build: approved 2026-10-15 -->
+<!-- what-we-build: drafted 2026-10-29 -->
 # pdf-cli — Proposal
 
 > A macOS command-line tool that helps coding agents read PDFs.
 
-Proposed 2026-10-14. For where the work stands today, see [ROADMAP.md](ROADMAP.md).
+Proposed 2026-10-14. For where the work stands today, see [plan/ROADMAP.md](plan/ROADMAP.md).
 
 ## In short
 
@@ -146,7 +146,7 @@ Coding agents such as Claude Code and Codex, and the people who use them to read
 
 ## How we know it works
 
-[GOALS.md](GOALS.md) holds at least one check for each of the 11 promises, with its target and its method. The target numbers are still open.
+[plan/GOALS.md](plan/GOALS.md) holds at least one check for each of the 11 promises, with its target and its method. The target numbers are still open.
 
 Public benchmarks such as OmniDocBench and olmOCR-bench measure only accuracy. So the project builds its own test set of real PDFs and its own question set, and the other 10 promises are measured against those two sets.
 

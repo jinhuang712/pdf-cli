@@ -4,7 +4,7 @@ import PDFKit
 import Testing
 @testable import PDFCore
 
-/// "Same file, same answer" (ROADMAP.md → M2.25). Page 17 of `arxiv-2609.23257.pdf` read as
+/// "Same file, same answer" (plan/ROADMAP.md → M2.25). Page 17 of `arxiv-2609.23257.pdf` read as
 /// "Output (JSON)" in some fresh processes and "Output(JSON)" in others: the space repair took its
 /// word breaks from Apple's document recognizer, whose text for one and the same image differed
 /// between processes (the image's bytes were identical). Within one process it never differed, so

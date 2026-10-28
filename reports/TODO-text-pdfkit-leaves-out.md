@@ -1,6 +1,6 @@
 # TODO fix — text PDFKit leaves out flags the page
 
-- **Built:** 2026-10-16, the last item in `TODO.md`, which the user asked to do.
+- **Built:** 2026-10-16, the last item in `plan/TODO.md`, which the user asked to do.
 - **Written:** 2026-10-16, on the fix's branch.
 
 ## What was built
@@ -53,7 +53,7 @@ Found while fixing:
 
 ## Second review
 
-A second reviewer new to the code checked the fixes above (`6e0b3f7`) against the build before them (`9c74f1e`), the item `TODO.md` held, with pages of its own in `/private/tmp/claude-501/finalrev/`, the macOS license in 41 languages, Xcode's acknowledgments, 373 other PDFs on this Mac and 86 TeX Live manuals. It found 10 problems, 9 reproduced. Fixed on 2026-10-17.
+A second reviewer new to the code checked the fixes above (`6e0b3f7`) against the build before them (`9c74f1e`), the item `plan/TODO.md` held, with pages of its own in `/private/tmp/claude-501/finalrev/`, the macOS license in 41 languages, Xcode's acknowledgments, 373 other PDFs on this Mac and 86 TeX Live manuals. It found 10 problems, 9 reproduced. Fixed on 2026-10-17.
 
 | # | Finding | Verdict | Resolution |
 |---|---|---|---|

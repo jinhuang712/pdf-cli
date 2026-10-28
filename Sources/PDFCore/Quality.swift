@@ -65,7 +65,7 @@ public enum Quality {
         }
         if layer.checkFailed == true {
             // OCR's own confidence does not track its accuracy, so unchecked OCR text is in doubt
-            // (DESIGNS.md → Decision: two OCR readings compared, over OCR's own confidence).
+            // (plan/decisions/046-two-ocr-readings-compared-over-ocr-s-own-confidence.md → Decision: two OCR readings compared, over OCR's own confidence).
             doubts.append(Doubt(kind: .lowQuality,
                                 reason: "OCR read the page, but its second reading, which checks the first, failed",
                                 blocks: nil))

@@ -33,7 +33,7 @@ public struct SearchCandidate: Equatable, Sendable {
 }
 
 /// Keyword search over the cached pages (FEATURES.md → F4), with SQLite's FTS5 index of every
-/// block's text (DESIGNS.md → Decision: SQLite over qmd and Tantivy).
+/// block's text (plan/decisions/020-sqlite-over-qmd-and-tantivy.md → Decision: SQLite over qmd and Tantivy).
 public enum Search {
     /// Marks the split the index puts around each character of a script written without
     /// spaces, as Chinese is, so a snippet can take it out again.

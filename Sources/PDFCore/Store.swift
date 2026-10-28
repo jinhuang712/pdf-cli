@@ -149,7 +149,7 @@ public final class Store: Sendable {
         }
     }
 
-    /// With `readOnly` (a dry run, ROADMAP.md → M2.18) the file is opened read-only: no folder,
+    /// With `readOnly` (a dry run, plan/ROADMAP.md → M2.18) the file is opened read-only: no folder,
     /// no schema, no row, and no write of any kind. A cache from an older schema is refused,
     /// as only a normal command brings it up to date. The file must exist, see `exists`.
     public init(directory: URL = Env.cacheDirectory, readOnly: Bool = false) throws {

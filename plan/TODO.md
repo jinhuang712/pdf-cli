@@ -1,7 +1,7 @@
 <!-- what-we-build: drafted 2026-10-29 -->
 # TODO
 
-Small fixes and follow-ups with no milestone yet. An item moves to ROADMAP.md once it has a milestone. Limits that are true but not worth fixing live in FEATURES.md, under each feature's Gap, not here. Every item below was checked on 2026-10-26 (M3.8).
+Small fixes and follow-ups with no milestone yet. An item moves to plan/ROADMAP.md once it has a milestone. Limits that are true but not worth fixing live in FEATURES.md, under each feature's Gap, not here. Every item below was checked on 2026-10-26 (M3.8).
 
 - **Wrap-up: the 25 unexamined failed checks** of M2.9's first `scripts/test-cache.sh` run (M2.25 fixed two checks and `hidden/hidden.pdf` p.38; others may still fail on this macOS). Not verified 2026-10-26 (needs one full run). At the final wrap-up, run `test-cache.sh` once, keep the log, and compare it with `main` before M2.9.
 - **Wrap-up: NACA scan p.1 reads low-quality as a whole page** (M2.12 input, with DESIGNS.md → open question "lines in doubt on a scan whose blocks are too short"). Verified 2026-10-26, and not only after `--step ocr`: `read testdata/smoke/scan-naca-report-1034.pdf --page 1` on a fresh cache prints `⚠ p.1 low-quality: two OCR readings of the page disagree (score 0.72)`, exit 3, and `reparse --page 1 --step ocr` leaves it flagged. Mild: the page goes to the agent as one crop (about 1.5k image tokens). Tune with M2.12.

@@ -3,7 +3,7 @@ import Testing
 
 @testable import pdf
 
-/// The limits on big files (ROADMAP.md → M2.21): `pdf crop --figure` stops at a time limit and says
+/// The limits on big files (plan/ROADMAP.md → M2.21): `pdf crop --figure` stops at a time limit and says
 /// how far it looked, and `pdf reparse` replaces its pages in chunks. Each runs the built `pdf`
 /// with a fresh home and small limits, as an agent would meet them on a big file.
 @Suite(.serialized) struct BigFileLimitsTests {

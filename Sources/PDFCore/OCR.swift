@@ -3,7 +3,7 @@ import Foundation
 import PDFKit
 import Vision
 
-/// Apple OCR (DESIGNS.md → Decision: Apple Vision over Tesseract and RapidOCR). On macOS 26
+/// Apple OCR (plan/decisions/007-apple-vision-over-tesseract-and-rapidocr.md → Decision: Apple Vision over Tesseract and RapidOCR). On macOS 26
 /// the document recognizer returns paragraphs and their lines. Older systems use the text
 /// recognizer, whose lines the text layer groups into blocks. `PDF_CLI_OCR=text` forces the
 /// older one, so it can be tested on macOS 26 too.

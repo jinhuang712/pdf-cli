@@ -27,14 +27,14 @@ public struct LibraryEntry: Equatable, Sendable {
     }
 }
 
-/// The library list, in the agent's own folder beside the picks (DESIGNS.md → Decision:
+/// The library list, in the agent's own folder beside the picks (plan/decisions/021-macos-s-library-folders-with-no-size-limit.md → Decision:
 /// macOS's Library folders, with no size limit). A cleared cache leaves the list, and the next
 /// read parses each file again.
 public final class Library: Sendable {
     let queue: DatabaseQueue
 
     /// With `readOnly`, the folder and the table are left as they are, which a dry run needs
-    /// (ROADMAP.md → M2.18); the file must exist, see `exists`.
+    /// (plan/ROADMAP.md → M2.18); the file must exist, see `exists`.
     public init(directory: URL = Env.supportDirectory, readOnly: Bool = false) throws {
         if !readOnly { try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true) }
         var configuration = Configuration()

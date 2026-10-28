@@ -5,7 +5,7 @@ import Testing
 
 @testable import PDFCore
 
-/// Figures, tables and numbered equations (ROADMAP.md → M2.6).
+/// Figures, tables and numbered equations (plan/ROADMAP.md → M2.6).
 @Suite struct RegionsTests {
     /// A line at a box, in points from the top left of a US Letter page.
     func line(_ text: String, _ x: CGFloat, _ y: CGFloat, width: CGFloat = 200, tag: String? = nil) -> TextLayer.RawLine {

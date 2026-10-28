@@ -51,7 +51,7 @@ extension Box {
 public enum Crop {
     /// Claude's standard image limits: 1568 px on the long edge, and 1,568 image tokens, one
     /// per block of 28×28 px. A crop sized within them costs at most about 1,568 tokens on any
-    /// model, and no model shrinks it (DESIGNS.md → Decision: crops sized to Claude's standard
+    /// model, and no model shrinks it (plan/decisions/032-crops-sized-to-claude-s-standard-image-limits.md → Decision: crops sized to Claude's standard
     /// image limits).
     static let longEdge = 1568.0
     static let maxTokens = 1568.0

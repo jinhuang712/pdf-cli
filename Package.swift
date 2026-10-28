@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "pdf-cli",
-    // macOS 11 is the oldest supported version (DESIGNS.md → Decision: macOS 11 as the oldest
+    // macOS 11 is the oldest supported version (plan/decisions/003-macos-11-as-the-oldest-supported-version.md → Decision: macOS 11 as the oldest
     // supported version). Newer APIs are gated with availability checks.
     platforms: [.macOS(.v11)],
     products: [

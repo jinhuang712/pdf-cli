@@ -1,6 +1,6 @@
 import Foundation
 
-/// An entry of a document's list of references (FEATURES.md → F15, ROADMAP.md → M2.8).
+/// An entry of a document's list of references (FEATURES.md → F15, plan/ROADMAP.md → M2.8).
 public struct ReferenceEntry: Equatable, Sendable {
     /// How the document cites it: its number, as "12", its printed key, as "BK06", or its first
     /// author's surname and its year, as "Smith2020a"; for a list after the first, the list's

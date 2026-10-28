@@ -1,7 +1,7 @@
 import Foundation
 
 /// A note on a page, found when the page is parsed: footnotes, endnotes, a headnote and margin
-/// notes (FEATURES.md → F14, ROADMAP.md → M2.7). `pdf read` shows each in its own place; what
+/// notes (FEATURES.md → F14, plan/ROADMAP.md → M2.7). `pdf read` shows each in its own place; what
 /// depends on the whole document, as a note's number when numbering restarts, is judged when a
 /// page is read (`Notes.resolve`), as running headers are.
 public struct PageNote: Codable, Equatable, Sendable {

@@ -3,7 +3,7 @@ import Foundation
 import PDFCore
 
 /// Keeps what the agent read from a crop, an equation's LaTeX or a table's Markdown, so later
-/// reads show it in place (FEATURES.md → F3, ROADMAP.md → M2.13). The tool rebuilds neither
+/// reads show it in place (FEATURES.md → F3, plan/ROADMAP.md → M2.13). The tool rebuilds neither
 /// itself: what it keeps is the agent's reading, and the output labels it so.
 struct TranscribeCommand: ParsableCommand {
     static let configuration = CommandConfiguration(

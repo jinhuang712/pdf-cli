@@ -5,7 +5,7 @@ import PDFKit
 /// The words under the links of a page, which PDFKit selects where each link lies. They are read
 /// when their page is read, in a worker, for the pages asked for and a link at a time, so the index
 /// does not wait for the links of a file that holds tens of thousands, and the same file gives the
-/// same words however busy the machine is (DESIGNS.md → Decision: annotations per page, in a table
+/// same words however busy the machine is (plan/decisions/044-annotations-per-page-in-a-table-of-their-own.md → Decision: annotations per page, in a table
 /// of their own).
 public enum AnnotationWords {
     /// What the worker is asked: where a link lies, by its page and place in the page's list.

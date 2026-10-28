@@ -3,7 +3,7 @@ import Testing
 
 @testable import PDFCore
 
-/// Tables that run over page breaks (ROADMAP.md → M3.2): which table regions on neighbouring
+/// Tables that run over page breaks (plan/ROADMAP.md → M3.2): which table regions on neighbouring
 /// pages are linked, and which are not.
 @Suite struct TableLinksTests {
     /// A page with one table region: its caption block, then its cells.

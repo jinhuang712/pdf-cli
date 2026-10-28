@@ -2,7 +2,7 @@ import ArgumentParser
 import Foundation
 import PDFCore
 
-/// Reads pages again and replaces their cached results (FEATURES.md → F10, ROADMAP.md → M2.10).
+/// Reads pages again and replaces their cached results (FEATURES.md → F10, plan/ROADMAP.md → M2.10).
 struct ReparseCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "reparse",

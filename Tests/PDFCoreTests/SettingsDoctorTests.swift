@@ -3,7 +3,7 @@ import Testing
 
 @testable import PDFCore
 
-/// Parsing's memory setting, the pressure rules, the models list and `Doctor` (ROADMAP.md → M2.11).
+/// Parsing's memory setting, the pressure rules, the models list and `Doctor` (plan/ROADMAP.md → M2.11).
 /// Each test uses its own folders, so the user's real settings are never touched.
 @Suite struct SettingsDoctorTests {
     func folder(_ name: String) -> URL {

@@ -2,7 +2,7 @@ import Foundation
 
 /// The guide that teaches an agent the tool in one read (FEATURES.md → F13). `pdf agent-guide`
 /// prints it, and `pdf agent-guide --install claude-code` writes it as a Claude Code skill
-/// (DESIGNS.md → Decision: one guide, printed or installed as a skill).
+/// (plan/decisions/037-one-guide-printed-or-installed-as-a-skill.md → Decision: one guide, printed or installed as a skill).
 ///
 /// It names only commands and flags that are built. `AgentGuideTests` holds it to the CLI both
 /// ways: every command and flag it names exists and parses, and it names every command and flag

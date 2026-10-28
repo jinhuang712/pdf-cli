@@ -37,7 +37,7 @@ public enum ReadOutcome: Sendable {
     case pages(docID: String, pageCount: Int, results: [(page: Int, result: PageResult)])
 }
 
-/// What `pdf reparse` did to a file (ROADMAP.md → M2.10).
+/// What `pdf reparse` did to a file (plan/ROADMAP.md → M2.10).
 public struct Reparsed: Sendable {
     public var docID: String
     public var pageCount: Int
@@ -117,7 +117,7 @@ public final class Reader: Sendable {
     }
 
     /// What the cache already holds for these pages, counted from 0, and nothing else: no parse,
-    /// no runner, no library entry, no write. A dry run reads this way (ROADMAP.md → M2.18).
+    /// no runner, no library entry, no write. A dry run reads this way (plan/ROADMAP.md → M2.18).
     public func peek(path rawPath: String, pages wanted: [Int]) throws -> Peek {
         let path = Reader.resolve(rawPath)
         guard let stat = FileStat(path: path) else { throw ReadError.notFound(rawPath) }
@@ -241,7 +241,7 @@ public final class Reader: Sendable {
     /// OCR instead of the usual method). The file is indexed first if the cache has no current entry
     /// for it. A file that failed to open is tried again. The pages go in chunks of `chunk` (50), each
     /// read in a runner of its own that stops with this command and replaced in one transaction
-    /// (DESIGNS.md → Decision: a reparse keeps the page's key and replaces results in one
+    /// (plan/decisions/051-a-reparse-keeps-the-page-s-key-and-replaces-results-in-one.md → Decision: a reparse keeps the page's key and replaces results in one
     /// transaction, per chunk): a run that is stopped keeps the chunks it finished, and after
     /// `timeLimit` seconds no new chunk starts, the pages left being `remaining`. `progress` hears
     /// of each chunk replaced, with the pages done and the pages asked for. The runner leaves

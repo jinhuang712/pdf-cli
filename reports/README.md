@@ -1,6 +1,6 @@
 # Reports
 
-Each task gets one report: what was built, what was measured, what the independent review found with how each finding was resolved, and which tests ran. A report is written on the task's branch before the task lands, and then stays as written, as the record of that day. The current design lives in [DESIGNS.md](../DESIGNS.md), and follow-ups without a milestone in [TODO.md](../TODO.md).
+Each task gets one report: what was built, what was measured, what the independent review found with how each finding was resolved, and which tests ran. A report is written on the task's branch before the task lands, and then stays as written, as the record of that day. The current design lives in [DESIGNS.md](../DESIGNS.md), and follow-ups without a milestone in [plan/TODO.md](../plan/TODO.md).
 
 - **Machine:** an M3 MacBook with 24 GB, macOS 26.4, unless a report says otherwise.
 - **Reviews:** each one comes from a separate Claude agent that did not write the code. It reads the commit, builds it, and reproduces what it can. Its verdicts are *confirmed* (reproduced or proven by reading) or *likely* (traced, not reproduced).

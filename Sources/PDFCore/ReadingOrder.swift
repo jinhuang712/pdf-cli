@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-/// The order of a page's lines across its columns (FEATURES.md → F3, ROADMAP.md → M2.5).
+/// The order of a page's lines across its columns (FEATURES.md → F3, plan/ROADMAP.md → M2.5).
 ///
 /// PDFKit gives a page's lines in an order that mostly reads well, but on some pages of two
 /// columns it goes from one column to the other line by line: below the figure on p.5 of the

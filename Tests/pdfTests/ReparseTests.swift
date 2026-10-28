@@ -4,7 +4,7 @@ import Testing
 
 @testable import pdf
 
-/// `pdf reparse` (ROADMAP.md → M2.10): it replaces the cached results of the pages it reads again,
+/// `pdf reparse` (plan/ROADMAP.md → M2.10): it replaces the cached results of the pages it reads again,
 /// never deletes a pick (M2.24), keeps transcripts, follows the contract of M2.15, and a command that dies
 /// half way changes nothing. The tests run the built `pdf` with a fresh home, as an agent would.
 @Suite(.serialized) struct ReparseTests {

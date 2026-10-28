@@ -369,7 +369,7 @@ public enum Doctor {
     /// longer exist or changed and for old parser versions, library entries of files that no
     /// longer exist, runner locks of runners that are gone, and crops older than 7 days. A file on a
     /// drive not plugged in keeps both its rows and its entry. With `dryRun` it opens both
-    /// databases read-only and counts (ROADMAP.md → M2.18's rules), parsing and writing nothing.
+    /// databases read-only and counts (plan/ROADMAP.md → M2.18's rules), parsing and writing nothing.
     public static func clean(
         dryRun: Bool, cache cacheDirectory: URL = Env.cacheDirectory,
         support supportDirectory: URL = Env.supportDirectory

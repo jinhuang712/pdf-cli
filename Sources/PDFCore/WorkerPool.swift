@@ -2,7 +2,7 @@ import Darwin
 import Foundation
 
 /// The worker slots that every parse on the Mac shares, so an agent reading many files at once
-/// never runs more workers than the pool holds (DESIGNS.md → Decision: a shared pool of worker
+/// never runs more workers than the pool holds (plan/decisions/028-a-shared-pool-of-worker-slots-with-pages-nobody-waits-for-in-the.md → Decision: a shared pool of worker
 /// slots, with pages nobody waits for at low priority).
 ///
 /// A slot is an exclusive `flock` on a small file in the cache folder. The kernel drops the

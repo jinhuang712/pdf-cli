@@ -1,7 +1,7 @@
 <!-- what-we-build: drafted 2026-10-29 -->
 # Measure
 
-How we find out whether pdf-cli does its job. GOALS.md says what we want (G1, G5, G15); this file says what we look at and how we run the experiments that give us the numbers. M3.6 is the first run.
+How we find out whether pdf-cli does its job. plan/GOALS.md says what we want (G1, G5, G15); this file says what we look at and how we run the experiments that give us the numbers. M3.6 is the first run.
 
 ## The order: measure > benchmark > compare > threshold
 

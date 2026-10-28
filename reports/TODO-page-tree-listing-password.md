@@ -1,6 +1,6 @@
 # TODO fixes — one walk of the page tree, cheap listings, the password prompt, info's table
 
-- **Built:** 2026-10-16, the items left in `TODO.md` that need no new milestone. The user asked for them all.
+- **Built:** 2026-10-16, the items left in `plan/TODO.md` that need no new milestone. The user asked for them all.
 - **Written:** 2026-10-16, on the fixes' branch.
 
 ## What was built

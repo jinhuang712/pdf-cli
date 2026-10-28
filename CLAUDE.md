@@ -1,16 +1,31 @@
 # pdf-cli: how to work here
 
-Read this first. Where the project stands is in ROADMAP.md, the small follow-ups in TODO.md, each task's findings in `reports/`, the commands in FEATURES.md and the design in DESIGNS.md; this file holds only the direction the user has set and the way to work.
+## Read order
+
+```text
+1. PROPOSAL.md            why the project exists, and what it refuses to become
+2. PHILOSOPHY.md          the beliefs every change follows
+3. DESIGNS.md             the flow, the principles, the table of decisions, the open questions
+4. plan/decisions/        why it is built that way: one file per decision, with the options it beat
+5. plan/GOALS.md          the goals that pass or fail, and how each is measured (plan/MEASURE.md: how the runs are designed)
+6. FEATURES.md            what each command does, its gaps, and what is not planned
+7. plan/ROADMAP.md        where the project stands; plan/TODO.md the small follow-ups
+8. reports/               what each task found, with its review's findings
+```
+
+README.md is the front door; CHANGELOG.md is what changed in each release.
+
+Read this first. Where the project stands is in plan/ROADMAP.md, the small follow-ups in plan/TODO.md, each task's findings in `reports/`, the commands in FEATURES.md and the design in DESIGNS.md; this file holds only the direction the user has set and the way to work.
 
 ## The user's direction
 
 Read this before designing anything. Each line points to where it is written down.
 
-- **The tool converts nothing it cannot read for certain.** A table, an equation, a figure or a page OCR reads badly goes to the agent as a crop, and the agent's own model reads it. Rules or OCR cannot promise a table or a LaTeX right, and a wrong one looks right. The tool's job is to cut the tokens, the cost and the time an agent spends on a PDF. DESIGNS.md → "Decision: the agent reads figures, tables and equations from their crops, and its LaTeX is kept".
+- **The tool converts nothing it cannot read for certain.** A table, an equation, a figure or a page OCR reads badly goes to the agent as a crop, and the agent's own model reads it. Rules or OCR cannot promise a table or a LaTeX right, and a wrong one looks right. The tool's job is to cut the tokens, the cost and the time an agent spends on a PDF. plan/decisions/014-the-agent-reads-figures-tables-and-equations-from-their-crops.md → Decision: the agent reads figures, tables and equations from their crops, and its LaTeX is kept".
 - **What the agent reads is kept, so it is read once.** An equation's LaTeX, or a table's Markdown, that the agent writes back with `pdf transcribe` is kept beside its picks, and later reads show it in place, labelled as its reading, with the crop to check it by (M2.13).
-- **No local vision model.** PDFKit and Apple's OCR read; the agent looks. GOALS.md measures two setups, Base and Layout; Layout adds what `pdf setup` downloads, which is nothing until a task brings a model, as M2.4's layout model, built only if rules fail a goal. The user holds that PDFKit and OCR suffice; no goal has measured it yet. DESIGNS.md → "Decision: no local vision model; PDFKit and Apple's OCR read, the agent looks".
+- **No local vision model.** PDFKit and Apple's OCR read; the agent looks. plan/GOALS.md measures two setups, Base and Layout; Layout adds what `pdf setup` downloads, which is nothing until a task brings a model, as M2.4's layout model, built only if rules fail a goal. The user holds that PDFKit and OCR suffice; no goal has measured it yet. plan/decisions/016-no-local-vision-model-pdfkit-and-apple-s-ocr-read-the-agent.md → Decision: no local vision model; PDFKit and Apple's OCR read, the agent looks".
 - **Nothing a reader cannot see reaches normal output, and nothing is dropped without a trace.** Hidden text, a picture's alt text among it, is a marker, its words only with `--show hidden` (goal G16). Whatever is set aside, as a running header or a table's flat text, is counted in the summary line with the flag that shows it.
-- **Tests stay light until the final wrap-up:** unit tests, end-to-end tests and one review per task. The detailed test sets, measurements and tuning wait for the end (ROADMAP.md → Final wrap-up).
+- **Tests stay light until the final wrap-up:** unit tests, end-to-end tests and one review per task. The detailed test sets, measurements and tuning wait for the end (plan/ROADMAP.md → Final wrap-up).
 - **Sample PDFs stay local.** The 132 downloaded test PDFs, 669 MB, live in the main checkout's `private/testset/`, which `.gitignore` keeps out, and are never committed. The open test set of the final wrap-up (M2.1) takes 60 of them. `manifest.tsv` there gives each one's source, licence and SHA-256, and `fetch_testset.py` downloads them again. New downloads wait for the user's OK on the sources.
 
 ## Versions
@@ -31,7 +46,7 @@ Parser version 22, page key 2, index checks 11, summary version 1, cache schema 
 
 - **Gentle on the laptop.** Heavy commands with `nice -n 10`, builds with `-j 2`, one heavy job at a time.
 - **Commits** in English, written to a file, ending with the session trailer line, `Claude-Session: <the session's ID>`, with the GitHub no-reply address: `git -c user.email=36698563+jinhuang712@users.noreply.github.com commit -F <file>`. The global git email must not be used. Before each push, check that every commit uses the no-reply address and that no work email appears in the diff.
-- **Docs follow the what-we-build convention.** Each core doc carries a mark on its first line. Any edit sets it back to `drafted`, and only the user approves. A design decision goes in DESIGNS.md as its own section, `## Decision: <title> — <date>`, with the options it beat.
+- **Docs follow the what-we-build convention.** Each core doc carries a mark on its first line. Any edit sets it back to `drafted`, and only the user approves. A design decision goes in `plan/decisions/` as its own file, `NNN-<title>.md` (`# NNN. <title>`, `Decided: <date>    Status: current`, then the problem, the choice, the options it beat and what follows), and one row in DESIGNS.md's table of decisions.
 - **Keep going until something breaks or needs a decision.**
 - **Replies to the user** in Chinese, plain words, the answer first, every decision, risk and unknown stated, and short. Ask with the question tool when a decision is the user's.
 
@@ -44,7 +59,7 @@ Parser version 22, page key 2, index checks 11, summary version 1, cache schema 
 
 **Traps:**
 
-- A new task wants a new session with a short history. `calm fork` copies the whole conversation, so it is no new session; Calm has no command that opens a blank one: let the user open it. There is no handoff file: where the project stands is ROADMAP.md, what has no milestone is TODO.md, what each task found is `reports/`.
+- A new task wants a new session with a short history. `calm fork` copies the whole conversation, so it is no new session; Calm has no command that opens a blank one: let the user open it. There is no handoff file: where the project stands is plan/ROADMAP.md, what has no milestone is plan/TODO.md, what each task found is `reports/`.
 - Claude Code refuses compound shell commands with variables inside a worktree: put them in a script file and run it with `bash`.
 - `git stash` is shared with every other session: never use it. To compare with the build before a change, add a scratch worktree of the old commit outside the repo, build it there, and remove it after.
 - A cache built at the same parser version hides a change to the parse: debug with a fresh `PDF_CLI_HOME` each run.

@@ -1,0 +1,15 @@
+# 056. the space repair reads with the text recognizer
+
+Decided: 2026-10-25    Status: current
+
+Page 17 of `testdata/smoke/arxiv-2609.23257.pdf` read as "Output (JSON)" in some fresh processes and "Output(JSON)" in others (M2.10 review, L5). PDFKit was not the source: its text of the page was the same in 130 runs (30 separate processes, 100 loops of one), and the rendered image hashed the same each time. The source was Apple's document recognizer: for the same image it returned two texts (one with a line "Output (JSON)", one without). In the first investigation 8 of 12 full reads showed the second text; the review measured it in 2 of 12 full reads, and later series of mine (12, 14 and 16 fresh processes, also under load) showed none, so it depends on the machine's state and is rare and unpredictable. It never differed twice within one process. The text recognizer (`VNRecognizeTextRequest`, accurate) gave one answer for every page in 8 runs of 8 and in 12 of 12. The repair now reads with it (parser version 21).
+
+Options, with numbers (smoke set, this macOS):
+
+| Option | For | Against |
+|---|---|---|
+| **The text recognizer for the repair** | One answer per image in every process measured. It needs lines only. | Roughly even with the document recognizer on the smoke set (the review counted about +22 correct spaces, -9 correct, +8 wrong), and one silent loss: `arxiv-2608.24191` p.13 para 11 "Translatethefollowing Urdusocialmedia" is no longer flagged (each half is under the 25-letter run-together threshold); table 18 on `arxiv-2609.23257` p.17 loses about 12 spaces in `--show raw`. M1.2 scored it lower on the spike's paper: 96.2% found, 93 added, against 97.8% and 68. |
+| The document recognizer pinned to the CPU (`setComputeDevice(.cpu)` for the main and post-processing stages) | The review got one answer in 16 of 16 processes on the arXiv page and 6 of 6 on the NACA page where the default differed 2 of 6; same speed (2.49 s against 2.65 s); would make scans deterministic too. | M2.25 measured it and could not show a gain: the default also gave one answer in all of my 12 + 14 + 16 fresh processes, and 10 of 10 on NACA p.17 both ways, so the flip could not be reproduced to check the fix. Its text differs from the default's: on the arXiv paper it joined "stationarity;Shift", "Zheng,Wen" and "]for" (2 glitches, against 0 for the default document recognizer and 1 for the text recognizer). Not "at least as good", so not taken. Left as an option in TODO. |
+| The document recognizer as it was, read twice and compared | Keeps recall. | Doubles 0.65 s a page, and when the two differ there is no rule for which is right. |
+
+Not covered: a scan is still read by the document recognizer, so a scan can read differently in two fresh caches; `pdf reparse` reads it again and may change it. The cache keeps a reading until a reparse. Checked again 2026-10-26 (M3.8): the same `read --page N --show raw --budget all` in 8 fresh homes gave one identical output each on three scanned pages (24 of 24 runs); the difference did not reproduce, so the CPU pin stays unbuilt and unproven.

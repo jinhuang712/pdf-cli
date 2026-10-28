@@ -52,7 +52,7 @@ func pdfKitKeys(_ url: URL) throws -> [String] {
     /// also damaged the text: "∗" came back as "→" and the math letter "𝑒" as "!". The test used to
     /// expect that change and failed on 2026-10-25, the sign its comment named for Apple having
     /// fixed it: on this macOS (27), the text of all 11 pages of this paper is the same after a
-    /// save (M2.25), so only the keys are checked. DESIGNS.md → Decision: a file that PDFKit saved
+    /// save (M2.25), so only the keys are checked. plan/decisions/045-a-file-that-pdfkit-saved-counts-as-a-new-file-with-a-warning.md → Decision: a file that PDFKit saved
     /// counts as a new file, with a warning, stays: files saved by older macOS keep their damage,
     /// and nothing in the file tells the saves apart.
     @Test func aPDFKitSaveChangesTheKeys() throws {

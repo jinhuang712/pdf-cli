@@ -1,6 +1,6 @@
 import Foundation
 
-/// What links the parts of one table that runs over page breaks (FEATURES.md → F3, ROADMAP.md →
+/// What links the parts of one table that runs over page breaks (FEATURES.md → F3, plan/ROADMAP.md →
 /// M3.2). Read from the table regions the parse stored, at read time, against the pages parsed
 /// so far: nothing is stored, so a cache from before this task needs no new parse.
 public struct TableLink: Codable, Equatable, Sendable {
@@ -23,7 +23,7 @@ public struct TableLink: Codable, Equatable, Sendable {
 }
 
 /// Links a table to the one that goes on from it on the next page, only on strong evidence
-/// (DESIGNS.md → "Decision: a table's parts are linked only on a continued caption and the same
+/// (plan/decisions/059-a-table-s-parts-are-linked-at-read-time-only-on-a-continued.md → Decision: a table's parts are linked only on a continued caption and the same
 /// place on both pages"). When any of it is missing, the tables stay apart and the output says
 /// nothing about them.
 ///

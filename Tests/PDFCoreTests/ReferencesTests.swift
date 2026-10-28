@@ -4,7 +4,7 @@ import Testing
 
 @testable import PDFCore
 
-/// Lists of references, citations and cross-references (ROADMAP.md → M2.8).
+/// Lists of references, citations and cross-references (plan/ROADMAP.md → M2.8).
 @Suite struct ReferencesTests {
     /// A one-block page element: its text, box and font size, in one line or more.
     struct Item {

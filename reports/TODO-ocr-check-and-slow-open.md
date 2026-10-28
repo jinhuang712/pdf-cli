@@ -1,13 +1,13 @@
 # TODO fixes — an unchecked OCR page, a slow file open
 
-- **Built:** 2026-10-16, two items from `TODO.md`, picked by the user.
+- **Built:** 2026-10-16, two items from `plan/TODO.md`, picked by the user.
 - **Written:** 2026-10-16, on the fixes' branch.
 
 ## What was built
 
-- **An OCR'd page whose second reading failed is low-quality.** OCR reads a scan's page twice and scores how far the readings agree (DESIGNS.md → Decision: two OCR readings compared, over OCR's own confidence). When the second reading failed, the page had no score and read as ok, with no sign that nothing checked its text. `PageText.checkFailed` now records the failure, for a page with at least 20 words of four letters or more, the fewest a check scores, and the page gets a failure block: "OCR read the page, but its second reading, which checks the first, failed", with the crop and `--raw` commands. A test plants the failure with `PDF_CLI_TEST_FAULT=ocr-check-fail:N`. Parser version 8.
+- **An OCR'd page whose second reading failed is low-quality.** OCR reads a scan's page twice and scores how far the readings agree (plan/decisions/046-two-ocr-readings-compared-over-ocr-s-own-confidence.md → Decision: two OCR readings compared, over OCR's own confidence). When the second reading failed, the page had no score and read as ok, with no sign that nothing checked its text. `PageText.checkFailed` now records the failure, for a page with at least 20 words of four letters or more, the fewest a check scores, and the page gets a failure block: "OCR read the page, but its second reading, which checks the first, failed", with the crop and `--raw` commands. A test plants the failure with `PDF_CLI_TEST_FAULT=ocr-check-fail:N`. Parser version 8.
 - **A slow file open is not damage.** The runner stopped a worker silent for 30 s, opening included, and three such stops cached the file as damaged until it changed, as an iCloud file still downloading, or one on a slow volume, could earn. Now an index or page worker gets 90 s, `PDF_CLI_OPEN_TIME_LIMIT`, until its first event; the sample check and the facts, which say nothing until they finish, keep their own limits. A file that takes longer gets the verdict "slow to open: it took more than 90 s to open, and is tried again after 10 minutes". Commands in those 10 minutes, `PDF_CLI_SLOW_OPEN_RETRY`, get it at once; after them, the cache treats it as unknown and a command opens the file again. Verdicts the old rule cached as damaged for a slow open are tried again too. Tests plant a hanging open with `open-hang:0` and a 4 s one with `open-slow:0`.
-- `TODO.md` drops the two items, updates the one on text PDFKit leaves out now that M1.10's scanner places every string, and notes that M1.10's fourth-review fixes have had no review of their own. The reports index shows M1.10 landed.
+- `plan/TODO.md` drops the two items, updates the one on text PDFKit leaves out now that M1.10's scanner places every string, and notes that M1.10's fourth-review fixes have had no review of their own. The reports index shows M1.10 landed.
 
 ## Review
 

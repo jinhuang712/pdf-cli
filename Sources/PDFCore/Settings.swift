@@ -1,7 +1,7 @@
 import Darwin
 import Foundation
 
-/// What the user sets with `pdf setup`: how much memory parsing may take (DESIGNS.md → Decision:
+/// What the user sets with `pdf setup`: how much memory parsing may take (plan/decisions/041-the-user-sets-parsing-s-memory-the-tool-the-worker-count.md → Decision:
 /// the user sets parsing's memory, the tool the worker count). It is stored in the agent's own
 /// folder, `settings.json` beside the library, so clearing the cache never loses it, and `Env`
 /// reads it for every process: the CLI, the runner and the workers.
@@ -172,7 +172,7 @@ public enum Settings {
     }
 }
 
-/// How much load the Mac is under, and so how many workers may run (DESIGNS.md → Decision: the
+/// How much load the Mac is under, and so how many workers may run (plan/decisions/041-the-user-sets-parsing-s-memory-the-tool-the-worker-count.md → Decision: the
 /// user sets parsing's memory, the tool the worker count): fewer under memory pressure, heat or
 /// Low Power Mode. It reads macOS's own reports and decides nothing about them.
 public enum Pressure {

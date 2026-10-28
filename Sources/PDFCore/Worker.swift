@@ -408,7 +408,7 @@ enum PageKeys {
 }
 
 /// Why a file could not be opened, in words the agent can act on
-/// (DESIGNS.md → Decision: a loud failure for a file PDFKit cannot open).
+/// (plan/decisions/040-a-loud-failure-for-a-file-pdfkit-cannot-open.md → Decision: a loud failure for a file PDFKit cannot open).
 public enum OpenFailure {
     static let notPDF = "not a PDF"
     public static let locked = "locked by a password"

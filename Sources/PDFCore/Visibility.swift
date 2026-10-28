@@ -54,7 +54,7 @@ struct Color: Equatable {
     }
 }
 
-/// What a reader can see of a page (DESIGNS.md → Decision: hidden text found by ink, with the
+/// What a reader can see of a page (plan/decisions/035-hidden-text-found-by-ink-with-the-drawing-commands-for-what-ink.md → Decision: hidden text found by ink, with the
 /// drawing commands for what ink cannot tell). The page is drawn in color, with its annotations,
 /// and a word with no ink in its box is not drawn, or drawn in the color behind it. The page's
 /// drawing commands add what ink cannot tell: where and when each piece of text is drawn, images

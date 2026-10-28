@@ -1,4 +1,4 @@
-<!-- what-we-build: drafted 2026-10-26 -->
+<!-- what-we-build: drafted 2026-10-29 -->
 # pdf-cli
 
 > A PDF CLI tool that lets you read fast, cheap and accurately.
@@ -19,7 +19,7 @@ The full behavior is in [FEATURES.md](FEATURES.md).
 
 ## Install
 
-Not available yet. The spike is done, and the first usable version is milestone M1 in [ROADMAP.md](ROADMAP.md). The planned install is one Homebrew command, and the command it installs is `pdf`.
+Not available yet. The spike is done, and the first usable version is milestone M1 in [plan/ROADMAP.md](plan/ROADMAP.md). The planned install is one Homebrew command, and the command it installs is `pdf`.
 
 ## Use
 
@@ -36,7 +36,7 @@ The first four work today, built from source, and so does cropping a page or a r
 
 ## Known limits
 
-- Only `pdf add`, `pdf info`, `pdf read`, `pdf search`, `pdf crop`, `pdf pick`, `pdf transcribe`, `pdf reparse`, `pdf dump`, `pdf note`, `pdf ref`, `pdf ls`, `pdf rm`, `pdf doctor`, `pdf clean`, `pdf setup` and `pdf agent-guide` are built so far, from source, and every target in [GOALS.md](GOALS.md) is still unmeasured.
+- Only `pdf add`, `pdf info`, `pdf read`, `pdf search`, `pdf crop`, `pdf pick`, `pdf transcribe`, `pdf reparse`, `pdf dump`, `pdf note`, `pdf ref`, `pdf ls`, `pdf rm`, `pdf doctor`, `pdf clean`, `pdf setup` and `pdf agent-guide` are built so far, from source, and every target in [plan/GOALS.md](plan/GOALS.md) is still unmeasured.
 - It supports macOS 11 and newer, and no other platform.
 - The document structure of scanned pages needs macOS 26.
 - Scanned pages in Japanese or Korean need macOS 13.
@@ -49,11 +49,11 @@ The first four work today, built from source, and so does cropping a page or a r
 | [PROPOSAL.md](PROPOSAL.md) | Why did we start this? |
 | [PHILOSOPHY.md](PHILOSOPHY.md) | How does the project see the problem? |
 | [DESIGNS.md](DESIGNS.md) | How is it built, and why that way? |
-| [GOALS.md](GOALS.md) | What do we measure? |
+| [plan/GOALS.md](plan/GOALS.md) | What do we measure? |
 | [FEATURES.md](FEATURES.md) | What does it do, and what will it never do? |
-| [ROADMAP.md](ROADMAP.md) | When, and how far along? |
+| [plan/ROADMAP.md](plan/ROADMAP.md) | When, and how far along? |
 | [CHANGELOG.md](CHANGELOG.md) | What changed in each release? |
-| [TODO.md](TODO.md) | Which small follow-ups have no milestone yet? |
+| [plan/TODO.md](plan/TODO.md) | Which small follow-ups have no milestone yet? |
 | [reports/](reports/README.md) | What did each task's review and measurements find? |
 
 ## License

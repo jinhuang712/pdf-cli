@@ -22,7 +22,7 @@ import Testing
     }
 
     /// The appended highlight reaches the file's facts, with the words under it, while every page
-    /// keeps its key: a read shows it, and parses no page again (GOALS.md → G9).
+    /// keeps its key: a read shows it, and parses no page again (plan/GOALS.md → G9).
     @Test func anAppendedHighlightReachesTheFacts() throws {
         let original = try makeTwoPagePDF()
         let updated = try appendHighlight(to: original)

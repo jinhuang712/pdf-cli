@@ -99,7 +99,7 @@ public struct FileFacts: Codable, Equatable, Sendable {
     ///
     /// Only the walk's result holds them. The cache keeps them per page in a table of their own
     /// (`Store.annotations`), so the facts it hands back have none, and `moreOnPage` is empty too
-    /// (DESIGNS.md → Decision: annotations per page, in a table of their own).
+    /// (plan/decisions/044-annotations-per-page-in-a-table-of-their-own.md → Decision: annotations per page, in a table of their own).
     public var annotations: [Annotation] = []
     public var moreAnnotations = 0
     public var moreOnPage: [Int: Int] = [:]

@@ -3,7 +3,7 @@ import Testing
 
 @testable import pdf
 
-/// `--dry-run` on `pick`, `transcribe` and `rm` (ROADMAP.md → M2.18): it says what the real run
+/// `--dry-run` on `pick`, `transcribe` and `rm` (plan/ROADMAP.md → M2.18): it says what the real run
 /// would do, with its keys and its exit code, and changes nothing in the cache or the agent's
 /// folder. The tests run the built `pdf` with a fresh home, as an agent would.
 @Suite(.serialized) struct DryRunTests {

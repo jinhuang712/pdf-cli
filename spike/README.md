@@ -4,7 +4,7 @@ Measured 2026-10-14 on an M3 MacBook (24 GB, macOS 26.4), on the 11 PDFs in `tes
 
 ## Answers
 
-| Question (ROADMAP.md → M0) | Answer | Report |
+| Question (plan/ROADMAP.md → M0) | Answer | Report |
 |---|---|---|
 | PDFKit or PDFium as the main text source? | Both are fast (PDFKit about 9 ms per page with process start, PDFium about 2 ms). PDFKit keeps the columns in order best, but on 1 of 10 papers it runs words together on every page, and its character boxes cannot recover the spaces. The cause is the paper's fonts, which declare character 32 twice as wide as a normal space. Taking PDFKit's characters and Apple OCR's word breaks finds 97.6% of the spaces, against 71.2% for PDFKit alone and 97.5% for PDFium. Apple's recognizer alone finds 98.9% but misreads small marks, such as superscript 1 as `'`. PDFium keeps the spaces and marks line-end hyphens. | `M0.2-text.md`, `M0.2b-spaces.md`, `M0.3-reading-order.md` |
 | Is Apple's document recognizer's reading order usable on born-digital pages? | No, as the main source: it mixed the two columns badly on 2 of 36 pages and takes about 0.7 s per page. It stays useful for scanned pages and as the fallback that repairs missing spaces. | `M0.3-reading-order.md` |

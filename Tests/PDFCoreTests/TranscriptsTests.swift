@@ -4,7 +4,7 @@ import Testing
 
 @testable import PDFCore
 
-/// The LaTeX the agent reads from an equation's crop, kept so later reads show it (ROADMAP.md →
+/// The LaTeX the agent reads from an equation's crop, kept so later reads show it (plan/ROADMAP.md →
 /// M2.13).
 @Suite struct TranscriptsTests {
     /// What the agent gives is kept as written, without what could hide or reorder it, and

@@ -3,7 +3,7 @@ import Foundation
 import PDFCore
 
 /// Prints a PDF's text in reading order, every block with its page and position (FEATURES.md →
-/// F3), within a token budget (DESIGNS.md → Decision: a 5,000-token default budget).
+/// F3), within a token budget (plan/decisions/030-a-5-000-token-default-budget-over-no-default.md → Decision: a 5,000-token default budget).
 struct ReadCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "read",
@@ -80,7 +80,7 @@ struct ReadCommand: ParsableCommand {
     var refs: RefsOption = .off
     @Flag(help: "Print JSON.") var json = false
 
-    /// What `--show` asks for (DESIGNS.md → Decision: `--show` shows what was set aside, M2.17).
+    /// What `--show` asks for (plan/decisions/039-read-reads-note-and-ref-look-up-show-shows-what-was-set-aside.md, M2.17).
     static let shownValues = ["raw", "hidden", "headers"]
     /// The values of every `--show`, split at commas; nil when one is not a known value.
     static func shown(_ specs: [String]) -> Set<String>? {

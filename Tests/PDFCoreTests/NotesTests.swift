@@ -3,7 +3,7 @@ import Testing
 
 @testable import PDFCore
 
-/// Footnotes, endnotes, headnotes and margin notes (ROADMAP.md → M2.7).
+/// Footnotes, endnotes, headnotes and margin notes (plan/ROADMAP.md → M2.7).
 @Suite struct NotesTests {
     /// A one-block page element: its text, box and font size, in one line or more.
     struct Item {

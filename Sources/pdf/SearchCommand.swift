@@ -3,7 +3,7 @@ import Foundation
 import PDFCore
 
 /// Finds the pages that hold words or a pattern, in one PDF or across the library (FEATURES.md →
-/// F4), within the token budget (DESIGNS.md → Decision: a 5,000-token default budget).
+/// F4), within the token budget (plan/decisions/030-a-5-000-token-default-budget-over-no-default.md → Decision: a 5,000-token default budget).
 struct SearchCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "search",

@@ -4,7 +4,7 @@ import Testing
 
 @testable import PDFCore
 
-/// `Picks.tally` (ROADMAP.md → M2.24): counts the picks whose block still offers the readings they were
+/// `Picks.tally` (plan/ROADMAP.md → M2.24): counts the picks whose block still offers the readings they were
 /// made for and those whose block does not, by page key, and deletes nothing.
 @Suite struct PickReconcileTests {
     let box = Box(x: 0.1, y: 0.2, width: 0.8, height: 0.05)

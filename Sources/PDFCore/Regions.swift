@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-/// A figure, a table or a numbered equation on a page (FEATURES.md → F3 and F5, ROADMAP.md →
+/// A figure, a table or a numbered equation on a page (FEATURES.md → F3 and F5, plan/ROADMAP.md →
 /// M2.6). `pdf read` shows it as one block in place of the text inside it, which `--show raw` shows,
 /// `pdf info` lists the figures and tables, and `pdf crop --figure 4` crops it.
 public struct Region: Codable, Equatable, Sendable {
@@ -29,7 +29,7 @@ public struct Region: Codable, Equatable, Sendable {
 }
 
 /// Finds figures, tables and numbered equations by rules on a page's lines and drawing
-/// commands, with no model (DESIGNS.md → Decision: Rules on PDFKit's fonts and positions over a
+/// commands, with no model (plan/decisions/009-rules-on-pdfkit-s-fonts-and-positions-over-a-default-layout.md → Decision: Rules on PDFKit's fonts and positions over a
 /// default layout model). The M0 spike's figure finder, whose captions and pairing these follow,
 /// found 54 of 54 figures with their captions on 116 pages of papers.
 ///

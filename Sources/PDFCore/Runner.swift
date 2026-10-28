@@ -1,7 +1,7 @@
 import Darwin
 import Foundation
 
-/// Parses one file in the background, then exits (DESIGNS.md → Decision: a worker process
+/// Parses one file in the background, then exits (plan/decisions/027-a-worker-process-per-job-over-a-background-service.md → Decision: a worker process
 /// per job over a background service).
 ///
 /// A command starts a runner and returns as soon as the pages it needs are cached. The
@@ -31,7 +31,7 @@ public final class Runner: @unchecked Sendable {
         case pages([Int])
     }
 
-    /// What the runner is for (ROADMAP.md → M2.10).
+    /// What the runner is for (plan/ROADMAP.md → M2.10).
     public enum Job: Sendable {
         /// Index the file if needed, and parse every page that has no result.
         case parse
@@ -112,7 +112,7 @@ public final class Runner: @unchecked Sendable {
 
     // MARK: Reparse
 
-    /// Reads pages again and replaces their results (DESIGNS.md → Decision: a reparse reads in
+    /// Reads pages again and replaces their results (plan/decisions/051-a-reparse-keeps-the-page-s-key-and-replaces-results-in-one.md → Decision: a reparse reads in
     /// the pool, keeps the page's key and replaces results in one transaction). It takes a lock of
     /// its own, not the path's or the document's: a runner that parses the rest of the file may
     /// go on, since a result is never missing while it is replaced. It never indexes: a file the
@@ -329,7 +329,7 @@ public final class Runner: @unchecked Sendable {
                 let key = keys[page] ?? PageKeys.missing
                 return needsOCR ? PageKeys.ocr(key) : atRisk ? PageKeys.repaired(key) : key
             }
-            // A PDFKit save, as Preview makes one, can damage the text (DESIGNS.md → Decision: a
+            // A PDFKit save, as Preview makes one, can damage the text (plan/decisions/045-a-file-that-pdfkit-saved-counts-as-a-new-file-with-a-warning.md → Decision: a
             // file that PDFKit saved counts as a new file, with a warning).
             let savedByPDFKit = producer?.contains("Quartz PDFContext") ?? false
             let named = TextCleanup.line(title ?? "")

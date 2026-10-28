@@ -2,7 +2,7 @@ import ArgumentParser
 import Foundation
 import PDFCore
 
-/// The output contract every command keeps (FEATURES.md → F7 and F8; DESIGNS.md → Decision: one
+/// The output contract every command keeps (FEATURES.md → F7 and F8; plan/decisions/038-one-output-contract-for-every-command.md → Decision: one
 /// output contract for every command): `--json`, the exit codes 0, 1, 2, 3 and 64, and one shape
 /// for a failure, `<path>: failed: <reason>` or `{"file": …, "failed": …}`.
 enum Contract {
@@ -79,7 +79,7 @@ enum Contract {
     }
 
     /// Why a dry run cannot say more: it parses nothing, and the cache holds nothing for this
-    /// file version (DESIGNS.md → Decision: a dry run answers from what is kept and never parses).
+    /// file version (plan/decisions/050-a-dry-run-answers-from-what-is-kept-and-never-parses.md → Decision: a dry run answers from what is kept and never parses).
     static func notReadYet(_ path: String, page: Int, _ why: Reader.Uncached) -> String {
         let file = Output.quoted(path)
         switch why {

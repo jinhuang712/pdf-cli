@@ -4,7 +4,7 @@ import PDFCore
 
 /// Removes what no read can use (FEATURES.md → F12). It was `pdf doctor --clean`, which took over
 /// `pdf gc`; M3.7 made it its own command, since a command that only shows should not also delete
-/// (DESIGNS.md → Decision: one command, one job; clean split from doctor).
+/// (plan/decisions/060-one-command-one-job-clean-split-from-doctor.md → Decision: one command, one job; clean split from doctor).
 struct CleanCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "clean",

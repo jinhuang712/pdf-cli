@@ -4,7 +4,7 @@ import Testing
 
 @testable import pdf
 
-/// `pdf doctor`, `pdf setup` and the `pdf gc` stub (ROADMAP.md → M2.11), run as the built `pdf`
+/// `pdf doctor`, `pdf setup` and the `pdf gc` stub (plan/ROADMAP.md → M2.11), run as the built `pdf`
 /// with a fresh home, so the user's real settings and cache are never touched.
 @Suite(.serialized) struct DoctorSetupTests {
     static func pdf(_ arguments: [String], home: URL, stdin: String = "") throws -> OutputContractTests.Run {

@@ -3,7 +3,7 @@ import Testing
 
 @testable import PDFCore
 
-/// Running headers, footers, page numbers and publisher stamps (ROADMAP.md → M2.5).
+/// Running headers, footers, page numbers and publisher stamps (plan/ROADMAP.md → M2.5).
 @Suite struct FurnitureTests {
     /// A page of one-line blocks, each at its box.
     func page(_ blocks: [(String, Box)]) -> PageText {

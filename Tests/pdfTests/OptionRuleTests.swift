@@ -3,7 +3,7 @@ import Testing
 
 @testable import pdf
 
-/// The rules for flags that cannot go together, and the help that states them (ROADMAP.md → M3.7):
+/// The rules for flags that cannot go together, and the help that states them (plan/ROADMAP.md → M3.7):
 /// each ends 64 with a line naming the flags, and each command's own help has an Examples section.
 @Suite struct OptionRuleTests {
     static func run(_ arguments: [String]) throws -> (status: Int32, output: String, errors: String) {

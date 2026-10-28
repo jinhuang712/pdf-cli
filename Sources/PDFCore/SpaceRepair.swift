@@ -4,11 +4,11 @@ import NaturalLanguage
 import PDFKit
 import Vision
 
-/// The space repair for a file at risk (DESIGNS.md → Decision: Apple OCR word breaks over
+/// The space repair for a file at risk (plan/decisions/005-apple-ocr-word-breaks-over-pdfium-for-fonts-that-hide-spaces.md → Decision: Apple OCR word breaks over
 /// PDFium for fonts that hide spaces). PDFKit's characters stay; Apple OCR reads the rendered
 /// page, and only its word breaks are taken, where the two texts agree on the characters
 /// around them. OCR here is Vision's text recognizer, which gives one answer for one image
-/// (DESIGNS.md → Decision: the space repair reads with the text recognizer).
+/// (plan/decisions/056-the-space-repair-reads-with-the-text-recognizer.md → Decision: the space repair reads with the text recognizer).
 enum SpaceRepair {
     /// Where OCR breaks words that PDFKit runs together, as UTF-16 offsets in `page.string`
     /// before which a space belongs.
