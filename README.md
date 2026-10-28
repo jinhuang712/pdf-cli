@@ -1,61 +1,138 @@
 <!-- what-we-build: drafted 2026-10-29 -->
-# pdf-cli
+<div align="center">
 
-> A PDF CLI tool that lets you read fast, cheap and accurately.
+<img src="assets/hero.png" alt="pdf-cli: read PDFs fast, cheap and accurately, for coding agents on your Mac" width="100%">
 
-pdf-cli lets coding agents such as Claude Code read PDFs on your Mac. It parses each PDF once, hands the agent only the parts it asks for, and flags every page it could not read well instead of guessing.
+<br>
 
-## What it does
+[![License: MIT](https://img.shields.io/badge/license-MIT-2563eb?style=flat-square)](LICENSE)
+![macOS 11+](https://img.shields.io/badge/macOS-11%2B-111827?style=flat-square&logo=apple&logoColor=white)
+![Swift](https://img.shields.io/badge/Swift-F05138?style=flat-square&logo=swift&logoColor=white)
+![Runs on your Mac](https://img.shields.io/badge/runs-on%20your%20Mac-0f766e?style=flat-square)
+![Built for AI agents](https://img.shields.io/badge/built%20for-AI%20agents-a855f7?style=flat-square)
+![Status: pre-release](https://img.shields.io/badge/status-pre--release-f59e0b?style=flat-square)
 
-- It parses each PDF once and caches it, so later reads come straight from the cache.
-- It gives the agent a map first: the outline, each section's size and the figure list. Then it serves pages, sections, footnotes and references on request.
-- It searches one PDF or your whole library, by keyword.
-- It crops a figure, a table or any region as an image, for the agent's own image understanding.
-- It flags every page it could not read well, with a command to read that page as an image instead.
-- It drops nothing silently. Hidden text, doubtful text, comments and attachments each leave a marker in place, with the command that shows them.
-- It runs entirely on your Mac, with Apple's PDF, OCR and Neural Engine frameworks. Nothing is uploaded.
+**English** · [简体中文](README.zh-CN.md)
 
-The full behavior is in [FEATURES.md](FEATURES.md).
+</div>
 
-## Install
+## ✨ What it is
 
-Not available yet. The spike is done, and the first usable version is milestone M1 in [plan/ROADMAP.md](plan/ROADMAP.md). The planned install is one Homebrew command, and the command it installs is `pdf`.
+`pdf` lets a coding agent such as Claude Code read PDFs on your Mac. It parses each file once, keeps the result in a local cache, and hands the agent only the part it asks for: a map first, then a section, a page, a footnote, a search hit or a crop of one table.
 
-## Use
+- 🗺️ **A map before the text.** `pdf info` gives the outline, each section's size in tokens, the figures and tables, and the pages it could not read well.
+- ✂️ **Only what was asked for.** Read a section or a page range; output stops at a budget and names the command that goes on.
+- 🔎 **Search one PDF, or all of them.** Paragraphs that hold every word, best first, each with its page and position.
+- 🖼️ **Tables, equations and figures go to the agent as crops.** The tool converts nothing it cannot read for certain, because a rebuilt cell can be wrong and still look right. The agent's own model reads the image, and what it writes back is kept, so it is read once.
+- 🚩 **It says when it is unsure.** Every page or passage it could not read well is flagged, with the command that shows the page as an image.
+- 🙈 **Nothing is dropped without a trace.** Hidden text, running headers, doubtful text, comments and attachments leave a marker in place, and the summary line counts them with the flag that shows them.
+- 🔒 **Local.** Apple's PDFKit and OCR do the reading. No network, no model download, nothing leaves your Mac.
 
-The first four work today, built from source, and so does cropping a page or a region of it with `pdf crop paper.pdf --page 7 --bbox 0.1,0.4,0.8,0.3`. So does reading footnotes and endnotes, with `pdf note paper.pdf 7`, and the references a paper cites, with `pdf ref paper.pdf 12`. `pdf agent-guide --install claude-code` teaches Claude Code the tool, as a skill.
+> [!NOTE]
+> **Pre-release.** There is no packaged release yet. Build it from source (below); every goal in [plan/GOALS.md](plan/GOALS.md) is still being measured.
 
-| When the agent wants to | It runs |
+## 👀 A taste
+
+Output trimmed. The paper is *Attention Is All You Need*.
+
+```console
+$ pdf info paper.pdf
+Attention Is All You Need · 2024 · arXiv:1706.03762v7
+15 pages · 1 column · text layer on 15 pages · ~10.2k tokens
+…
+Section                                 pages      tokens
+  Model Architecture                    p.2–6      2.6k
+    Attention                           p.3–5      1.2k
+  Why Self-Attention                    p.6–7      806
+  Training                              p.7–8      741
+
+$ pdf read paper.pdf --section "Model Architecture" --budget 250
+paper.pdf · 15 pages · read p.2–3 · flagged: none · running headers and footers: 1 set aside (show: --show headers)
+
+## p.2
+
+¶11 3 Model Architecture
+
+¶12 Most competitive neural sequence transduction models have an encoder-decoder structure …
+
+$ pdf crop paper.pdf --page 8 --table 2
+…/p8-0.17,0.09,0.66,0.22.png  (~1.4k image tokens, 1568×676 px)
+p.8 · caption: The Transformer achieves better BLEU scores than previous state-of-the-art models …
+```
+
+## 📊 Does it save anything?
+
+A small first run, so read it as a trend: Claude Haiku 5.5 answered the same questions twice, once with `pdf` and once with Claude Code's built-in PDF reading. Every answer was right either way. Cost with `pdf`, as a share of the cost of reading directly:
+
+| Questions | Share |
 |---|---|
-| Get a first look at a paper | `pdf info paper.pdf` |
-| Read one section | `pdf read paper.pdf --section Experiments` |
-| Find a passage across every PDF | `pdf search "dropout ablation"` |
-| Look at a chart | `pdf crop paper.pdf --figure 4` |
-| Read a footnote, or a cited reference | `pdf note paper.pdf 7` or `pdf ref paper.pdf 12` |
+| Look-ups (a value, a title, a footnote) in a 492-page standard | **about 16%** |
+| Cells and counts in that standard's big tables | about 55% |
+| Mixed questions on a 15-page paper | about 51% |
+
+The saving grows with the length of the file, and big tables are where it shrinks, because a table is read from its image. One run per question, one model, two files. Details and the findings in [reports/M3.6-first-question-runs.md](reports/M3.6-first-question-runs.md).
+
+## ⌨️ Commands
+
+| To do this | Run |
+|---|---|
+| Add a file to the library, and parse it | `pdf add paper.pdf` |
+| A first look: outline, sizes, figures, flags | `pdf info paper.pdf` |
+| Read pages or a section | `pdf read paper.pdf --page 4-6` · `--section Method` |
+| Search one file, or every file read before | `pdf search paper.pdf dropout ablation` · `pdf search dropout ablation` |
+| Look at a figure, a table, an equation or a region | `pdf crop paper.pdf --figure 4` · `--table 2` · `--bbox 0.1,0.4,0.8,0.3` |
+| Read a footnote, or a cited reference | `pdf note paper.pdf 7` · `pdf ref paper.pdf 12` |
+| Keep what the agent read from an image | `pdf transcribe paper.pdf --page 8 --table 2` |
+| Choose between two readings of a doubtful word | `pdf pick paper.pdf p2.7 b` |
 | Read a page again, as a scan with OCR | `pdf reparse scan.pdf --page 3 --step ocr` |
+| Write the text, figures, notes and references to files | `pdf dump paper.pdf` |
+| List or remove what the library holds | `pdf ls` · `pdf rm paper.pdf` |
+| Check the setup, free space, set parsing's memory | `pdf doctor` · `pdf clean` · `pdf setup` |
+| Teach an agent the tool | `pdf agent-guide --install claude-code` |
 
-## Known limits
+Every command has `--help` and takes `--json`. Exit codes: 0 done, 2 some pages flagged, 3 the file failed, 1 could not run, 64 used wrongly. What each command does, and what it will not do: [FEATURES.md](FEATURES.md).
 
-- Only `pdf add`, `pdf info`, `pdf read`, `pdf search`, `pdf crop`, `pdf pick`, `pdf transcribe`, `pdf reparse`, `pdf dump`, `pdf note`, `pdf ref`, `pdf ls`, `pdf rm`, `pdf doctor`, `pdf clean`, `pdf setup` and `pdf agent-guide` are built so far, from source, and every target in [plan/GOALS.md](plan/GOALS.md) is still unmeasured.
-- It supports macOS 11 and newer, and no other platform.
-- The document structure of scanned pages needs macOS 26.
-- Scanned pages in Japanese or Korean need macOS 13.
-- It returns text, crops and failure reports. The agent does the reasoning, so pdf-cli answers no questions by itself.
+## 📦 Install
 
-## Documents
+You need macOS 11 or later and a Swift toolchain (Xcode or the command line tools).
 
-| Document | Answers |
+```bash
+git clone https://github.com/jinhuang712/pdf-cli.git
+cd pdf-cli
+swift build -c release
+ln -s "$PWD/.build/release/pdf" ~/.local/bin/pdf    # or put it anywhere on your PATH
+```
+
+### 🤖 For Claude Code: install the skill
+
+```bash
+pdf agent-guide --install claude-code
+```
+
+It writes a short guide (under 2,000 tokens) into Claude Code's skills folder, so the agent knows which command to run, and what the flags in the output mean.
+
+## 💡 Good to know
+
+- **macOS only.** It rests on Apple's PDF, OCR and Neural Engine frameworks, which is also why nothing is uploaded.
+- **Scans.** OCR reads English, Chinese, French, German, Italian, Portuguese and Spanish from macOS 11; the document structure of a scanned page needs macOS 26, and Japanese or Korean scans need macOS 13.
+- **It does not reason.** It returns text, crops and failure reports; the agent answers the questions.
+- **Big tables are crops.** A question that needs many rows of a long table takes the agent several images. See [FEATURES.md](FEATURES.md), under Crop.
+- Tested on macOS 27 on Apple silicon.
+
+## 📚 Documents
+
+| | |
 |---|---|
 | [PROPOSAL.md](PROPOSAL.md) | Why did we start this? |
 | [PHILOSOPHY.md](PHILOSOPHY.md) | How does the project see the problem? |
-| [DESIGNS.md](DESIGNS.md) | How is it built, and why that way? |
-| [plan/GOALS.md](plan/GOALS.md) | What do we measure? |
-| [FEATURES.md](FEATURES.md) | What does it do, and what will it never do? |
-| [plan/ROADMAP.md](plan/ROADMAP.md) | When, and how far along? |
-| [CHANGELOG.md](CHANGELOG.md) | What changed in each release? |
-| [plan/TODO.md](plan/TODO.md) | Which small follow-ups have no milestone yet? |
+| [DESIGNS.md](DESIGNS.md) | How is it built, and why that way? The decisions are in [plan/decisions/](plan/decisions/) |
+| [FEATURES.md](FEATURES.md) | What does each command do, and what will it never do? |
+| [plan/GOALS.md](plan/GOALS.md) | What do we measure? ([plan/MEASURE.md](plan/MEASURE.md): how the runs are designed) |
+| [plan/ROADMAP.md](plan/ROADMAP.md) | When, and how far along? ([plan/TODO.md](plan/TODO.md): the small follow-ups) |
 | [reports/](reports/README.md) | What did each task's review and measurements find? |
+| [CHANGELOG.md](CHANGELOG.md) | What changed in each release? |
+| [CLAUDE.md](CLAUDE.md) | How to work on it, and the direction the project owner has set |
 
-## License
+## 📄 License
 
-MIT. See [LICENSE](LICENSE).
+[MIT](LICENSE)
