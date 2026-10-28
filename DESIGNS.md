@@ -175,6 +175,7 @@ Each decision is a file in [plan/decisions/](plan/decisions), with the options i
 | 059 | [a table's parts are linked at read time, only on a continued caption and the same place on both pages](plan/decisions/059-a-table-s-parts-are-linked-at-read-time-only-on-a-continued.md) | 2026-10-26 |
 | 060 | [one command, one job; clean split from doctor](plan/decisions/060-one-command-one-job-clean-split-from-doctor.md) | 2026-10-26 |
 | 061 | [ink that other strings draw does not make a word with no ink of its own visible](plan/decisions/061-ink-that-other-strings-draw-does-not-make-a-word-with-no-ink-of.md) | 2026-10-26 |
+| 062 | [macOS 12 as the oldest supported version](plan/decisions/062-macos-12-as-the-oldest-supported-version.md) | 2026-10-29 |
 
 ## Open questions
 

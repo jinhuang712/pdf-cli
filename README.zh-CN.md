@@ -6,11 +6,11 @@
 <br>
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-2563eb?style=flat-square)](LICENSE)
-![macOS 11+](https://img.shields.io/badge/macOS-11%2B-111827?style=flat-square&logo=apple&logoColor=white)
+![macOS 12+](https://img.shields.io/badge/macOS-12%2B-111827?style=flat-square&logo=apple&logoColor=white)
 ![Swift](https://img.shields.io/badge/Swift-F05138?style=flat-square&logo=swift&logoColor=white)
 ![本机运行](https://img.shields.io/badge/%E8%BF%90%E8%A1%8C-%E6%9C%AC%E6%9C%BA-0f766e?style=flat-square)
 ![给 AI agent 用](https://img.shields.io/badge/%E7%BB%99-AI%20agent%20%E7%94%A8-a855f7?style=flat-square)
-![状态：预发布](https://img.shields.io/badge/%E7%8A%B6%E6%80%81-%E9%A2%84%E5%8F%91%E5%B8%83-f59e0b?style=flat-square)
+[![Release](https://img.shields.io/github/v/release/jinhuang712/pdf-cli?style=flat-square&color=f59e0b)](https://github.com/jinhuang712/pdf-cli/releases)
 
 [English](README.md) · **简体中文**
 
@@ -29,7 +29,7 @@
 - 🔒 **全在本机。** 读取靠 Apple 的 PDFKit 和 OCR。不联网、不下载模型，什么都不会离开你的 Mac。
 
 > [!NOTE]
-> **预发布。** 还没有打包的发布版，请按下面的方法从源码构建。[plan/GOALS.md](plan/GOALS.md) 里的各项目标仍在测量中。
+> **早期版本（0.1.0）。** 在测试过的文件上能用，[plan/GOALS.md](plan/GOALS.md) 里的各项目标仍在测量中。
 
 ## 👀 看个例子
 
@@ -94,7 +94,17 @@ p.8 · caption: The Transformer achieves better BLEU scores than previous state-
 
 ## 📦 安装
 
-需要 macOS 11 或更新，以及 Swift 工具链（Xcode 或命令行工具）。
+需要 macOS 12 或更新。
+
+**一行命令：** 下载预编译的二进制（Apple 芯片和 Intel 合在一个文件里），校验 SHA-256，把 `pdf` 放进 `~/.local/bin`。再运行一次就是更新。
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jinhuang712/pdf-cli/main/install.sh | bash
+```
+
+想手动装，压缩包和校验文件在 [releases 页面](https://github.com/jinhuang712/pdf-cli/releases)。二进制只做了临时签名，没有公证：如果用浏览器下载后 macOS 拒绝打开，运行 `xattr -d com.apple.quarantine pdf`。Intel 那一半没有在 Intel Mac 上跑过。
+
+**或者从源码构建**（需要 Swift 工具链，来自 Xcode 或命令行工具）：
 
 ```bash
 git clone https://github.com/jinhuang712/pdf-cli.git
@@ -103,18 +113,23 @@ swift build -c release
 ln -s "$PWD/.build/release/pdf" ~/.local/bin/pdf    # 或放到 PATH 里的任意位置
 ```
 
-### 🤖 给 Claude Code：安装 skill
+### 🤖 给你的 agent：插件
+
+插件是一份很短的指南（不到 2,000 token），告诉 agent 该跑哪个命令，以及输出里各种标记的含义。下面每一行都会装好插件，`pdf` 还没装的话一并装上；再运行一次就是更新。
 
 ```bash
-pdf agent-guide --install claude-code
+# Claude Code
+curl -fsSL https://raw.githubusercontent.com/jinhuang712/pdf-cli/main/install-claude.sh | bash
+# Codex
+curl -fsSL https://raw.githubusercontent.com/jinhuang712/pdf-cli/main/install-codex.sh | bash
 ```
 
-它会把一份很短的指南（不到 2,000 token）写进 Claude Code 的 skills 目录，让 agent 知道该跑哪个命令，以及输出里各种标记的含义。
+新开一个会话后，skill 显示为 `pdf-cli:pdf-cli`。如果 `pdf` 已经装好，也可以用 `pdf agent-guide --install claude-code`，把同一份指南写进 Claude Code 的 skills 目录。
 
 ## 💡 需要知道
 
 - **只支持 macOS。** 它建立在 Apple 的 PDF、OCR 和神经网络引擎框架上，这也是它不用上传任何东西的原因。
-- **扫描件。** OCR 从 macOS 11 起能读英、中、法、德、意、葡、西语；扫描页的文档结构识别需要 macOS 26，日语和韩语扫描件需要 macOS 13。
+- **扫描件。** OCR 从 macOS 12 起能读英、中、法、德、意、葡、西语；扫描页的文档结构识别需要 macOS 26，日语和韩语扫描件需要 macOS 13。
 - **它不做推理。** 它只返回文字、截图和失败报告，回答问题的是 agent。
 - **大表格是截图。** 需要看长表很多行的问题，agent 要看好几张图。见 [FEATURES.md](FEATURES.md) 的 Crop 一节。
 - 在 Apple 芯片的 macOS 27 上测试过。

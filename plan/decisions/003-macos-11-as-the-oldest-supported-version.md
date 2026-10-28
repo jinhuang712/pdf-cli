@@ -1,6 +1,6 @@
 # 003. macOS 11 as the oldest supported version
 
-Decided: 2026-10-15    Status: current
+Decided: 2026-10-15    Status: superseded by [062](062-macos-12-as-the-oldest-supported-version.md)
 
 The tool supports macOS 11 and newer, on Apple Silicon and Intel. macOS 11 is the oldest version that ships every engine the base tool needs. A feature that needs a newer macOS checks the version when it runs and turns off below it, and `pdf doctor` names what an upgrade would unlock.
 

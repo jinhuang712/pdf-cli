@@ -6,11 +6,11 @@
 <br>
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-2563eb?style=flat-square)](LICENSE)
-![macOS 11+](https://img.shields.io/badge/macOS-11%2B-111827?style=flat-square&logo=apple&logoColor=white)
+![macOS 12+](https://img.shields.io/badge/macOS-12%2B-111827?style=flat-square&logo=apple&logoColor=white)
 ![Swift](https://img.shields.io/badge/Swift-F05138?style=flat-square&logo=swift&logoColor=white)
 ![Runs on your Mac](https://img.shields.io/badge/runs-on%20your%20Mac-0f766e?style=flat-square)
 ![Built for AI agents](https://img.shields.io/badge/built%20for-AI%20agents-a855f7?style=flat-square)
-![Status: pre-release](https://img.shields.io/badge/status-pre--release-f59e0b?style=flat-square)
+[![Release](https://img.shields.io/github/v/release/jinhuang712/pdf-cli?style=flat-square&color=f59e0b)](https://github.com/jinhuang712/pdf-cli/releases)
 
 **English** · [简体中文](README.zh-CN.md)
 
@@ -29,7 +29,7 @@
 - 🔒 **Local.** Apple's PDFKit and OCR do the reading. No network, no model download, nothing leaves your Mac.
 
 > [!NOTE]
-> **Pre-release.** There is no packaged release yet. Build it from source (below); every goal in [plan/GOALS.md](plan/GOALS.md) is still being measured.
+> **Early release (0.1.0).** It works on the files it was tested on, and every goal in [plan/GOALS.md](plan/GOALS.md) is still being measured.
 
 ## 👀 A taste
 
@@ -94,7 +94,17 @@ Every command has `--help` and takes `--json`. Exit codes: 0 done, 2 some pages 
 
 ## 📦 Install
 
-You need macOS 11 or later and a Swift toolchain (Xcode or the command line tools).
+You need macOS 12 or later.
+
+**One line:** it downloads the prebuilt binary (Apple silicon and Intel in one file), checks its SHA-256 and puts `pdf` in `~/.local/bin`. Run it again to update.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jinhuang712/pdf-cli/main/install.sh | bash
+```
+
+If you would rather do it by hand, the archive and its checksum are on the [releases page](https://github.com/jinhuang712/pdf-cli/releases). The binary is signed ad hoc and is not notarized: if you download it with a browser and macOS refuses to open it, run `xattr -d com.apple.quarantine pdf`. The Intel half has not been run on an Intel Mac.
+
+**Or build it from source** (needs a Swift toolchain, from Xcode or the command line tools):
 
 ```bash
 git clone https://github.com/jinhuang712/pdf-cli.git
@@ -103,18 +113,23 @@ swift build -c release
 ln -s "$PWD/.build/release/pdf" ~/.local/bin/pdf    # or put it anywhere on your PATH
 ```
 
-### 🤖 For Claude Code: install the skill
+### 🤖 For your agent: the plugin
+
+The plugin is a short guide (under 2,000 tokens) that tells the agent which command to run and what the flags in the output mean. Each line installs the plugin, and `pdf` too if it is not there yet; run it again to update.
 
 ```bash
-pdf agent-guide --install claude-code
+# Claude Code
+curl -fsSL https://raw.githubusercontent.com/jinhuang712/pdf-cli/main/install-claude.sh | bash
+# Codex
+curl -fsSL https://raw.githubusercontent.com/jinhuang712/pdf-cli/main/install-codex.sh | bash
 ```
 
-It writes a short guide (under 2,000 tokens) into Claude Code's skills folder, so the agent knows which command to run, and what the flags in the output mean.
+In a new session the skill shows as `pdf-cli:pdf-cli`. Or, with `pdf` already installed, `pdf agent-guide --install claude-code` writes the same guide into Claude Code's skills folder.
 
 ## 💡 Good to know
 
 - **macOS only.** It rests on Apple's PDF, OCR and Neural Engine frameworks, which is also why nothing is uploaded.
-- **Scans.** OCR reads English, Chinese, French, German, Italian, Portuguese and Spanish from macOS 11; the document structure of a scanned page needs macOS 26, and Japanese or Korean scans need macOS 13.
+- **Scans.** OCR reads English, Chinese, French, German, Italian, Portuguese and Spanish from macOS 12; the document structure of a scanned page needs macOS 26, and Japanese or Korean scans need macOS 13.
 - **It does not reason.** It returns text, crops and failure reports; the agent answers the questions.
 - **Big tables are crops.** A question that needs many rows of a long table takes the agent several images. See [FEATURES.md](FEATURES.md), under Crop.
 - Tested on macOS 27 on Apple silicon.

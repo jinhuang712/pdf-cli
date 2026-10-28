@@ -1,7 +1,7 @@
 import Foundation
 
 extension NSLock {
-    /// `NSLock.withLock` needs macOS 14, and the tool supports macOS 11.
+    /// `NSLock.withLock` needs macOS 14, and the tool supports macOS 12.
     func locked<T>(_ body: () throws -> T) rethrows -> T {
         lock()
         defer { unlock() }

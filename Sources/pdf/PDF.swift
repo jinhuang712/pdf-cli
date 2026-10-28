@@ -34,7 +34,7 @@ struct PDF: AsyncParsableCommand {
 
             Run pdf <command> --help for a command's options and examples.
             """,
-        version: "0.0.0-spike",
+        version: "0.1.0",
         subcommands: [
             AddCommand.self, ReparseCommand.self, InfoCommand.self, ReadCommand.self, NoteCommand.self, RefCommand.self, SearchCommand.self,
             CropCommand.self, DumpCommand.self, PickCommand.self, TranscribeCommand.self,

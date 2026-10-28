@@ -125,7 +125,7 @@ Coding agents such as Claude Code and Codex, and the people who use them to read
 
 ## Approach
 
-- **Platform:** macOS 11 and newer. A few features need a newer version, such as the document structure of scanned pages, which needs macOS 26.
+- **Platform:** macOS 12 and newer. A few features need a newer version, such as the document structure of scanned pages, which needs macOS 26.
 - **Language:** Swift, confirmed by the M0 spike.
 - **Parsing and rendering:** Apple's PDFKit and Core Graphics. PDFium cross-checks them in tests.
 - **OCR and document structure:** Apple's Vision framework.
