@@ -17,6 +17,8 @@
 #   PDF_CLI_BIN_DIR      where `pdf` goes (default ~/.local/bin)
 set -euo pipefail
 
+tmp=""
+
 main() {
   local repo="${PDF_CLI_REPO:-https://github.com/jinhuang712/pdf-cli.git}"
   local ref="${PDF_CLI_REF:-}"
@@ -64,9 +66,8 @@ install_release() {
   [ -n "$version" ] || { warn "no release was found"; return 1; }
   local name="pdf-$version-macos-universal"
   local base="https://github.com/$repo_path/releases/download/v$version"
-  local tmp
   tmp="$(mktemp -d)"
-  trap 'rm -rf "$tmp"' RETURN
+  trap 'rm -rf "${tmp:-}"' EXIT
   say "downloading pdf $version"
   curl -fsSL "$base/$name.tar.gz" -o "$tmp/$name.tar.gz" || { warn "no binary for $version"; return 1; }
   curl -fsSL "$base/$name.tar.gz.sha256" -o "$tmp/$name.tar.gz.sha256" || { warn "no checksum for $version"; return 1; }
