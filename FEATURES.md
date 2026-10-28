@@ -176,12 +176,12 @@ The rest of the page reaches the text too, at its position:
 | Comments and sticky notes | `[comment · Reviewer 2] Please cite the 2019 baseline.`, with the author when the file names one; `[reply · …]` for a reply, `[note] …` for a note typed on the page |
 | Highlights | `[highlight] the highlighted words`, with the comment attached to it, if any, as `· comment: …`; `[underline]`, `[squiggly]` and `[strikeout]` alike |
 | Filled-in form fields | `[field: Name = …]` |
-| Links | `[here 0 ` in Markdown, and `here <https://…>` in plain text; `[here](#p.12)` for a page of the file |
+| Links | `[here](https://…)` in Markdown, and `here <https://…>` in plain text; `[here](#p.12)` for a page of the file |
 | An annotation the file hides | A hidden-text marker, `an annotation the file hides` (F9) |
 
 They come from the file's facts, read for each version of the file, not from its pages' parse: a file that only gains highlights shows them without a page read again (plan/GOALS.md → G9).
 
-`--notes` and `--refs`, which choose where the cited notes and references show, stay. (`--show raw,hidden,headers` replaced `--raw`, `--include-hidden` and `--headers` in M2.17, and `pdf note` and `pdf ref` replaced `--footnote` and `--ref` in M2.16; the old flags are hidden and end 64 with a pointer. plan/decisions/039-read-reads-note-and-ref-look-up-show-shows-what-was-set-aside.md → Decision: `read` reads, `note` and `ref` look up, `--show` shows what was set aside, `doctor` cleans".)
+`--notes` and `--refs`, which choose where the cited notes and references show, stay. (`--show raw,hidden,headers` replaced `--raw`, `--include-hidden` and `--headers` in M2.17, and `pdf note` and `pdf ref` replaced `--footnote` and `--ref` in M2.16; the old flags are hidden and end 64 with a pointer. plan/decisions/039-read-reads-note-and-ref-look-up-show-shows-what-was-set-aside.md → "Decision: `read` reads, `note` and `ref` look up, `--show` shows what was set aside, `doctor` cleans".)
 
 Settings: none.
 
