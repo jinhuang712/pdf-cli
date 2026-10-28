@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="t">
+  <title id="t">pdf-cli</title>
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1b3a"/>
+      <stop offset="1" stop-color="#0f766e"/>
+    </linearGradient>
+    <linearGradient id="mark" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#5eead4"/>
+      <stop offset="1" stop-color="#2dd4bf"/>
+    </linearGradient>
+    <filter id="lift" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="115" fill="url(#tile)"/>
+  <rect x="3" y="3" width="506" height="506" rx="112" fill="none" stroke="#5eead4" stroke-opacity="0.3" stroke-width="3"/>
+
+  <!-- the page, with its corner turned down -->
+  <g filter="url(#lift)">
+    <path d="M136 120a24 24 0 0 1 24-24H312L376 160V392a24 24 0 0 1-24 24H160a24 24 0 0 1-24-24Z" fill="#ffffff"/>
+    <path d="M312 96V136a24 24 0 0 0 24 24H376Z" fill="#cbd5e1"/>
+  </g>
+
+  <!-- lines of text; two of them are the part that was asked for -->
+  <g fill="#cbd5e1">
+    <rect x="168" y="188" width="136" height="14" rx="7"/>
+    <rect x="168" y="216" width="176" height="14" rx="7"/>
+    <rect x="168" y="352" width="160" height="14" rx="7"/>
+    <rect x="168" y="380" width="104" height="14" rx="7"/>
+  </g>
+  <rect x="168" y="268" width="176" height="16" rx="8" fill="url(#mark)"/>
+  <rect x="168" y="298" width="132" height="16" rx="8" fill="url(#mark)"/>
+
+  <!-- crop marks around it -->
+  <g fill="none" stroke="#f59e0b" stroke-width="10" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M152 286V252H186"/>
+    <path d="M358 330V362H324"/>
+  </g>
+</svg>

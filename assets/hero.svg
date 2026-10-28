@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="400" viewBox="0 0 1200 400" role="img" aria-labelledby="t d">
+  <title id="t">pdf-cli</title>
+  <desc id="d">pdf-cli: read PDFs cheaply and accurately, from the command line. A page with the part you asked for marked, beside a terminal that maps a paper, reads one section and crops a table.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1b3a"/>
+      <stop offset="0.6" stop-color="#0c4a6e"/>
+      <stop offset="1" stop-color="#0f766e"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.15" cy="0.3" r="0.6">
+      <stop offset="0" stop-color="#5eead4" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#5eead4" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="mark" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#5eead4"/>
+      <stop offset="1" stop-color="#2dd4bf"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#000" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="400" rx="24" fill="url(#bg)"/>
+  <rect width="1200" height="400" rx="24" fill="url(#glow)"/>
+
+  <!-- the page: only the marked lines are read -->
+  <g transform="translate(78 26) scale(0.56)" filter="url(#shadow)">
+    <path d="M0 24a24 24 0 0 1 24-24H176L240 64V296a24 24 0 0 1-24 24H24a24 24 0 0 1-24-24Z" fill="#ffffff"/>
+    <path d="M176 0V40a24 24 0 0 0 24 24H240Z" fill="#cbd5e1"/>
+    <g fill="#cbd5e1">
+      <rect x="32" y="92" width="136" height="14" rx="7"/>
+      <rect x="32" y="120" width="176" height="14" rx="7"/>
+      <rect x="32" y="256" width="160" height="14" rx="7"/>
+      <rect x="32" y="284" width="104" height="14" rx="7"/>
+    </g>
+    <rect x="32" y="172" width="176" height="16" rx="8" fill="url(#mark)"/>
+    <rect x="32" y="202" width="132" height="16" rx="8" fill="url(#mark)"/>
+    <g fill="none" stroke="#f59e0b" stroke-width="10" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M16 190V156H50"/>
+      <path d="M222 234V266H188"/>
+    </g>
+  </g>
+
+  <!-- title -->
+  <text x="70" y="290" font-family="-apple-system, 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif" font-size="84" font-weight="800" fill="#ffffff" letter-spacing="-2">pdf-cli</text>
+  <text x="72" y="330" font-family="-apple-system, 'SF Pro Text', 'Helvetica Neue', Arial, sans-serif" font-size="22" fill="#99f6e4">Read PDFs fast, cheap and accurately.</text>
+  <text x="72" y="362" font-family="-apple-system, 'SF Pro Text', 'Helvetica Neue', Arial, sans-serif" font-size="17" fill="#bae6fd">For coding agents · on your Mac · nothing uploaded</text>
+
+  <!-- terminal -->
+  <g transform="translate(470 52)" filter="url(#shadow)">
+    <rect width="660" height="296" rx="16" fill="#0f172a"/>
+    <path d="M0 16A16 16 0 0 1 16 0h628a16 16 0 0 1 16 16v26H0z" fill="#1e293b"/>
+    <circle cx="26" cy="21" r="7" fill="#ff5f57"/>
+    <circle cx="50" cy="21" r="7" fill="#febc2e"/>
+    <circle cx="74" cy="21" r="7" fill="#28c840"/>
+    <g font-family="'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="15">
+      <text x="24" y="78"><tspan fill="#4ade80">$</tspan><tspan fill="#e2e8f0"> pdf info paper.pdf</tspan></text>
+      <text x="24" y="102" fill="#94a3b8">Attention Is All You Need · arXiv:1706.03762v7</text>
+      <text x="24" y="126" fill="#94a3b8">15 pages · ~10.2k tokens · Model Architecture p.2–6 2.6k</text>
+      <text x="24" y="162"><tspan fill="#4ade80">$</tspan><tspan fill="#e2e8f0"> pdf read paper.pdf --section "Model Architecture"</tspan></text>
+      <text x="24" y="186" fill="#94a3b8">## p.2   ¶11 3 Model Architecture</text>
+      <text x="24" y="210" fill="#94a3b8">¶12 Most competitive neural sequence transduction models…</text>
+      <text x="24" y="246"><tspan fill="#4ade80">$</tspan><tspan fill="#e2e8f0"> pdf crop paper.pdf --page 8 --table 2</tspan></text>
+      <text x="24" y="270" fill="#5eead4">…/p8-0.17,0.09,0.66,0.22.png  (~1.4k image tokens)</text>
+    </g>
+  </g>
+</svg>
